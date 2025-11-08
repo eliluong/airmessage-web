@@ -54,7 +54,7 @@ export class MissingPrivateApiError extends BlueBubblesAuthError {
         }
 }
 
-function normalizeServerUrl(serverUrl: string): string {
+export function normalizeServerUrl(serverUrl: string): string {
         const trimmed = serverUrl.trim();
         if(trimmed.length === 0) {
                 throw new BlueBubblesAuthError("A server URL is required.");
