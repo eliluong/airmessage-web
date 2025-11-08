@@ -102,11 +102,12 @@ module.exports = (env) => ({
 				{from: "public"}
 			]
 		}),
-		new webpack.DefinePlugin({
-			"WPEnv.ENVIRONMENT": JSON.stringify(env.WEBPACK_SERVE ? "development" : "production"),
-			"WPEnv.PACKAGE_VERSION": JSON.stringify(process.env.npm_package_version),
-			"WPEnv.RELEASE_HASH": "\"undefined\"",
-			"WPEnv.BUILD_DATE": Date.now()
-		}),
+                new webpack.DefinePlugin({
+                        "WPEnv.ENVIRONMENT": JSON.stringify(env.WEBPACK_SERVE ? "development" : "production"),
+                        "WPEnv.PACKAGE_VERSION": JSON.stringify(process.env.npm_package_version),
+                        "WPEnv.RELEASE_HASH": "\"undefined\"",
+                        "WPEnv.BUILD_DATE": Date.now(),
+                        "WPEnv.SENTRY_DSN": JSON.stringify(process.env.SENTRY_DSN ?? "")
+                }),
 	].concat(!env.WEBPACK_SERVE ? new WorkboxPlugin.GenerateSW() : [])
 });
