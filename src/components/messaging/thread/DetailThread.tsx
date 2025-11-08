@@ -115,38 +115,49 @@ export default function DetailThread({conversation}: {
 		loadedThreadMessages.current = conversation.localID;
 	}, [conversation.localID, requestMessages]);
 	
-	const handleMessageUpdate = useCallback((itemArray: ConversationItem[]) => {
-		setDisplayState((displayState) => {
-			//Ignore if the chat isn't loaded
-			if(displayState.type !== DisplayType.Messages) return displayState;
-			
-			//Clone the item array
-			const pendingMessages = [...displayState.messages];
-			const newMessages: ConversationItem[] = [];
-			
-			for(const newItem of itemArray) {
-				//Ignore items that aren't part of this conversation
-				if(!checkMessageConversationOwnership(conversation, newItem)) continue;
-				
-				//Try to find a matching conversation item
-				let itemMatched = false;
-				if(newItem.itemType === ConversationItemType.Message) {
-					const matchedIndex = findMatchingUnconfirmedMessageIndex(pendingMessages, newItem);
-					if(matchedIndex !== -1) {
-						//Merge the information into the item
-						const mergeTargetItem = pendingMessages[matchedIndex] as MessageItem;
-						pendingMessages[matchedIndex] = {
-							...mergeTargetItem,
-							serverID: newItem.serverID,
-							guid: newItem.guid,
-							date: newItem.date,
-							status: newItem.status,
-							error: newItem.error,
-							statusDate: newItem.statusDate
-						};
-						
-						itemMatched = true;
-					}
+        const handleMessageUpdate = useCallback((itemArray: ConversationItem[]) => {
+                setDisplayState((displayState) => {
+                        //Ignore if the chat isn't loaded
+                        if(displayState.type !== DisplayType.Messages) return displayState;
+
+                        let pendingMessages = displayState.messages;
+                        let newMessages: ConversationItem[] | undefined;
+                        let hasChanges = false;
+                        let cloneMade = false;
+
+                        const ensureClone = () => {
+                                if(!cloneMade) {
+                                        pendingMessages = [...displayState.messages];
+                                        cloneMade = true;
+                                }
+                        };
+
+                        for(const newItem of itemArray) {
+                                //Ignore items that aren't part of this conversation
+                                if(!checkMessageConversationOwnership(conversation, newItem)) continue;
+
+                                //Try to find a matching conversation item
+                                let itemMatched = false;
+                                if(newItem.itemType === ConversationItemType.Message) {
+                                        const matchedIndex = findMatchingUnconfirmedMessageIndex(pendingMessages, newItem);
+                                        if(matchedIndex !== -1) {
+                                                //Merge the information into the item
+                                                const mergeTargetItem = pendingMessages[matchedIndex] as MessageItem;
+
+                                                ensureClone();
+                                                pendingMessages[matchedIndex] = {
+                                                        ...mergeTargetItem,
+                                                        serverID: newItem.serverID,
+                                                        guid: newItem.guid,
+                                                        date: newItem.date,
+                                                        status: newItem.status,
+                                                        error: newItem.error,
+                                                        statusDate: newItem.statusDate
+                                                };
+
+                                                itemMatched = true;
+                                                hasChanges = true;
+                                        }
                                 }
 
                                 //If we didn't merge this item, add it to the end of the message list
@@ -159,23 +170,39 @@ export default function DetailThread({conversation}: {
                                                         if(newItemServerID !== undefined && item.serverID === newItemServerID) return true;
                                                         return false;
                                                 });
-                                                const duplicateInNew = newMessages.some((item) => {
+                                                const newMessagesArray = newMessages ?? [];
+                                                const duplicateInNew = newMessagesArray.some((item) => {
                                                         if(item.itemType !== ConversationItemType.Message) return false;
                                                         if(newItemGuid && item.guid === newItemGuid) return true;
                                                         if(newItemServerID !== undefined && item.serverID === newItemServerID) return true;
                                                         return false;
                                                 });
                                                 if(duplicateInPending || duplicateInNew) continue;
+                                                newMessages = newMessagesArray;
+                                        } else {
+                                                newMessages = newMessages ?? [];
                                         }
+
                                         newMessages.push(newItem);
+                                        hasChanges = true;
                                 }
                         }
 
-                        pendingMessages.unshift(...newMessages);
-			
-			return {type: DisplayType.Messages, messages: pendingMessages};
-		});
-	}, [setDisplayState, conversation]);
+                        if(!hasChanges) return displayState;
+
+                        if(newMessages && newMessages.length > 0) {
+                                ensureClone();
+                                pendingMessages.unshift(...newMessages);
+                        }
+
+                        if(!cloneMade) {
+                                //No modifications were made to the array itself, but hasChanges guarantees merges occurred.
+                                ensureClone();
+                        }
+
+                        return {type: DisplayType.Messages, messages: pendingMessages};
+                });
+        }, [setDisplayState, conversation]);
 	
 	//Subscribe to message updates
 	useEffect(() => {
