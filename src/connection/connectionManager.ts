@@ -2,6 +2,8 @@ import DataProxyConnect from "shared/connection/connect/dataProxyConnect";
 import CommunicationsManager, {CommunicationsManagerListener} from "./communicationsManager";
 import ClientComm5 from "./comm5/clientComm5";
 import DataProxy from "./dataProxy";
+import BlueBubblesCommunicationsManager from "./bluebubbles/bluebubblesCommunicationsManager";
+import BlueBubblesDataProxy from "./bluebubbles/bluebubblesDataProxy";
 import {Conversation, ConversationItem, LinkedConversation, MessageModifier} from "../data/blocks";
 import {
 	AttachmentRequestErrorCode,
@@ -69,6 +71,11 @@ let blueBubblesAuthConfig: BlueBubblesAuthConfig | undefined;
 
 export function setBlueBubblesAuth(config: BlueBubblesAuthConfig | undefined) {
         blueBubblesAuthConfig = config;
+        if(config) {
+                dataProxy = new BlueBubblesDataProxy();
+        } else {
+                dataProxy = new DataProxyConnect();
+        }
 }
 
 export function getBlueBubblesAuth(): BlueBubblesAuthConfig | undefined {
@@ -490,9 +497,19 @@ function connectPassive() {
 }
 
 function connectFromList(index: number) {
-	communicationsManager = new communicationsPriorityList[index](dataProxy);
-	communicationsManager.listener = communicationsManagerListener;
-	communicationsManager.connect();
+        if(blueBubblesAuthConfig) {
+                if(!(dataProxy instanceof BlueBubblesDataProxy)) {
+                        dataProxy = new BlueBubblesDataProxy();
+                }
+                communicationsManager = new BlueBubblesCommunicationsManager(dataProxy, blueBubblesAuthConfig);
+        } else {
+                if(!(dataProxy instanceof DataProxyConnect)) {
+                        dataProxy = new DataProxyConnect();
+                }
+                communicationsManager = new communicationsPriorityList[index](dataProxy);
+        }
+        communicationsManager.listener = communicationsManagerListener;
+        communicationsManager.connect();
 }
 
 export function disconnect() {
