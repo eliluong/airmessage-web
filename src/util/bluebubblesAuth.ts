@@ -8,6 +8,7 @@ export interface BlueBubblesAuthResult {
         accessToken: string;
         refreshToken?: string;
         expiresAt?: number;
+        legacyPasswordAuth?: boolean;
 }
 
 interface BlueBubblesRawError {
@@ -117,6 +118,55 @@ function parseAuthResponse(data: BlueBubblesRawAuthResponse): BlueBubblesAuthRes
         };
 }
 
+async function probeLegacyPasswordAuth(config: BlueBubblesAuthConfig): Promise<BlueBubblesAuthResult> {
+        const params = new URLSearchParams();
+        params.set("password", config.password);
+        if(config.deviceName) {
+                params.set("guid", config.deviceName);
+        }
+
+        const endpoints = ["/api/v1/ping", "/api/v1/server/info"];
+        let lastError: unknown;
+        for(const endpoint of endpoints) {
+                const query = params.toString();
+                const url = `${endpoint}${query.length > 0 ? `?${query}` : ""}`;
+                let response: Response;
+                try {
+                        response = await fetch(buildEndpointUrl(config.serverUrl, url), {method: "GET"});
+                } catch(error) {
+                        if(isCertificateError(error)) {
+                                throw new InvalidCertificateError();
+                        }
+                        lastError = error;
+                        continue;
+                }
+
+                if(response.status === 404) {
+                        continue;
+                }
+
+                if(response.ok) {
+                        return {
+                                accessToken: config.password,
+                                legacyPasswordAuth: true
+                        };
+                }
+
+                try {
+                        await parseError(response);
+                } catch(error) {
+                        lastError = error;
+                        break;
+                }
+        }
+
+        if(lastError instanceof Error) {
+                throw lastError;
+        }
+
+        throw new BlueBubblesAuthError("The server did not support the authentication API.");
+}
+
 async function postAuth(serverUrl: string, path: string, payload: Record<string, unknown>): Promise<BlueBubblesAuthResult> {
         let response: Response;
         try {
@@ -175,7 +225,14 @@ export async function loginBlueBubblesDevice(config: BlueBubblesAuthConfig): Pro
                 return await postAuth(config.serverUrl, "/api/v1/auth/login", payload);
         } catch(error) {
                 if(error instanceof BlueBubblesAuthError && error.status === 404) {
-                        return postAuth(config.serverUrl, "/api/v1/login", payload);
+                        try {
+                                return await postAuth(config.serverUrl, "/api/v1/login", payload);
+                        } catch(secondError) {
+                                if(secondError instanceof BlueBubblesAuthError && secondError.status === 404) {
+                                        return probeLegacyPasswordAuth(config);
+                                }
+                                throw secondError;
+                        }
                 }
                 throw error;
         }
@@ -195,6 +252,7 @@ export async function refreshBlueBubblesToken(serverUrl: string, refreshToken: s
 }
 
 export function shouldRefreshToken(token: BlueBubblesAuthResult): boolean {
+        if(token.legacyPasswordAuth) return false;
         if(token.expiresAt === undefined) return false;
         // Refresh when within 2 minutes of expiry
         return token.expiresAt - Date.now() < 2 * 60 * 1000;

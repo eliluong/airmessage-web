@@ -65,6 +65,8 @@ interface BlueBubblesAuthConfig {
         serverUrl: string;
         accessToken: string;
         refreshToken?: string;
+        legacyPasswordAuth?: boolean;
+        deviceName?: string;
 }
 
 let blueBubblesAuthConfig: BlueBubblesAuthConfig | undefined;
