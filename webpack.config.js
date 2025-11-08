@@ -12,15 +12,17 @@ module.exports = (env) => ({
 	target: "web",
 	mode: env.WEBPACK_SERVE ? "development" : "production",
 	devtool: env.WEBPACK_SERVE ? "cheap-source-map" : "source-map",
-	devServer: {
-		static: {
-			directory: path.join(__dirname, "public")
-		},
-		port: 8080,
-		https: env.secure ? {
-			key: fs.readFileSync("webpack.key"),
-			cert: fs.readFileSync("webpack.crt"),
-		} : undefined
+        devServer: {
+                static: {
+                        directory: path.join(__dirname, "public")
+                },
+                host: "0.0.0.0",
+                allowedHosts: "all",
+                port: 8080,
+                https: env.secure ? {
+                        key: fs.readFileSync("webpack.key"),
+                        cert: fs.readFileSync("webpack.crt"),
+                } : undefined
 	},
 	output: {
 		path: path.resolve(__dirname, "build"),
