@@ -1,13 +1,19 @@
 import React from "react";
 import {createTheme, ThemeProvider} from "@mui/material/styles";
 import {CssBaseline, useMediaQuery} from "@mui/material";
+import {useSettings} from "shared/components/settings/SettingsProvider";
 
 export default function AppTheme(props: {children: React.ReactNode}) {
-	const prefersDarkMode = useMediaQuery("(prefers-color-scheme: dark)");
-	
-	const theme = React.useMemo(() => createTheme({
-		typography: {
-			fontFamily: [
+        const prefersDarkMode = useMediaQuery("(prefers-color-scheme: dark)");
+        const {settings} = useSettings();
+
+        const paletteMode = settings.appearance.colorScheme === "system"
+                ? (prefersDarkMode ? "dark" : "light")
+                : settings.appearance.colorScheme;
+
+        const theme = React.useMemo(() => createTheme({
+                typography: {
+                        fontFamily: [
 				"-apple-system",
 				"BlinkMacSystemFont",
 				'"Segoe UI"',
@@ -20,20 +26,20 @@ export default function AppTheme(props: {children: React.ReactNode}) {
 				'"Segoe UI Symbol"',
 			].join(","),
 		},
-		palette: {
-			mode: prefersDarkMode ? "dark" : "light",
-			primary: {
-				main: "#448AFF",
-				dark: "#366FCC",
-				light: "#52A7FF",
-			},
-			messageIncoming: prefersDarkMode ? {
-				main: "#393939",
-				contrastText: "#FFF"
-			} : {
-				main: "#EDEDED",
-				contrastText: "rgba(0, 0, 0, 0.87)"
-			},
+                palette: {
+                        mode: paletteMode,
+                        primary: {
+                                main: "#448AFF",
+                                dark: "#366FCC",
+                                light: "#52A7FF",
+                        },
+                        messageIncoming: paletteMode === "dark" ? {
+                                main: "#393939",
+                                contrastText: "#FFF"
+                        } : {
+                                main: "#EDEDED",
+                                contrastText: "rgba(0, 0, 0, 0.87)"
+                        },
 			messageOutgoing: {
 				main: "#448AFF",
 				contrastText: "#FFF",
@@ -42,27 +48,27 @@ export default function AppTheme(props: {children: React.ReactNode}) {
 				main: "#2ECC71",
 				contrastText: "#FFF",
 			},
-			divider: prefersDarkMode ? "rgba(255, 255, 255, 0.1)" : "#EEEEEE",
-			background: {
-				default: prefersDarkMode ? "#1E1E1E" : "#FFFFFF",
-				sidebar: prefersDarkMode ? "#272727" : "#FAFAFA"
-			}
-		},
+                        divider: paletteMode === "dark" ? "rgba(255, 255, 255, 0.1)" : "#EEEEEE",
+                        background: {
+                                default: paletteMode === "dark" ? "#1E1E1E" : "#FFFFFF",
+                                sidebar: paletteMode === "dark" ? "#272727" : "#FAFAFA"
+                        }
+                },
 		components: {
-			MuiCssBaseline: {
-				styleOverrides: {
-					"@global": {
-						html: {
-							scrollbarColor: prefersDarkMode ? "#303030 #424242" : undefined
-						}
-					}
-				}
-			}
-		}
-	}), [prefersDarkMode]);
-	
-	return (
-		<ThemeProvider theme={theme}>
+                        MuiCssBaseline: {
+                                styleOverrides: {
+                                        "@global": {
+                                                html: {
+                                                        scrollbarColor: paletteMode === "dark" ? "#303030 #424242" : undefined
+                                                }
+                                        }
+                                }
+                        }
+                }
+        }), [paletteMode]);
+
+        return (
+                <ThemeProvider theme={theme}>
 			<CssBaseline />
 			{props.children}
 		</ThemeProvider>

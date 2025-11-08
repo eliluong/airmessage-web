@@ -1,0 +1,119 @@
+import React, {useCallback, useEffect, useMemo, useState} from "react";
+
+export type SettingsColorScheme = "system" | "light" | "dark";
+
+export interface SettingsState {
+        appearance: {
+                colorScheme: SettingsColorScheme;
+        };
+}
+
+export type SettingsUpdater = (previous: SettingsState) => SettingsState;
+
+interface SettingsContextValue {
+        settings: SettingsState;
+        updateSettings: (updater: SettingsUpdater) => void;
+        resetSettings: () => void;
+}
+
+const STORAGE_KEY = "airmessage.web.settings";
+
+const DEFAULT_SETTINGS: SettingsState = Object.freeze({
+        appearance: {
+                colorScheme: "system" as SettingsColorScheme
+        }
+});
+
+const SettingsContext = React.createContext<SettingsContextValue | undefined>(undefined);
+
+function createDefaultSettings(): SettingsState {
+        return {
+                appearance: {
+                        colorScheme: DEFAULT_SETTINGS.appearance.colorScheme
+                }
+        };
+}
+
+function isColorScheme(value: unknown): value is SettingsColorScheme {
+        return value === "system" || value === "light" || value === "dark";
+}
+
+function sanitizeSettings(candidate: Partial<SettingsState> | undefined): SettingsState {
+        const defaults = createDefaultSettings();
+        if(!candidate) return defaults;
+
+        const colorScheme = candidate.appearance?.colorScheme;
+
+        return {
+                appearance: {
+                        colorScheme: isColorScheme(colorScheme) ? colorScheme : defaults.appearance.colorScheme
+                }
+        };
+}
+
+function readStoredSettings(): SettingsState {
+        if(typeof window === "undefined") {
+                return createDefaultSettings();
+        }
+
+        try {
+                const rawValue = window.localStorage.getItem(STORAGE_KEY);
+                if(!rawValue) return createDefaultSettings();
+
+                const parsed = JSON.parse(rawValue) as Partial<SettingsState> | undefined;
+                return sanitizeSettings(parsed);
+        } catch(error) {
+                console.warn("Failed to read stored settings", error);
+                return createDefaultSettings();
+        }
+}
+
+export function SettingsProvider(props: {children: React.ReactNode}) {
+        const [settings, setSettings] = useState<SettingsState>(() => readStoredSettings());
+
+        useEffect(() => {
+                if(typeof window === "undefined") return;
+
+                try {
+                        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+                } catch(error) {
+                        console.warn("Failed to persist settings", error);
+                }
+        }, [settings]);
+
+        const updateSettings = useCallback((updater: SettingsUpdater) => {
+                setSettings((previous) => {
+                        const draft: SettingsState = {
+                                appearance: {
+                                        colorScheme: previous.appearance.colorScheme
+                                }
+                        };
+                        const result = updater(draft);
+                        return sanitizeSettings(result);
+                });
+        }, []);
+
+        const resetSettings = useCallback(() => {
+                setSettings(createDefaultSettings());
+        }, []);
+
+        const contextValue = useMemo<SettingsContextValue>(() => ({
+                settings,
+                updateSettings,
+                resetSettings
+        }), [settings, updateSettings, resetSettings]);
+
+        return (
+                <SettingsContext.Provider value={contextValue}>
+                        {props.children}
+                </SettingsContext.Provider>
+        );
+}
+
+export function useSettings(): SettingsContextValue {
+        const context = React.useContext(SettingsContext);
+        if(!context) {
+                throw new Error("useSettings must be used within a SettingsProvider");
+        }
+        return context;
+}

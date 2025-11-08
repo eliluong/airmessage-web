@@ -20,6 +20,7 @@ import FaceTimeLinkDialog from "shared/components/messaging/dialog/FaceTimeLinkD
 import {useIsFaceTimeSupported, useNonNullableCacheState} from "shared/util/hookUtils";
 import ConversationSkeleton from "shared/components/skeleton/ConversationSkeleton";
 import {TransitionGroup} from "react-transition-group";
+import SettingsDialog from "shared/components/messaging/dialog/SettingsDialog";
 
 export default function Sidebar(props: {
 	conversations: Conversation[] | undefined;
@@ -48,9 +49,10 @@ export default function Sidebar(props: {
 		setOverflowMenu(null);
 	}, [setOverflowMenu]);
 	
-	const [isChangelogDialog, showChangelogDialog, hideChangelogDialog] = useSidebarDialog(closeOverflowMenu);
-	const [isFeedbackDialog, showFeedbackDialog, hideFeedbackDialog] = useSidebarDialog(closeOverflowMenu);
-	const [isSignOutDialog, showSignOutDialog, hideSignOutDialog] = useSidebarDialog(closeOverflowMenu);
+        const [isSettingsDialog, showSettingsDialog, hideSettingsDialog] = useSidebarDialog(closeOverflowMenu);
+        const [isChangelogDialog, showChangelogDialog, hideChangelogDialog] = useSidebarDialog(closeOverflowMenu);
+        const [isFeedbackDialog, showFeedbackDialog, hideFeedbackDialog] = useSidebarDialog(closeOverflowMenu);
+        const [isSignOutDialog, showSignOutDialog, hideSignOutDialog] = useSidebarDialog(closeOverflowMenu);
         const [isRemoteUpdateDialog, showRemoteUpdateDialog, hideRemoteUpdateDialog] = useSidebarDialog();
 	const [faceTimeLinkDialog, setFaceTimeLinkDialog] = useState<string | undefined>(undefined);
 	
@@ -98,7 +100,8 @@ export default function Sidebar(props: {
 	
 	return (
 		<Stack height="100%">
-			<ChangelogDialog isOpen={isChangelogDialog} onDismiss={hideChangelogDialog} />
+                        <SettingsDialog isOpen={isSettingsDialog} onDismiss={hideSettingsDialog} />
+                        <ChangelogDialog isOpen={isChangelogDialog} onDismiss={hideChangelogDialog} />
 			<FeedbackDialog isOpen={isFeedbackDialog} onDismiss={hideFeedbackDialog} />
 			<SignOutDialog isOpen={isSignOutDialog} onDismiss={hideSignOutDialog} />
                         <RemoteUpdateDialog isOpen={isRemoteUpdateDialog} onDismiss={hideRemoteUpdateDialog} update={remoteUpdateCache} />
@@ -126,16 +129,16 @@ export default function Sidebar(props: {
 						<AddRounded />
 					</IconButton>
 					
-					<IconButton
-						aria-haspopup="true"
-						size="large"
-						edge="end"
-						onClick={openOverflowMenu}
-						disabled={props.conversations === undefined}>
-						<MoreVertRounded />
-					</IconButton>
-					
-					<Menu
+                                        <IconButton
+                                                aria-haspopup="true"
+                                                size="large"
+                                                edge="end"
+                                                onClick={openOverflowMenu}
+                                                disabled={props.conversations === undefined}>
+                                                <MoreVertRounded data-testid="MoreVertRoundedIcon" />
+                                        </IconButton>
+
+                                        <Menu
 						anchorEl={overflowMenu}
 						anchorOrigin={{
 							vertical: "top",
@@ -148,7 +151,8 @@ export default function Sidebar(props: {
 						}}
 						open={!!overflowMenu}
 						onClose={closeOverflowMenu}>
-						<MenuItem onClick={showChangelogDialog}>What&apos;s new</MenuItem>
+                                                <MenuItem onClick={showSettingsDialog}>Settings</MenuItem>
+                                                <MenuItem onClick={showChangelogDialog}>What&apos;s new</MenuItem>
 						<MenuItem onClick={showFeedbackDialog}>Help and feedback</MenuItem>
 						<MenuItem onClick={showSignOutDialog}>Sign out</MenuItem>
 					</Menu>
