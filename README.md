@@ -23,7 +23,7 @@ Want to explore the migration locally? Follow these steps:
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/BlueBubblesApp/airmessage-web.git
+   git clone https://github.com/eliluong/airmessage-web.git
    cd airmessage-web
    ```
 2. **Install dependencies**
