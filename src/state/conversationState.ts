@@ -267,9 +267,12 @@ export default function useConversationState(activeConversationID: LocalConversa
                                         return false;
                                 }
 
-                                const lastPreviewDate = conversationPreviewDateMap.get(getConversationItemMixedID(item));
-                                if(lastPreviewDate !== undefined && item.date <= lastPreviewDate) {
-                                        return false;
+                                const conversationMixedID = getConversationItemMixedID(item);
+                                if(conversationMixedID !== undefined) {
+                                        const lastPreviewDate = conversationPreviewDateMap.get(conversationMixedID);
+                                        if(lastPreviewDate !== undefined && item.date <= lastPreviewDate) {
+                                                return false;
+                                        }
                                 }
 
                                 return item.chatGuid === activeConversationGUID;
