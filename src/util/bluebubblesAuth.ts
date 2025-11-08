@@ -63,6 +63,12 @@ function normalizeServerUrl(serverUrl: string): string {
         if(url.protocol !== "https:" && url.protocol !== "http:") {
                 throw new BlueBubblesAuthError("The server URL must start with http:// or https://.");
         }
+        if(url.protocol === "https:" && url.port) {
+                const portNumber = Number(url.port);
+                if(Number.isInteger(portNumber) && (portNumber === 80 || portNumber === 8080)) {
+                        url.port = "";
+                }
+        }
         return url.toString().replace(/\/$/, "");
 }
 
