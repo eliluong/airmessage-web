@@ -5,7 +5,6 @@ import {
 	RemoteUpdateErrorCode
 } from "shared/data/stateCodes";
 import {connect as connectToServer} from "shared/connection/connectionManager";
-import {getAuth, signOut} from "firebase/auth";
 import {appleServiceAppleMessage, appleServiceTextMessageForwarding} from "shared/data/appleConstants";
 
 export interface ErrorDisplay {
@@ -118,16 +117,11 @@ export function errorCodeToShortDisplay(error: ConnectionErrorCode, isDirect?: b
 				message: "Connected device limit reached",
 				button: buttonActionRetry
 			};
-		case ConnectionErrorCode.ConnectAccountValidation:
-			return {
-				message: "Account verification error",
-				button: {
-					label: "Sign out",
-					onClick: () => {
-						signOut(getAuth());
-					}
-				}
-			};
+                case ConnectionErrorCode.ConnectAccountValidation:
+                        return {
+                                message: "Account verification error",
+                                button: buttonActionRetry
+                        };
 		case ConnectionErrorCode.ConnectNoActivation:
 			return {
 				message: "Account not activated"

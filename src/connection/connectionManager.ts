@@ -59,6 +59,22 @@ const communicationsPriorityList: ReadonlyArray<CreatesCommunicationsManager> = 
 let reconnectTimeoutID: any | undefined;
 
 let communicationsManager: CommunicationsManager | null = null;
+interface BlueBubblesAuthConfig {
+        serverUrl: string;
+        accessToken: string;
+        refreshToken?: string;
+}
+
+let blueBubblesAuthConfig: BlueBubblesAuthConfig | undefined;
+
+export function setBlueBubblesAuth(config: BlueBubblesAuthConfig | undefined) {
+        blueBubblesAuthConfig = config;
+}
+
+export function getBlueBubblesAuth(): BlueBubblesAuthConfig | undefined {
+        return blueBubblesAuthConfig;
+}
+
 let dataProxy: DataProxy = new DataProxyConnect();
 export function setDataProxy(value: DataProxy) {
 	dataProxy = value;

@@ -1,145 +1,261 @@
-import React, {useCallback, useContext, useEffect, useState} from "react";
-import Onboarding from "shared/components/Onboarding";
-import Messaging from "shared/components/messaging/master/Messaging";
+import React, {useCallback, useEffect, useMemo, useState} from "react";
 import * as Sentry from "@sentry/react";
+import Onboarding, {BlueBubblesCredentialValues} from "shared/components/Onboarding";
+import Messaging from "shared/components/messaging/master/Messaging";
 import LoginContext from "shared/components/LoginContext";
-import {getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithCredential, signOut} from "firebase/auth";
-import {OAuthTokenResult, useGoogleSignIn} from "shared/util/authUtils";
-import {PeopleContextProvider} from "shared/state/peopleState";
-import {getSecureLS, SecureStorageKey, setSecureLS} from "shared/util/secureStorageUtils";
-import {RemoteLibContext} from "shared/state/remoteLibProvider";
+import {
+        getSecureLS,
+        SecureStorageKey,
+        setSecureLS
+} from "shared/util/secureStorageUtils";
+import {
+        BlueBubblesAuthError,
+        BlueBubblesAuthResult,
+        InvalidCertificateError,
+        MissingPrivateApiError,
+        loginBlueBubblesDevice,
+        refreshBlueBubblesToken,
+        registerBlueBubblesDevice,
+        shouldRefreshToken
+} from "shared/util/bluebubblesAuth";
+
+interface BlueBubblesSessionState {
+        serverUrl: string;
+        accessToken: string;
+        refreshToken?: string;
+        expiresAt?: number;
+        deviceName?: string;
+}
 
 enum SignInState {
-	Waiting,
-	SignedOut,
-	SignedIn
+        Waiting,
+        SignedOut,
+        SignedIn
+}
+
+interface SubmitState {
+        submitting: boolean;
+        error?: string;
 }
 
 export default function SignInGate() {
-	//Sign-in state
-	const [state, setState] = useState(SignInState.Waiting);
-	
-	/**
-	 * undefined - User is signed out, gAPI has no token
-	 * null - User is signed in, gAPI has no token
-	 * string - User is signed in, gAPI has token
-	 */
-	const [accessToken, setAccessToken] = useState<string | undefined | null>(undefined);
-	const [accessTokenRegistered, setAccessTokenRegistered] = useState(false);
-	
-	const signOutAccount = useCallback(() => {
-		//Sign out of Firebase
-		signOut(getAuth());
-		
-		//Reset the access token
-		setAccessToken(undefined);
-		setSecureLS(SecureStorageKey.GoogleRefreshToken, undefined);
-	}, [setAccessToken]);
-	
-	const handleGoogleSignIn = useCallback(async (result: OAuthTokenResult) => {
-		//Sign in to Firebase
-		try {
-			await signInWithCredential(getAuth(), GoogleAuthProvider.credential(result.id_token));
-		} catch(error) {
-			console.warn("Unable to authenticate Google Sign-In token with Firebase:", error);
-			return;
-		}
-		
-		//Set the access token
-		setAccessToken(result.access_token);
-		setSecureLS(SecureStorageKey.GoogleRefreshToken, result.refresh_token);
-	}, [setAccessToken]);
-	
-	const [isAuthResponseSession, signInWithGoogle, exchangeRefreshToken] = useGoogleSignIn(handleGoogleSignIn);
-	
-	//Apply the access token to gAPI
-	const remoteLibState = useContext(RemoteLibContext);
-	useEffect(() => {
-		//Ignore if gAPI isn't loaded
-		if(!remoteLibState.gapiLoaded) return;
-		
-		//Update the gAPI value
-		if(accessToken) {
-			gapi.client.setToken({access_token: accessToken});
-		} else {
-			gapi.client.setToken(null);
-		}
-		
-		//If the access token is null, let people utils error out
-		setAccessTokenRegistered(accessToken !== undefined);
-	}, [accessToken, setAccessTokenRegistered, remoteLibState.gapiLoaded]);
-	
-	useEffect(() => {
-		return onAuthStateChanged(getAuth(), (user) => {
-			if(user == null) {
-				//Update the state
-				setState(SignInState.SignedOut);
-			} else {
-				//Update the state
-				setState(SignInState.SignedIn);
-				
-				//Set the Sentry user
-				Sentry.setUser({
-					id: user.uid,
-					email: user.email ?? undefined
-				});
-				
-				//If this sign-in wasn't initiated by a sign-in session, load the token from disk
-				if(!isAuthResponseSession) {
-					(async () => {
-						const refreshToken = await getSecureLS(SecureStorageKey.GoogleRefreshToken);
-						
-						//Ignore if we don't have a refresh token in local storage
-						if(refreshToken === undefined) {
-							console.warn("User is signed in, but no refresh token is available!");
-							setAccessToken(null);
-							return;
-						}
-						
-						//Get a new access token with the refresh token
-						let accessToken: string;
-						try {
-							const exchangeResult = await exchangeRefreshToken(refreshToken);
-							accessToken = exchangeResult.access_token;
-						} catch(error) {
-							//Invalid token, ask user to reauthenticate
-							console.warn(`Failed to exchange stored refresh token: ${error}`);
-							signOutAccount();
-							return;
-						}
-						
-						//Set the access token
-						setAccessToken(accessToken);
-					})();
-				}
-			}
-		});
-	}, [setState, isAuthResponseSession, exchangeRefreshToken, signOutAccount]);
-	
-	let main: React.ReactElement | null;
-	switch(state) {
-		case SignInState.Waiting:
-			main = null;
-			break;
-		case SignInState.SignedOut:
-			main = (
-				<Onboarding onSignInGoogle={signInWithGoogle} />
-			);
-			break;
-		case SignInState.SignedIn:
-			main = (
-				<PeopleContextProvider ready={accessTokenRegistered}>
-					<Messaging onReauthenticate={signInWithGoogle} />
-				</PeopleContextProvider>
-			);
-			break;
-	}
-	
-	return (
-		<LoginContext.Provider value={{
-			signOut: signOutAccount
-		}}>
-			{main}
-		</LoginContext.Provider>
-	);
+        const [state, setState] = useState(SignInState.Waiting);
+        const [session, setSession] = useState<BlueBubblesSessionState | null>(null);
+        const [submitState, setSubmitState] = useState<SubmitState>({submitting: false});
+        const [initialValues, setInitialValues] = useState<BlueBubblesCredentialValues>({
+                serverUrl: "",
+                password: "",
+                deviceName: ""
+        });
+
+        const loadStoredSession = useCallback(async () => {
+                const [serverUrl, token, refreshToken, deviceName, expiresAt] = await Promise.all([
+                        getSecureLS(SecureStorageKey.BlueBubblesServerUrl),
+                        getSecureLS(SecureStorageKey.BlueBubblesToken),
+                        getSecureLS(SecureStorageKey.BlueBubblesRefreshToken),
+                        getSecureLS(SecureStorageKey.BlueBubblesDeviceName),
+                        getSecureLS(SecureStorageKey.BlueBubblesTokenExpiry)
+                ]);
+
+                setInitialValues({
+                        serverUrl: serverUrl ?? "",
+                        password: "",
+                        deviceName: deviceName ?? ""
+                });
+
+                if(serverUrl && token) {
+                        const parsedExpiry = expiresAt !== undefined ? Number(expiresAt) : undefined;
+                        const storedSession: BlueBubblesSessionState = {
+                                serverUrl,
+                                accessToken: token,
+                                refreshToken: refreshToken ?? undefined,
+                                expiresAt: Number.isFinite(parsedExpiry) ? parsedExpiry : undefined,
+                                deviceName: deviceName ?? undefined
+                        };
+
+                        setSession(storedSession);
+                        setState(SignInState.SignedIn);
+                        applySentryUser(storedSession);
+                } else {
+                        setSession(null);
+                        setState(SignInState.SignedOut);
+                        applySentryUser(null);
+                }
+        }, []);
+
+        useEffect(() => {
+                loadStoredSession().catch((error: unknown) => {
+                        console.warn("Failed to load stored BlueBubbles session", error);
+                        setState(SignInState.SignedOut);
+                });
+        }, [loadStoredSession]);
+
+        const persistSession = useCallback(async (value: BlueBubblesSessionState | null) => {
+                await Promise.all([
+                        setSecureLS(SecureStorageKey.BlueBubblesServerUrl, value?.serverUrl),
+                        setSecureLS(SecureStorageKey.BlueBubblesToken, value?.accessToken),
+                        setSecureLS(SecureStorageKey.BlueBubblesRefreshToken, value?.refreshToken),
+                        setSecureLS(SecureStorageKey.BlueBubblesDeviceName, value?.deviceName),
+                        setSecureLS(
+                                SecureStorageKey.BlueBubblesTokenExpiry,
+                                value?.expiresAt !== undefined ? value.expiresAt.toString() : undefined
+                        )
+                ]);
+        }, []);
+
+        const handleAuthResult = useCallback(async (
+                credentials: BlueBubblesCredentialValues,
+                authResult: BlueBubblesAuthResult
+        ) => {
+                const sanitizedServerUrl = credentials.serverUrl.trim();
+                const sanitizedDevice = credentials.deviceName?.trim() ?? undefined;
+                const nextSession: BlueBubblesSessionState = {
+                        serverUrl: sanitizedServerUrl,
+                        accessToken: authResult.accessToken,
+                        refreshToken: authResult.refreshToken,
+                        expiresAt: authResult.expiresAt,
+                        deviceName: sanitizedDevice
+                };
+
+                await persistSession(nextSession);
+                setSession(nextSession);
+                setState(SignInState.SignedIn);
+                setInitialValues({
+                        serverUrl: sanitizedServerUrl,
+                        password: "",
+                        deviceName: sanitizedDevice ?? ""
+                });
+                applySentryUser(nextSession);
+        }, [persistSession]);
+
+        const handleError = useCallback((error: unknown) => {
+                let message = "Unable to connect to the BlueBubbles server.";
+                if(error instanceof InvalidCertificateError) {
+                        message = "The server certificate is invalid or untrusted.";
+                } else if(error instanceof MissingPrivateApiError) {
+                        message = "This BlueBubbles server is missing required private API features.";
+                } else if(error instanceof BlueBubblesAuthError) {
+                        message = error.message;
+                } else if(error instanceof Error && error.message) {
+                        message = error.message;
+                }
+
+                console.warn("BlueBubbles authentication failed", error);
+                setSubmitState({submitting: false, error: message});
+        }, []);
+
+        const handleSubmit = useCallback(async (values: BlueBubblesCredentialValues, action: "login" | "register") => {
+                setSubmitState({submitting: true});
+
+                try {
+                        const payload: BlueBubblesCredentialValues = {
+                                serverUrl: values.serverUrl.trim(),
+                                password: values.password.trim(),
+                                deviceName: values.deviceName?.trim() ?? undefined
+                        };
+
+                        const authResult = action === "register"
+                                ? await registerBlueBubblesDevice(payload)
+                                : await loginBlueBubblesDevice(payload);
+
+                        await handleAuthResult(payload, authResult);
+                        setSubmitState({submitting: false});
+                } catch(error) {
+                        handleError(error);
+                        setState(SignInState.SignedOut);
+                }
+        }, [handleAuthResult, handleError]);
+
+        const signOutAccount = useCallback(async () => {
+                await persistSession(null);
+                setSession(null);
+                setState(SignInState.SignedOut);
+                setSubmitState({submitting: false});
+                applySentryUser(null);
+        }, [persistSession]);
+
+        useEffect(() => {
+                if(state !== SignInState.SignedIn || !session?.refreshToken) return;
+                if(!shouldRefreshToken({
+                        accessToken: session.accessToken,
+                        refreshToken: session.refreshToken,
+                        expiresAt: session.expiresAt
+                })) return;
+
+                let cancelled = false;
+                (async () => {
+                        try {
+                                const refreshed = await refreshBlueBubblesToken(session.serverUrl, session.refreshToken!);
+                                if(cancelled) return;
+                                await handleAuthResult({
+                                        serverUrl: session.serverUrl,
+                                        password: "",
+                                        deviceName: session.deviceName
+                                }, refreshed);
+                        } catch(error) {
+                                if(cancelled) return;
+                                console.warn("Failed to refresh BlueBubbles token", error);
+                                handleError(error);
+                                await signOutAccount();
+                        }
+                })();
+
+                return () => {
+                        cancelled = true;
+                };
+        }, [state, session, handleAuthResult, handleError, signOutAccount]);
+
+        const onboardingInitialValues = useMemo<BlueBubblesCredentialValues>(() => initialValues, [initialValues]);
+
+        let main: React.ReactElement | null;
+        switch(state) {
+                case SignInState.Waiting:
+                        main = null;
+                        break;
+                case SignInState.SignedOut:
+                        main = (
+                                <Onboarding
+                                        initialValues={onboardingInitialValues}
+                                        submitting={submitState.submitting}
+                                        error={submitState.error}
+                                        onSubmit={handleSubmit}
+                                />
+                        );
+                        break;
+                case SignInState.SignedIn:
+                        if(session === null) {
+                                main = null;
+                        } else {
+                                main = (
+                                        <Messaging
+                                                serverUrl={session.serverUrl}
+                                                accessToken={session.accessToken}
+                                                refreshToken={session.refreshToken}
+                                                onReset={signOutAccount}
+                                        />
+                                );
+                        }
+                        break;
+        }
+
+        return (
+                <LoginContext.Provider value={{
+                        signOut: () => {
+                                void signOutAccount();
+                        }
+                }}>
+                        {main}
+                </LoginContext.Provider>
+        );
+}
+
+function applySentryUser(session: BlueBubblesSessionState | null) {
+        if(session === null) {
+                Sentry.setUser(null);
+        } else {
+                Sentry.setUser({
+                        id: session.serverUrl,
+                        username: session.deviceName
+                });
+        }
 }

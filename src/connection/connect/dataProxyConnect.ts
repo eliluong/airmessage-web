@@ -3,14 +3,23 @@ import DataProxy from "shared/connection/dataProxy";
 import * as CloseFrame from "./webSocketCloseEventCodes";
 import * as NHT from "./nht";
 import ByteBuffer from "bytebuffer";
-import {getAuth, getIdToken} from "firebase/auth";
 import {getInstallationID} from "shared/util/installationUtils";
 import {ConnectionErrorCode} from "shared/data/stateCodes";
-import {connectHostname} from "shared/secrets";
 import {decryptData, encryptData, isCryptoPasswordAvailable} from "shared/util/encryptionUtils";
 import TaskQueue from "shared/util/taskQueue";
+import {getBlueBubblesAuth} from "shared/connection/connectionManager";
 
-const handshakeTimeoutTime = 8 * 1000;
+function buildWebSocketURL(serverUrl: string, accessToken: string): URL {
+        const url = new URL(serverUrl);
+        url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+        const normalizedPath = url.pathname.endsWith("/") ? url.pathname.slice(0, -1) : url.pathname;
+        url.pathname = `${normalizedPath}/api/v1/socket`;
+        url.searchParams.set("token", accessToken);
+        url.searchParams.set("communications", String(NHT.commVer));
+        url.searchParams.set("is_server", String(false));
+        url.searchParams.set("installation_id", getInstallationID());
+        return url;
+}
 
 export default class DataProxyConnect extends DataProxy {
 	proxyType = "Connect";
@@ -19,38 +28,32 @@ export default class DataProxyConnect extends DataProxy {
 	private readonly taskQueueDecrypt = new TaskQueue();
 	
 	private socket: WebSocket | undefined;
-	private handshakeTimeout: ReturnType<typeof setTimeout> | undefined;
-	
-	start(): void {
-		//Getting the user's ID token
-		getIdToken(getAuth().currentUser!).then((idToken: string) => {
-			//Building the URL
-			const url = new URL(connectHostname);
-			url.searchParams.set("communications", String(NHT.commVer));
-			url.searchParams.set("is_server", String(false));
-			url.searchParams.set("installation_id", getInstallationID());
-			url.searchParams.set("id_token", idToken);
-			
-			//Starting the WebSocket connection
-			this.socket = new WebSocket(url.toString());
-			this.socket.binaryType = "arraybuffer";
-			
-			//Registering the listeners
-			this.socket.onopen = () => {
-				//Starting the handshake expiry timer
-				this.handshakeTimeout = setTimeout(this.handleHandshakeTimeout, handshakeTimeoutTime);
-			};
-			this.socket.onmessage = (event: MessageEvent) => {
-				this.handleMessage(event.data);
-			};
-			this.socket.onclose = (event: CloseEvent) => {
-				this.notifyClose(DataProxyConnect.mapErrorCode(event.code));
-			};
-		}).catch((error) => {
-			console.warn(error);
-			this.notifyClose(ConnectionErrorCode.InternalError);
-		});
-	}
+        start(): void {
+                const auth = getBlueBubblesAuth();
+                if(!auth) {
+                        this.notifyClose(ConnectionErrorCode.Unauthorized);
+                        return;
+                }
+
+                try {
+                        const url = buildWebSocketURL(auth.serverUrl, auth.accessToken);
+                        this.socket = new WebSocket(url.toString());
+                        this.socket.binaryType = "arraybuffer";
+
+                        this.socket.onopen = () => {
+                                this.notifyOpen();
+                        };
+                        this.socket.onmessage = (event: MessageEvent) => {
+                                this.handleMessage(event.data);
+                        };
+                        this.socket.onclose = (event: CloseEvent) => {
+                                this.notifyClose(DataProxyConnect.mapErrorCode(event.code));
+                        };
+                } catch(error) {
+                        console.warn("Failed to initiate BlueBubbles socket", error);
+                        this.notifyClose(ConnectionErrorCode.ExternalError);
+                }
+        }
 	
 	stop(): void {
 		if(!this.socket) return;
@@ -109,15 +112,12 @@ export default class DataProxyConnect extends DataProxy {
 		const type = byteBuffer.readInt();
 		
 		switch(type) {
-			case NHT.nhtConnectionOK: {
-				//Cancelling the handshake expiry timer
-				clearTimeout(this.handshakeTimeout!);
-				
-				//Calling the listener
-				this.notifyOpen();
-				
-				break;
-			}
+                        case NHT.nhtConnectionOK: {
+                                //Calling the listener
+                                this.notifyOpen();
+
+                                break;
+                        }
 			case NHT.nhtClientProxy: {
 				/*
 				 * -100 -> The content is encrypted
@@ -153,15 +153,9 @@ export default class DataProxyConnect extends DataProxy {
 		}
 	}
 	
-	//Called when the handshake timeout is triggered
-	private handleHandshakeTimeout() {
-		//Disconnecting
-		this.stop();
-	}
-	
-	//Map a WebSocket (or AirMessage Connect) error code to a local ConnectionCode
-	private static mapErrorCode(wsCode: number): ConnectionErrorCode {
-		switch(wsCode) {
+        //Map a WebSocket (or AirMessage Connect) error code to a local ConnectionCode
+        private static mapErrorCode(wsCode: number): ConnectionErrorCode {
+                switch(wsCode) {
 			case CloseFrame.NORMAL_CLOSURE:
 			case CloseFrame.ABNORMAL_CLOSURE:
 				return ConnectionErrorCode.Internet;
