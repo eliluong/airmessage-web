@@ -6,7 +6,6 @@ import {ConnectionErrorCode} from "../../../data/stateCodes";
 import {connect} from "../../../connection/connectionManager";
 import {setCryptoPassword} from "shared/util/encryptionUtils";
 import {SecureStorageKey, setSecureLS} from "shared/util/secureStorageUtils";
-import {getAuth, signOut} from "firebase/auth";
 
 interface ErrorDisplay {
 	title: string;
@@ -170,17 +169,12 @@ function errorCodeToDisplay(error: ConnectionErrorCode): ErrorDisplay {
 				subtitle: "You've reached your limit of connected devices. Please disconnect some other AirMessage devices from your account to continue.",
 				buttonPrimary: buttonActionRetry
 			};
-		case ConnectionErrorCode.ConnectAccountValidation:
-			return {
-				title: "Your account details couldn't be processed",
-				subtitle: "Please sign out of AirMessage for web and sign back in",
-				buttonPrimary: {
-					label: "Sign out",
-					onClick: () => {
-						signOut(getAuth());
-					}
-				}
-			};
+                case ConnectionErrorCode.ConnectAccountValidation:
+                        return {
+                                title: "Your account details couldn't be processed",
+                                subtitle: "Please sign out of AirMessage for web and sign back in",
+                                buttonPrimary: buttonActionRetry
+                        };
 		case ConnectionErrorCode.ConnectNoActivation:
 			return {
 				title: "Your account isn't activated",

@@ -19,17 +19,31 @@ import {normalizeAddress} from "shared/util/addressHelper";
 import {compareVersions} from "shared/util/versionUtils";
 import DetailThread from "shared/components/messaging/thread/DetailThread";
 import {PeopleContext} from "shared/state/peopleState";
-import {getAuth} from "firebase/auth";
 
 export default function Messaging(props: {
-	onReauthenticate?: (loginHint?: string) => void;
-	onReset?: VoidFunction;
+        serverUrl: string;
+        accessToken: string;
+        refreshToken?: string;
+        onReset?: VoidFunction;
 }) {
-	const [detailPane, setDetailPane] = useState<DetailPane>({type: DetailType.Loading});
-	const [sidebarBanner, setSidebarBanner] = useState<ConnectionErrorCode | "connecting" | undefined>(undefined);
-	const {conversations, loadConversations, addConversation, markConversationRead} =
-		useConversationState(detailPane.type === DetailType.Thread ? detailPane.conversationID : undefined, true);
-	const [needsServerUpdate, setNeedsServerUpdate] = useState(false);
+        const {serverUrl, accessToken, refreshToken, onReset} = props;
+        const [detailPane, setDetailPane] = useState<DetailPane>({type: DetailType.Loading});
+        const [sidebarBanner, setSidebarBanner] = useState<ConnectionErrorCode | "connecting" | undefined>(undefined);
+        const {conversations, loadConversations, addConversation, markConversationRead} =
+                useConversationState(detailPane.type === DetailType.Thread ? detailPane.conversationID : undefined, true);
+        const [needsServerUpdate, setNeedsServerUpdate] = useState(false);
+
+        useEffect(() => {
+                ConnectionManager.setBlueBubblesAuth({
+                        serverUrl,
+                        accessToken,
+                        refreshToken
+                });
+
+                return () => {
+                        ConnectionManager.setBlueBubblesAuth(undefined);
+                };
+        }, [serverUrl, accessToken, refreshToken]);
 	
 	const navigateConversation = useCallback((conversationID: number | string) => {
 		//Ignore if conversations aren't loaded
@@ -77,11 +91,11 @@ export default function Messaging(props: {
 	
 	const peopleState = useContext(PeopleContext);
 	
-	const onReauthenticate = props.onReauthenticate;
-	const requestPeoplePermission = useCallback(() => {
-		const signedInEmail = getAuth().currentUser?.email ?? undefined;
-		onReauthenticate?.(signedInEmail);
-	}, [onReauthenticate]);
+        const requestPeoplePermission = useCallback(() => {
+                // People data is not available when using BlueBubbles authentication.
+                // Surface the reconfigure callback instead so the user can adjust their connection settings.
+                onReset?.();
+        }, [onReset]);
 	
 	useEffect(() => {
 		//Initialize notifications

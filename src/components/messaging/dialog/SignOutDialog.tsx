@@ -20,10 +20,10 @@ export default function SignOutDialog(props: {isOpen: boolean, onDismiss: VoidFu
 		<Dialog
 			open={props.isOpen}
 			onClose={props.onDismiss}>
-			<DialogTitle>Sign out of AirMessage?</DialogTitle>
+                        <DialogTitle>Sign out of BlueBubbles?</DialogTitle>
 			<DialogContent>
 				<DialogContentText>
-					You won&apos;t be able to send or receive any messages from this computer
+                                        You won&apos;t be able to send or receive any messages from this computer until you sign in again
 				</DialogContentText>
 			</DialogContent>
 			<DialogActions>

@@ -4,8 +4,12 @@ import {decodeBase64, encodeBase64} from "shared/util/encodingUtils";
 const ivLen = 12;
 
 export enum SecureStorageKey {
-	ServerPassword = "serverPassword",
-	GoogleRefreshToken = "googleRefreshToken"
+        ServerPassword = "serverPassword",
+        BlueBubblesServerUrl = "blueBubblesServerUrl",
+        BlueBubblesToken = "blueBubblesToken",
+        BlueBubblesRefreshToken = "blueBubblesRefreshToken",
+        BlueBubblesDeviceName = "blueBubblesDeviceName",
+        BlueBubblesTokenExpiry = "blueBubblesTokenExpiry"
 }
 
 const cryptoKey: Promise<CryptoKey> = crypto.subtle.importKey(

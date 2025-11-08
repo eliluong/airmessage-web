@@ -1,84 +1,155 @@
-import React from "react";
-
-import {Box, Button, Stack, styled, Typography} from "@mui/material";
-import iconAirMessage from "shared/resources/icons/tile-airmessage.svg";
-import iconMac from "shared/resources/icons/tile-mac.svg";
-import iconGoogle from "shared/resources/icons/logo-google.svg";
-
+import React, {useCallback, useEffect, useMemo, useState} from "react";
+import {
+        Alert,
+        Box,
+        Button,
+        Divider,
+        Stack,
+        TextField,
+        Typography
+} from "@mui/material";
 import AirMessageLogo from "shared/components/logo/AirMessageLogo";
 
-const OnboardingColumn = styled(Stack)({
-	maxWidth: 400
-});
-const InstructionIconImg = styled("img")({
-	width: 64,
-	height: 64
-});
+export interface BlueBubblesCredentialValues {
+        serverUrl: string;
+        password: string;
+        deviceName?: string;
+}
 
-export default function Onboarding(props: {
-	onSignInGoogle?: (() => void)
-}) {
-	return (
-		<Stack
-			sx={{width: "100%", height: "100%"}}
-			alignItems="center"
-			justifyContent="center">
-			<Box sx={{position: "absolute", top: 0, left: 0}} padding={2}>
-				<AirMessageLogo />
-			</Box>
-			
-			<Stack>
-				<Typography
-					variant="h4"
-					marginBottom={6}>
-					Use iMessage on any computer with AirMessage
-				</Typography>
-				
-				<Stack direction="row" gap={6}>
-					<OnboardingColumn gap={3}>
-						<Stack direction="row" gap={3}>
-							<InstructionIconImg src={iconMac} />
-							
-							<Stack>
-								<Typography variant="h5" gutterBottom>1. Set up your server</Typography>
-								<Typography variant="body1" color="textSecondary" gutterBottom>A server installed on a Mac computer is required to route your messages for you.</Typography>
-								<Typography variant="body1" color="textSecondary">Visit <a href="https://airmessage.org" style={{color: "#008EFF", textDecoration: "none"}}>airmessage.org</a> on a Mac computer to download.</Typography>
-							</Stack>
-						</Stack>
-						
-						<Stack direction="row" gap={3}>
-							<InstructionIconImg src={iconAirMessage} />
-							
-							<Stack>
-								<Typography variant="h5" gutterBottom>2. Connect your account</Typography>
-								<Typography variant="body1" color="textSecondary">Sign in with your account to get your messages on this device.</Typography>
-							</Stack>
-						</Stack>
-					</OnboardingColumn>
-					
-					<OnboardingColumn style={{flexGrow: 1}}>
-						<Typography variant="subtitle1" gutterBottom>Select a sign-in method:</Typography>
-						<Button
-							sx={{
-								marginTop: 1,
-								color: "black",
-								backgroundColor: "white",
-								textTransform: "none",
-								fontWeight: "bold",
-								"&:hover": {
-									backgroundColor: "inherit"
-								}
-							}}
-							variant="contained"
-							startIcon={<img src={iconGoogle} alt="" />}
-							onClick={props.onSignInGoogle}
-							disabled={props.onSignInGoogle === undefined}
-							fullWidth>
-							Sign in with Google
-						</Button>
-					</OnboardingColumn>
-				</Stack>
-			</Stack>
-		</Stack>
-	);
+export interface OnboardingProps {
+        initialValues: BlueBubblesCredentialValues;
+        submitting?: boolean;
+        error?: string;
+        onSubmit: (values: BlueBubblesCredentialValues, action: "login" | "register") => void;
+}
+
+interface ValidationState {
+        serverUrl?: string;
+        password?: string;
+}
+
+export default function Onboarding(props: OnboardingProps) {
+        const [values, setValues] = useState<BlueBubblesCredentialValues>(props.initialValues);
+        const [touched, setTouched] = useState<{[K in keyof ValidationState]?: boolean}>({});
+
+        useEffect(() => {
+                setValues(props.initialValues);
+                setTouched({});
+        }, [props.initialValues]);
+
+        const validation = useMemo<ValidationState>(() => {
+                const result: ValidationState = {};
+                if(values.serverUrl.trim().length === 0) {
+                        result.serverUrl = "Enter the HTTPS address of your BlueBubbles server.";
+                } else if(!/^https:\/\//i.test(values.serverUrl.trim())) {
+                        result.serverUrl = "The BlueBubbles server must use HTTPS.";
+                }
+
+                if(values.password.trim().length === 0) {
+                        result.password = "Enter the API password or token configured on your server.";
+                }
+
+                return result;
+        }, [values]);
+
+        const updateField = useCallback(<K extends keyof BlueBubblesCredentialValues>(field: K, value: BlueBubblesCredentialValues[K]) => {
+                setValues((current) => ({
+                        ...current,
+                        [field]: value
+                }));
+        }, []);
+
+        const handleBlur = useCallback((field: keyof ValidationState) => {
+                setTouched((current) => ({
+                        ...current,
+                        [field]: true
+                }));
+        }, []);
+
+        const handleSubmit = useCallback((action: "login" | "register") => {
+                setTouched({serverUrl: true, password: true});
+                if(validation.serverUrl || validation.password) return;
+                props.onSubmit(values, action);
+        }, [props, validation, values]);
+
+        const submitting = props.submitting ?? false;
+
+        return (
+                <Stack
+                        sx={{width: "100%", height: "100%"}}
+                        alignItems="center"
+                        justifyContent="center"
+                        padding={4}>
+                        <Box sx={{position: "absolute", top: 0, left: 0}} padding={2}>
+                                <AirMessageLogo />
+                        </Box>
+
+                        <Stack spacing={4} maxWidth={520} width="100%">
+                                <Stack spacing={1}>
+                                        <Typography variant="h4">Connect to your BlueBubbles server</Typography>
+                                        <Typography color="text.secondary">
+                                                Enter your server information to sign in. You can register a new device label, or sign in with an existing one.
+                                        </Typography>
+                                </Stack>
+
+                                {props.error && (
+                                        <Alert severity="error">{props.error}</Alert>
+                                )}
+
+                                <Stack spacing={3}>
+                                        <TextField
+                                                label="Server URL"
+                                                placeholder="https://example.bubbles.app"
+                                                value={values.serverUrl}
+                                                onChange={(event) => updateField("serverUrl", event.target.value)}
+                                                onBlur={() => handleBlur("serverUrl")}
+                                                error={touched.serverUrl && Boolean(validation.serverUrl)}
+                                                helperText={touched.serverUrl ? validation.serverUrl : undefined}
+                                                disabled={submitting}
+                                                fullWidth
+                                        />
+                                        <TextField
+                                                label="API password or token"
+                                                type="password"
+                                                value={values.password}
+                                                onChange={(event) => updateField("password", event.target.value)}
+                                                onBlur={() => handleBlur("password")}
+                                                error={touched.password && Boolean(validation.password)}
+                                                helperText={touched.password ? validation.password : undefined}
+                                                disabled={submitting}
+                                                fullWidth
+                                        />
+                                        <TextField
+                                                label="Device label (optional)"
+                                                value={values.deviceName ?? ""}
+                                                onChange={(event) => updateField("deviceName", event.target.value)}
+                                                disabled={submitting}
+                                                fullWidth
+                                                helperText="Used to identify this browser in the BlueBubbles server UI."
+                                        />
+                                </Stack>
+
+                                <Divider flexItem />
+
+                                <Stack direction={{xs: "column", sm: "row"}} spacing={2}>
+                                        <Button
+                                                variant="contained"
+                                                color="primary"
+                                                onClick={() => handleSubmit("login")}
+                                                disabled={submitting}
+                                                fullWidth>
+                                                Sign in
+                                        </Button>
+                                        <Button
+                                                variant="outlined"
+                                                color="primary"
+                                                onClick={() => handleSubmit("register")}
+                                                disabled={submitting}
+                                                fullWidth>
+                                                Register device
+                                        </Button>
+                                </Stack>
+                        </Stack>
+                </Stack>
+        );
 }
