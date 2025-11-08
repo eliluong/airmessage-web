@@ -57,10 +57,19 @@ export default function useConversationState(activeConversationID: LocalConversa
 			return accumulator;
 		}, new Map());
 		
-		//Find all chats (and their messages) from the server that we don't have saved locally
-		const unlinkedSortedConversationItems: Map<RemoteConversationID, ConversationItem[]> =
-			conversations === undefined
-				? new Map()
+                //Collect the last known preview date for each conversation
+                const conversationPreviewDateMap = new Map<MixedConversationID, Date>();
+                conversations?.forEach((conversation) => {
+                        conversationPreviewDateMap.set(conversation.localID, conversation.preview.date);
+                        if(!conversation.localOnly) {
+                                conversationPreviewDateMap.set(conversation.guid, conversation.preview.date);
+                        }
+                });
+
+                //Find all chats (and their messages) from the server that we don't have saved locally
+                const unlinkedSortedConversationItems: Map<RemoteConversationID, ConversationItem[]> =
+                        conversations === undefined
+                                ? new Map()
 				: new Map(
 					Array.from(sortedConversationItems.entries())
 						.filter((entry): entry is [RemoteConversationID, ConversationItem[]] =>
@@ -171,18 +180,38 @@ export default function useConversationState(activeConversationID: LocalConversa
 				//Get the latest message
 				const latestMessage = conversationMessages.reduce((lastMessage, message) => message.date > lastMessage.date ? message : lastMessage);
 				
-				//Create the updated conversation
-				const updatedConversation: Conversation = {
-					...pendingConversationArray[matchedConversationIndex],
-					preview: messageItemToConversationPreview(latestMessage)
-				};
-				if(activeConversationID !== updatedConversation.localID && latestMessage.sender !== undefined) {
-					updatedConversation.unreadMessages = true;
-				}
-				
-				//Re-sort the conversation into the list
-				sortInsertConversation(pendingConversationArray, updatedConversation, matchedConversationIndex);
-			}
+                                const existingConversation = pendingConversationArray[matchedConversationIndex];
+                                const existingPreviewDate = existingConversation.preview.date;
+                                const shouldUpdatePreview = latestMessage.date >= existingPreviewDate;
+                                const hasNewIncomingMessage = latestMessage.sender !== undefined && latestMessage.date > existingPreviewDate;
+
+                                let updatedConversation = existingConversation;
+                                let conversationChanged = false;
+                                if(shouldUpdatePreview) {
+                                        updatedConversation = {
+                                                ...updatedConversation,
+                                                preview: messageItemToConversationPreview(latestMessage)
+                                        };
+                                        conversationChanged = true;
+                                }
+
+                                if(hasNewIncomingMessage && activeConversationID !== updatedConversation.localID) {
+                                        if(!conversationChanged) {
+                                                updatedConversation = {...updatedConversation};
+                                                conversationChanged = true;
+                                        }
+                                        updatedConversation.unreadMessages = true;
+                                }
+
+                                if(conversationChanged) {
+                                        if(shouldUpdatePreview) {
+                                                //Re-sort the conversation into the list
+                                                sortInsertConversation(pendingConversationArray, updatedConversation, matchedConversationIndex);
+                                        } else {
+                                                pendingConversationArray[matchedConversationIndex] = updatedConversation;
+                                        }
+                                }
+                        }
 			
 			//Applying side effects
 			for(const conversationItem of newItems) {
@@ -232,14 +261,19 @@ export default function useConversationState(activeConversationID: LocalConversa
 			const hasFocus = await getPlatformUtils().hasFocus();
 			
 			//Get whether a message is received in the currently selected conversation
-			const activeConversationUpdated = hasFocus && newItems.some((item) => {
-				//If the new item isn't an incoming message, ignore it
-				if(item.itemType !== ConversationItemType.Message || item.sender === undefined) {
-					return false;
-				}
-				
-				return item.chatGuid === activeConversationGUID;
-			});
+                        const activeConversationUpdated = hasFocus && newItems.some((item) => {
+                                //If the new item isn't an incoming message, ignore it
+                                if(item.itemType !== ConversationItemType.Message || item.sender === undefined) {
+                                        return false;
+                                }
+
+                                const lastPreviewDate = conversationPreviewDateMap.get(getConversationItemMixedID(item));
+                                if(lastPreviewDate !== undefined && item.date <= lastPreviewDate) {
+                                        return false;
+                                }
+
+                                return item.chatGuid === activeConversationGUID;
+                        });
 			
 			//Collect messages that should cause a notification to be displayed
 			const notificationMessages = new Map(
@@ -269,13 +303,23 @@ export default function useConversationState(activeConversationID: LocalConversa
 						return undefined;
 					}
 					
-					//Add the entry to the map
-					return [
-						chatID,
-						notificationMessages
-					];
-				}).filter((entry): entry is [RemoteConversationID, MessageItem[]] => entry !== undefined)
-			);
+                                        const lastPreviewDate = conversationPreviewDateMap.get(chatID);
+                                        const newNotificationMessages = notificationMessages.filter((message) => {
+                                                if(lastPreviewDate === undefined) return true;
+                                                return message.date > lastPreviewDate;
+                                        });
+
+                                        if(newNotificationMessages.length === 0) {
+                                                return undefined;
+                                        }
+
+                                        //Add the entry to the map
+                                        return [
+                                                chatID,
+                                                newNotificationMessages
+                                        ];
+                                }).filter((entry): entry is [RemoteConversationID, MessageItem[]] => entry !== undefined)
+                        );
 			
 			if(notificationMessages.size > 0) {
 				if(hasFocus) {
@@ -338,26 +382,36 @@ export default function useConversationState(activeConversationID: LocalConversa
 	}, [setConversations]);
 	
 	//Marks the conversation with the specified ID as read
-	const markConversationRead = useCallback((conversationID: LocalConversationID) => {
-		setConversations((conversations) => {
-			if(conversations === undefined) return conversations;
-			
-			//Copy the conversations array
-			const pendingConversations = [...conversations];
-			
-			//Find the conversation
-			const conversationIndex = pendingConversations.findIndex((conversation) => !conversation.localOnly && conversation.localID === conversationID);
-			if(conversationIndex === -1) return conversations;
-			
-			//Update the conversation
-			pendingConversations[conversationIndex] = {
-				...pendingConversations[conversationIndex],
-				unreadMessages: false
-			};
-			
-			return pendingConversations;
-		});
-	}, [setConversations]);
+        const markConversationRead = useCallback((conversationID: LocalConversationID) => {
+                let dismissedConversationGUID: RemoteConversationID | undefined;
+                setConversations((conversations) => {
+                        if(conversations === undefined) return conversations;
+
+                        //Copy the conversations array
+                        const pendingConversations = [...conversations];
+
+                        //Find the conversation
+                        const conversationIndex = pendingConversations.findIndex((conversation) => conversation.localID === conversationID);
+                        if(conversationIndex === -1) return conversations;
+
+                        const conversation = pendingConversations[conversationIndex];
+                        if(!conversation.localOnly) {
+                                dismissedConversationGUID = conversation.guid;
+                        }
+
+                        //Update the conversation
+                        pendingConversations[conversationIndex] = {
+                                ...conversation,
+                                unreadMessages: false
+                        };
+
+                        return pendingConversations;
+                });
+
+                if(dismissedConversationGUID !== undefined) {
+                        getNotificationUtils().dismissMessageNotifications(dismissedConversationGUID);
+                }
+        }, [setConversations]);
 	
 	return {
 		conversations,
