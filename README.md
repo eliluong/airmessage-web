@@ -6,6 +6,44 @@ AirMessage lets people use iMessage on the devices they like.
 **AirMessage for web** brings iMessage to modern web browsers over a WebSocket proxy.
 Production builds are hosted on [web.airmessage.org](https://web.airmessage.org).
 
+Planning your contribution? Check out the [BlueBubbles migration roadmap](project.md)
+for the current status, open tasks, and future ideas.
+
+## BlueBubbles migration updates & local development
+
+We're in the middle of moving AirMessage Web from the legacy Connect
+infrastructure to the newer BlueBubbles transport. Recent work introduced a
+BlueBubbles-first onboarding flow, refreshed authentication helpers, and a REST
+communications manager that powers chat load, sending, and attachment upload
+against BlueBubbles servers. The [roadmap](project.md) highlights the remaining
+gaps—like live updates and contact handling—and future polish items such as
+search, typing indicators, and richer delivery states.
+
+Want to explore the migration locally? Follow these steps:
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/BlueBubblesApp/airmessage-web.git
+   cd airmessage-web
+   ```
+2. **Install dependencies**
+   ```bash
+   npm install
+   ```
+3. **Configure secrets**
+   ```bash
+   cp src/secrets.default.ts src/secrets.ts
+   ```
+   This copy step provides local encryption keys and a placeholder Sentry DSN so
+   the build can import `src/secrets.ts` without errors.
+4. **Start the development server**
+   ```bash
+   npm start
+   ```
+5. **Open the app**
+   Navigate to [http://localhost:8080](http://localhost:8080) to use the web
+   client. When you're ready to create an optimized bundle, run `npm run build`.
+
 Other AirMessage repositories:
 [Server](https://github.com/airmessage/airmessage-server) |
 [Android](https://github.com/airmessage/airmessage-android) |
