@@ -25,7 +25,7 @@ export function appendLegacyAuthParams(auth: BlueBubblesAuthState, path: string)
                 params.set("password", auth.accessToken);
         }
         if(auth.deviceName) {
-                params.set("guid", auth.deviceName);
+                params.set("device", auth.deviceName);
         }
         const serialized = params.toString();
         return serialized.length > 0 ? `${basePath}?${serialized}` : basePath;
