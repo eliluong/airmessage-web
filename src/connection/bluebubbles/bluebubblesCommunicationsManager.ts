@@ -310,6 +310,9 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
 
                 const response: MessageQueryResponse = await queryMessages(this.auth, payload);
                 const ordered = response.data.slice().sort((a, b) => b.dateCreated - a.dateCreated);
+                if(firstMessageID === undefined && ordered.length > 0) {
+                        this.lastMessageTimestamp = ordered[0].dateCreated;
+                }
                 const {items, modifiers} = this.processMessages(ordered);
                 this.listener?.onMessageThread(chatGUID, firstMessageID, items);
                 if(modifiers.length > 0) {
