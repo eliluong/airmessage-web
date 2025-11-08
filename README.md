@@ -23,7 +23,7 @@ Want to explore the migration locally? Follow these steps:
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/airmessage/airmessage-web.git
+   git clone https://github.com/eliluong/airmessage-web.git
    cd airmessage-web
    ```
 2. **Install dependencies**
@@ -34,7 +34,8 @@ Want to explore the migration locally? Follow these steps:
    ```bash
    cp src/secrets.default.ts src/secrets.ts
    ```
-   (Or provide your own Firebase configuration in `src/secrets.ts`.)
+   This copy step provides local encryption keys and a placeholder Sentry DSN so
+   the build can import `src/secrets.ts` without errors.
 4. **Start the development server**
    ```bash
    npm start
