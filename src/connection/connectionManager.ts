@@ -27,7 +27,6 @@ import CallEvent from "shared/data/callEvent";
 import ConversationTarget from "shared/data/conversationTarget";
 import EmitterPromiseTuple from "shared/util/emitterPromiseTuple";
 
-export const warnCommVer: number[] = [5, 4]; //Warn users on a communications version older than this to update
 export const targetCommVer: number[] = [5, 5];
 export const targetCommVerString = targetCommVer.join(".");
 
