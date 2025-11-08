@@ -29,6 +29,7 @@ import {
 } from "./types";
 import {
         BlueBubblesApiError,
+        appendLegacyAuthParams,
         createChat as createChatApi,
         downloadAttachment,
         fetchChat,
@@ -632,7 +633,8 @@ function buildConversationKey(members: string[], service: string): string {
 }
 
 async function uploadAttachmentWithProgress(auth: BlueBubblesAuthState, payload: FormData, progressCallback: (bytesUploaded: number) => void): Promise<AttachmentSendResponse> {
-        const url = auth.serverUrl.replace(/\/$/, "") + "/api/v1/message/attachment";
+        const path = appendLegacyAuthParams(auth, "/api/v1/message/attachment");
+        const url = auth.serverUrl.replace(/\/$/, "") + path;
         return new Promise<AttachmentSendResponse>((resolve, reject) => {
                 const xhr = new XMLHttpRequest();
                 xhr.responseType = "json";

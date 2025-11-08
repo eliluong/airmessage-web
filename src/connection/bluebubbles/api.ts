@@ -17,6 +17,20 @@ function buildEndpoint(auth: BlueBubblesAuthState, path: string): string {
         return `${normalized}${path.startsWith("/") ? "" : "/"}${path}`;
 }
 
+export function appendLegacyAuthParams(auth: BlueBubblesAuthState, path: string): string {
+        if(!auth.legacyPasswordAuth) return path;
+        const [basePath, queryString] = path.split("?");
+        const params = new URLSearchParams(queryString ?? "");
+        if(auth.accessToken) {
+                params.set("password", auth.accessToken);
+        }
+        if(auth.deviceName) {
+                params.set("guid", auth.deviceName);
+        }
+        const serialized = params.toString();
+        return serialized.length > 0 ? `${basePath}?${serialized}` : basePath;
+}
+
 export class BlueBubblesApiError extends Error {
         public readonly status: number;
         public readonly details: ApiErrorResponse | undefined;
@@ -42,7 +56,8 @@ async function parseError(response: Response): Promise<never> {
 }
 
 async function requestJson<T>(auth: BlueBubblesAuthState, path: string, init?: RequestInit): Promise<T> {
-        const response = await fetch(buildEndpoint(auth, `${API_ROOT}${path}`), {
+        const requestPath = appendLegacyAuthParams(auth, `${API_ROOT}${path}`);
+        const response = await fetch(buildEndpoint(auth, requestPath), {
                 ...init,
                 headers: {
                         "Authorization": `Bearer ${auth.accessToken}`,
@@ -138,7 +153,8 @@ export async function sendTextMessage(auth: BlueBubblesAuthState, payload: Recor
 }
 
 export async function downloadAttachment(auth: BlueBubblesAuthState, guid: string, signal?: AbortSignal): Promise<Response> {
-        const response = await fetch(buildEndpoint(auth, `${API_ROOT}/attachment/${encodeURIComponent(guid)}`), {
+        const requestPath = appendLegacyAuthParams(auth, `${API_ROOT}/attachment/${encodeURIComponent(guid)}`);
+        const response = await fetch(buildEndpoint(auth, requestPath), {
                 method: "GET",
                 headers: {
                         "Authorization": `Bearer ${auth.accessToken}`

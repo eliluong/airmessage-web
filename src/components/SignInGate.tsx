@@ -25,6 +25,7 @@ interface BlueBubblesSessionState {
         refreshToken?: string;
         expiresAt?: number;
         deviceName?: string;
+        legacyPasswordAuth?: boolean;
 }
 
 enum SignInState {
@@ -49,12 +50,13 @@ export default function SignInGate() {
         });
 
         const loadStoredSession = useCallback(async () => {
-                const [serverUrl, token, refreshToken, deviceName, expiresAt] = await Promise.all([
+                const [serverUrl, token, refreshToken, deviceName, expiresAt, legacyAuth] = await Promise.all([
                         getSecureLS(SecureStorageKey.BlueBubblesServerUrl),
                         getSecureLS(SecureStorageKey.BlueBubblesToken),
                         getSecureLS(SecureStorageKey.BlueBubblesRefreshToken),
                         getSecureLS(SecureStorageKey.BlueBubblesDeviceName),
-                        getSecureLS(SecureStorageKey.BlueBubblesTokenExpiry)
+                        getSecureLS(SecureStorageKey.BlueBubblesTokenExpiry),
+                        getSecureLS(SecureStorageKey.BlueBubblesLegacyAuth)
                 ]);
 
                 setInitialValues({
@@ -70,7 +72,8 @@ export default function SignInGate() {
                                 accessToken: token,
                                 refreshToken: refreshToken ?? undefined,
                                 expiresAt: Number.isFinite(parsedExpiry) ? parsedExpiry : undefined,
-                                deviceName: deviceName ?? undefined
+                                deviceName: deviceName ?? undefined,
+                                legacyPasswordAuth: legacyAuth === "true"
                         };
 
                         setSession(storedSession);
@@ -99,6 +102,10 @@ export default function SignInGate() {
                         setSecureLS(
                                 SecureStorageKey.BlueBubblesTokenExpiry,
                                 value?.expiresAt !== undefined ? value.expiresAt.toString() : undefined
+                        ),
+                        setSecureLS(
+                                SecureStorageKey.BlueBubblesLegacyAuth,
+                                value?.legacyPasswordAuth ? "true" : undefined
                         )
                 ]);
         }, []);
@@ -114,7 +121,8 @@ export default function SignInGate() {
                         accessToken: authResult.accessToken,
                         refreshToken: authResult.refreshToken,
                         expiresAt: authResult.expiresAt,
-                        deviceName: sanitizedDevice
+                        deviceName: sanitizedDevice,
+                        legacyPasswordAuth: authResult.legacyPasswordAuth
                 };
 
                 await persistSession(nextSession);
@@ -175,11 +183,12 @@ export default function SignInGate() {
         }, [persistSession]);
 
         useEffect(() => {
-                if(state !== SignInState.SignedIn || !session?.refreshToken) return;
+                if(state !== SignInState.SignedIn || !session?.refreshToken || session.legacyPasswordAuth) return;
                 if(!shouldRefreshToken({
                         accessToken: session.accessToken,
                         refreshToken: session.refreshToken,
-                        expiresAt: session.expiresAt
+                        expiresAt: session.expiresAt,
+                        legacyPasswordAuth: session.legacyPasswordAuth
                 })) return;
 
                 let cancelled = false;
@@ -231,6 +240,8 @@ export default function SignInGate() {
                                                 serverUrl={session.serverUrl}
                                                 accessToken={session.accessToken}
                                                 refreshToken={session.refreshToken}
+                                                legacyPasswordAuth={session.legacyPasswordAuth}
+                                                deviceName={session.deviceName}
                                                 onReset={signOutAccount}
                                         />
                                 );

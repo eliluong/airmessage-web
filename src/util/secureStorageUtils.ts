@@ -61,7 +61,8 @@ export enum SecureStorageKey {
         BlueBubblesToken = "blueBubblesToken",
         BlueBubblesRefreshToken = "blueBubblesRefreshToken",
         BlueBubblesDeviceName = "blueBubblesDeviceName",
-        BlueBubblesTokenExpiry = "blueBubblesTokenExpiry"
+        BlueBubblesTokenExpiry = "blueBubblesTokenExpiry",
+        BlueBubblesLegacyAuth = "blueBubblesLegacyAuth"
 }
 
 function concatBuffers(buffer1: ArrayBuffer, buffer2: ArrayBuffer): ArrayBuffer {

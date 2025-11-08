@@ -24,9 +24,11 @@ export default function Messaging(props: {
         serverUrl: string;
         accessToken: string;
         refreshToken?: string;
+        legacyPasswordAuth?: boolean;
+        deviceName?: string;
         onReset?: VoidFunction;
 }) {
-        const {serverUrl, accessToken, refreshToken, onReset} = props;
+        const {serverUrl, accessToken, refreshToken, legacyPasswordAuth, deviceName, onReset} = props;
         const [detailPane, setDetailPane] = useState<DetailPane>({type: DetailType.Loading});
         const [sidebarBanner, setSidebarBanner] = useState<ConnectionErrorCode | "connecting" | undefined>(undefined);
         const {conversations, loadConversations, addConversation, markConversationRead} =
@@ -37,13 +39,15 @@ export default function Messaging(props: {
                 ConnectionManager.setBlueBubblesAuth({
                         serverUrl,
                         accessToken,
-                        refreshToken
+                        refreshToken,
+                        legacyPasswordAuth,
+                        deviceName
                 });
 
                 return () => {
                         ConnectionManager.setBlueBubblesAuth(undefined);
                 };
-        }, [serverUrl, accessToken, refreshToken]);
+        }, [serverUrl, accessToken, refreshToken, legacyPasswordAuth, deviceName]);
 	
 	const navigateConversation = useCallback((conversationID: number | string) => {
 		//Ignore if conversations aren't loaded
