@@ -115,38 +115,57 @@ export default function DetailThread({conversation}: {
 		loadedThreadMessages.current = conversation.localID;
 	}, [conversation.localID, requestMessages]);
 	
-	const handleMessageUpdate = useCallback((itemArray: ConversationItem[]) => {
-		setDisplayState((displayState) => {
-			//Ignore if the chat isn't loaded
-			if(displayState.type !== DisplayType.Messages) return displayState;
-			
-			//Clone the item array
-			const pendingMessages = [...displayState.messages];
-			const newMessages: ConversationItem[] = [];
-			
-			for(const newItem of itemArray) {
-				//Ignore items that aren't part of this conversation
-				if(!checkMessageConversationOwnership(conversation, newItem)) continue;
-				
-				//Try to find a matching conversation item
-				let itemMatched = false;
-				if(newItem.itemType === ConversationItemType.Message) {
-					const matchedIndex = findMatchingUnconfirmedMessageIndex(pendingMessages, newItem);
-					if(matchedIndex !== -1) {
-						//Merge the information into the item
-						const mergeTargetItem = pendingMessages[matchedIndex] as MessageItem;
-						pendingMessages[matchedIndex] = {
-							...mergeTargetItem,
-							serverID: newItem.serverID,
-							guid: newItem.guid,
-							date: newItem.date,
-							status: newItem.status,
-							error: newItem.error,
-							statusDate: newItem.statusDate
-						};
-						
-						itemMatched = true;
-					}
+        const handleMessageUpdate = useCallback((itemArray: ConversationItem[]) => {
+                const relevantItems = itemArray.filter((item) => checkMessageConversationOwnership(conversation, item));
+                if(relevantItems.length === 0) return;
+
+                setDisplayState((displayState) => {
+                        //Ignore if the chat isn't loaded
+                        if(displayState.type !== DisplayType.Messages) return displayState;
+
+                        let pendingMessages: ConversationItem[] = displayState.messages;
+                        let messagesMutated = false;
+                        const ensurePendingMessages = () => {
+                                if(!messagesMutated) {
+                                        pendingMessages = [...pendingMessages];
+                                        messagesMutated = true;
+                                }
+                        };
+                        const newMessages: ConversationItem[] = [];
+
+                        for(const newItem of relevantItems) {
+                                //Try to find a matching conversation item
+                                let itemMatched = false;
+                                if(newItem.itemType === ConversationItemType.Message) {
+                                        const matchedIndex = findMatchingUnconfirmedMessageIndex(pendingMessages, newItem);
+                                        if(matchedIndex !== -1) {
+                                                //Merge the information into the item
+                                                const mergeTargetItem = pendingMessages[matchedIndex] as MessageItem;
+                                                const mergedItem: MessageItem = {
+                                                        ...mergeTargetItem,
+                                                        serverID: newItem.serverID,
+                                                        guid: newItem.guid,
+                                                        date: newItem.date,
+                                                        status: newItem.status,
+                                                        error: newItem.error,
+                                                        statusDate: newItem.statusDate
+                                                };
+
+                                                const hasChanges =
+                                                        mergedItem.serverID !== mergeTargetItem.serverID ||
+                                                        mergedItem.guid !== mergeTargetItem.guid ||
+                                                        mergedItem.date.getTime() !== mergeTargetItem.date.getTime() ||
+                                                        mergedItem.status !== mergeTargetItem.status ||
+                                                        mergedItem.error !== mergeTargetItem.error ||
+                                                        mergedItem.statusDate?.getTime() !== mergeTargetItem.statusDate?.getTime();
+
+                                                if(hasChanges) {
+                                                        ensurePendingMessages();
+                                                        pendingMessages[matchedIndex] = mergedItem;
+                                                }
+
+                                                itemMatched = true;
+                                        }
                                 }
 
                                 //If we didn't merge this item, add it to the end of the message list
@@ -171,59 +190,83 @@ export default function DetailThread({conversation}: {
                                 }
                         }
 
-                        pendingMessages.unshift(...newMessages);
-			
-			return {type: DisplayType.Messages, messages: pendingMessages};
-		});
-	}, [setDisplayState, conversation]);
+                        if(newMessages.length > 0) {
+                                ensurePendingMessages();
+                                pendingMessages.unshift(...newMessages);
+                        }
+
+                        if(!messagesMutated) return displayState;
+                        return {type: DisplayType.Messages, messages: pendingMessages};
+                });
+        }, [setDisplayState, conversation]);
 	
 	//Subscribe to message updates
 	useEffect(() => {
 		return ConnectionManager.messageUpdateEmitter.subscribe(handleMessageUpdate);
 	}, [handleMessageUpdate]);
 	
-	const handleModifierUpdate = useCallback((itemArray: MessageModifier[]) => {
-		setDisplayState((displayState) => {
-			//Ignore if the chat isn't loaded
-			if(displayState.type !== DisplayType.Messages) return displayState;
-			
-			//Cloning the item array
-			const pendingItemArray = [...displayState.messages];
-			
-			for(const modifier of itemArray) {
-				//Try to match the modifier with an item
-				const matchingIndex = pendingItemArray.findIndex((item) => item.itemType === ConversationItemType.Message && item.guid === modifier.messageGuid);
-				if(matchingIndex === -1) continue;
-				const matchedItem = pendingItemArray[matchingIndex] as MessageItem;
-				
-				//Apply the modifier
-				if(isModifierStatusUpdate(modifier)) {
-					pendingItemArray[matchingIndex] = {
-						...matchedItem,
-						status: modifier.status,
-						statusDate: modifier.date
-					};
-				} else if(isModifierSticker(modifier)) {
-					pendingItemArray[matchingIndex] = {
-						...matchedItem,
-						stickers: matchedItem.stickers.concat(modifier),
-					} as MessageItem;
-				} else if(isModifierTapback(modifier)) {
-					const pendingTapbacks = [...matchedItem.tapbacks];
-					const matchingTapbackIndex = pendingTapbacks.findIndex((tapback) => tapback.sender === modifier.sender);
-					if(matchingTapbackIndex !== -1) pendingTapbacks[matchingTapbackIndex] = modifier;
-					else pendingTapbacks.push(modifier);
-					
-					pendingItemArray[matchingIndex] = {
-						...matchedItem,
-						tapbacks: pendingTapbacks
-					};
-				}
-			}
-			
-			return {type: DisplayType.Messages, messages: pendingItemArray};
-		});
-	}, [setDisplayState]);
+        const handleModifierUpdate = useCallback((itemArray: MessageModifier[]) => {
+                setDisplayState((displayState) => {
+                        //Ignore if the chat isn't loaded
+                        if(displayState.type !== DisplayType.Messages) return displayState;
+
+                        let pendingItemArray: ConversationItem[] = displayState.messages;
+                        let itemsMutated = false;
+                        const ensurePendingItems = () => {
+                                if(!itemsMutated) {
+                                        pendingItemArray = [...pendingItemArray];
+                                        itemsMutated = true;
+                                }
+                        };
+
+                        for(const modifier of itemArray) {
+                                //Try to match the modifier with an item
+                                const matchingIndex = pendingItemArray.findIndex((item) => item.itemType === ConversationItemType.Message && item.guid === modifier.messageGuid);
+                                if(matchingIndex === -1) continue;
+                                const matchedItem = pendingItemArray[matchingIndex] as MessageItem;
+
+                                //Apply the modifier
+                                if(isModifierStatusUpdate(modifier)) {
+                                        const hasChanges = matchedItem.status !== modifier.status || matchedItem.statusDate?.getTime() !== modifier.date?.getTime();
+                                        if(!hasChanges) continue;
+
+                                        ensurePendingItems();
+                                        pendingItemArray[matchingIndex] = {
+                                                ...matchedItem,
+                                                status: modifier.status,
+                                                statusDate: modifier.date
+                                        };
+                                } else if(isModifierSticker(modifier)) {
+                                        ensurePendingItems();
+                                        pendingItemArray[matchingIndex] = {
+                                                ...matchedItem,
+                                                stickers: matchedItem.stickers.concat(modifier),
+                                        } as MessageItem;
+                                } else if(isModifierTapback(modifier)) {
+                                        const pendingTapbacks = [...matchedItem.tapbacks];
+                                        const matchingTapbackIndex = pendingTapbacks.findIndex((tapback) => tapback.sender === modifier.sender);
+                                        if(matchingTapbackIndex !== -1) {
+                                                const existingTapback = pendingTapbacks[matchingTapbackIndex];
+                                                const tapbackChanged = existingTapback.isAddition !== modifier.isAddition || existingTapback.tapbackType !== modifier.tapbackType;
+                                                if(!tapbackChanged) continue;
+
+                                                pendingTapbacks[matchingTapbackIndex] = modifier;
+                                        } else {
+                                                pendingTapbacks.push(modifier);
+                                        }
+
+                                        ensurePendingItems();
+                                        pendingItemArray[matchingIndex] = {
+                                                ...matchedItem,
+                                                tapbacks: pendingTapbacks
+                                        };
+                                }
+                        }
+
+                        if(!itemsMutated) return displayState;
+                        return {type: DisplayType.Messages, messages: pendingItemArray};
+                });
+        }, [setDisplayState]);
 	
 	//Subscribe to modifier updates
 	useEffect(() => {
@@ -254,24 +297,25 @@ export default function DetailThread({conversation}: {
 	 * Applies a message error the message with the specified ID
 	 */
 	const applyMessageError = useCallback((localID: LocalConversationID, error: MessageError) => {
-		setDisplayState((displayState) => {
-			//Ignore if there are no messages
-			if(displayState.type !== DisplayType.Messages) return displayState;
-			
-			//Update the message's error state
-			const pendingItems = [...displayState.messages];
-			const itemIndex = pendingItems.findIndex((item) => item.localID === localID);
-			if(itemIndex !== -1) {
-				const message = pendingItems[itemIndex] as MessageItem;
-				pendingItems[itemIndex] = {
-					...message,
-					error: error
-				};
-			}
-			
-			return {type: DisplayType.Messages, messages: pendingItems};
-		});
-	}, [setDisplayState]);
+                setDisplayState((displayState) => {
+                        //Ignore if there are no messages
+                        if(displayState.type !== DisplayType.Messages) return displayState;
+
+                        const itemIndex = displayState.messages.findIndex((item) => item.localID === localID);
+                        if(itemIndex === -1) return displayState;
+
+                        const message = displayState.messages[itemIndex] as MessageItem;
+                        if(message.error === error) return displayState;
+
+                        const pendingItems = [...displayState.messages];
+                        pendingItems[itemIndex] = {
+                                ...message,
+                                error: error
+                        };
+
+                        return {type: DisplayType.Messages, messages: pendingItems};
+                });
+        }, [setDisplayState]);
 	
 	/**
 	 * Subscribes to an upload progress for an outgoing attachment message
