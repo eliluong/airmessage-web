@@ -1,9 +1,11 @@
 import CommunicationsManager from "../communicationsManager";
 import DataProxy from "../dataProxy";
-import {Conversation, ConversationItem, ConversationItemType, ConversationPreviewType, LinkedConversation, MessageItem, TapbackItem} from "../../data/blocks";
+import {Conversation, ConversationItem, ConversationPreview, LinkedConversation, MessageItem, TapbackItem} from "../../data/blocks";
 import {
         AttachmentRequestErrorCode,
         ConnectionErrorCode,
+        ConversationItemType,
+        ConversationPreviewType,
         CreateChatErrorCode,
         MessageError,
         MessageErrorCode,
@@ -62,6 +64,16 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
         constructor(dataProxy: DataProxy, auth: BlueBubblesAuthState, private readonly options: {onError?: (error: Error) => void} = {}) {
                 super(dataProxy);
                 this.auth = auth;
+        }
+
+        public override get communicationsVersion(): number[] {
+                const version = this.metadata?.server_version;
+                if(!version) return [];
+                const parts = version
+                        .split(".")
+                        .map((part) => Number.parseInt(part.replace(/[^\d]/g, ""), 10))
+                        .filter((value) => !Number.isNaN(value));
+                return parts;
         }
 
         public override connect(): void {
@@ -376,11 +388,16 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                                         this.tapbackCache.set(pending.messageGuid, tapbacks);
                                 }
 
-                                for(const item of items) {
+                                for(let index = 0; index < items.length; index++) {
+                                        const item = items[index];
                                         if(item.itemType === ConversationItemType.Message && item.guid) {
                                                 const tapbacks = this.tapbackCache.get(item.guid);
                                                 if(tapbacks) {
-                                                        (item as MessageItem).tapbacks = tapbacks.slice();
+                                                        const messageItem = item as MessageItem;
+                                                        items[index] = {
+                                                                ...messageItem,
+                                                                tapbacks: tapbacks.slice()
+                                                        };
                                                 }
                                         }
                                 }
@@ -412,7 +429,7 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                                 guid: message.guid,
                                 chatGuid: message.chats?.[0]?.guid,
                                 date: new Date(message.dateCreated),
-                                user: message.handle?.address ?? undefined,
+                                user: message.handle?.address ?? "",
                                 chatName: message.groupTitle ?? ""
                         };
                 }
@@ -448,7 +465,7 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
 
         private convertChat(chat: ChatResponse): LinkedConversation {
                 const members = (chat.participants ?? []).map((handle) => handle.address).filter(Boolean);
-                const preview = chat.lastMessage ? buildConversationPreview(chat.lastMessage) : {
+                const preview: ConversationPreview = chat.lastMessage ? buildConversationPreview(chat.lastMessage) : {
                         type: ConversationPreviewType.ChatCreation,
                         date: new Date()
                 };
@@ -513,7 +530,7 @@ function convertAttachment(attachment: AttachmentResponse) {
         };
 }
 
-function buildConversationPreview(message: MessageResponse) {
+function buildConversationPreview(message: MessageResponse): ConversationPreview {
         const attachments = (message.attachments ?? []).map((attachment) => attachment.transferName);
         return {
                 type: ConversationPreviewType.Message,
