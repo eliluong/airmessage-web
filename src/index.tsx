@@ -3,6 +3,7 @@ import {createRoot} from "react-dom/client";
 import * as Sentry from "@sentry/react";
 import SignInGate from "shared/components/SignInGate";
 import AppTheme from "./components/control/AppTheme";
+import {SettingsProvider} from "shared/components/settings/SettingsProvider";
 import {setNotificationUtils} from "shared/interface/notification/notificationUtils";
 import BrowserNotificationUtils from "shared/interface/notification/browserNotificationUtils";
 import {setPlatformUtils} from "shared/interface/platform/platformUtils";
@@ -33,9 +34,11 @@ if(WPEnv.ENVIRONMENT === "production" && "serviceWorker" in navigator) {
 //Initializing React
 const root = createRoot(document.getElementById("root")!);
 root.render(
-	<React.StrictMode>
-                <AppTheme>
-                        <SignInGate />
-                </AppTheme>
+        <React.StrictMode>
+                <SettingsProvider>
+                        <AppTheme>
+                                <SignInGate />
+                        </AppTheme>
+                </SettingsProvider>
         </React.StrictMode>
 );
