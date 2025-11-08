@@ -122,7 +122,7 @@ async function probeLegacyPasswordAuth(config: BlueBubblesAuthConfig): Promise<B
         const params = new URLSearchParams();
         params.set("password", config.password);
         if(config.deviceName) {
-                params.set("guid", config.deviceName);
+                params.set("device", config.deviceName);
         }
 
         const endpoints = ["/api/v1/ping", "/api/v1/server/info"];

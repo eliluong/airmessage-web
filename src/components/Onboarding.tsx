@@ -25,6 +25,7 @@ export interface OnboardingProps {
 
 interface ValidationState {
         serverUrl?: string;
+        serverUrlWarning?: string;
         password?: string;
 }
 
@@ -39,10 +40,20 @@ export default function Onboarding(props: OnboardingProps) {
 
         const validation = useMemo<ValidationState>(() => {
                 const result: ValidationState = {};
-                if(values.serverUrl.trim().length === 0) {
-                        result.serverUrl = "Enter the HTTPS address of your BlueBubbles server.";
-                } else if(!/^https:\/\//i.test(values.serverUrl.trim())) {
-                        result.serverUrl = "The BlueBubbles server must use HTTPS.";
+                const trimmedUrl = values.serverUrl.trim();
+                if(trimmedUrl.length === 0) {
+                        result.serverUrl = "Enter the address of your BlueBubbles server.";
+                } else {
+                        try {
+                                const url = new URL(trimmedUrl);
+                                if(url.protocol !== "https:" && url.protocol !== "http:") {
+                                        result.serverUrl = "Enter a valid HTTP or HTTPS address.";
+                                } else if(url.protocol === "http:") {
+                                        result.serverUrlWarning = "Connections over HTTP are not encrypted.";
+                                }
+                        } catch {
+                                result.serverUrl = "Enter a valid server URL.";
+                        }
                 }
 
                 if(values.password.trim().length === 0) {
@@ -104,7 +115,7 @@ export default function Onboarding(props: OnboardingProps) {
                                                 onChange={(event) => updateField("serverUrl", event.target.value)}
                                                 onBlur={() => handleBlur("serverUrl")}
                                                 error={touched.serverUrl && Boolean(validation.serverUrl)}
-                                                helperText={touched.serverUrl ? validation.serverUrl : undefined}
+                                                helperText={touched.serverUrl ? (validation.serverUrl ?? validation.serverUrlWarning) : undefined}
                                                 disabled={submitting}
                                                 fullWidth
                                         />

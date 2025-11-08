@@ -47,10 +47,10 @@ describe("legacy BlueBubbles authentication", () => {
                         legacyPasswordAuth: true
                 }));
                 expect(fetchMock).toHaveBeenCalledTimes(3);
-                expect(fetchMock.mock.calls[2][0]).toBe("https://example.com/api/v1/ping?password=secret&guid=device-guid");
+                expect(fetchMock.mock.calls[2][0]).toBe("https://example.com/api/v1/ping?password=secret&device=device-guid");
         });
 
-        test("legacy sessions append the password and guid as query parameters", async () => {
+        test("legacy sessions append the password and device name as query parameters", async () => {
                 const fetchMock = jest.fn().mockResolvedValue({
                         ok: true,
                         status: 200,
@@ -71,7 +71,7 @@ describe("legacy BlueBubbles authentication", () => {
                 const requestUrl = fetchMock.mock.calls[0][0] as string;
                 const parsed = new URL(requestUrl);
                 expect(parsed.searchParams.get("password")).toBe("secret");
-                expect(parsed.searchParams.get("guid")).toBe("device-guid");
+                expect(parsed.searchParams.get("device")).toBe("device-guid");
         });
 
         test("legacy tokens never trigger refresh", async () => {

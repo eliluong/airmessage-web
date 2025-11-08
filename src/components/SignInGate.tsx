@@ -139,7 +139,7 @@ export default function SignInGate() {
         const handleError = useCallback((error: unknown) => {
                 let message = "Unable to connect to the BlueBubbles server.";
                 if(error instanceof InvalidCertificateError) {
-                        message = "The server certificate is invalid or untrusted.";
+                        message = "The server certificate is invalid or untrusted. Try installing a trusted certificate or connecting over http:// if your network is secure.";
                 } else if(error instanceof MissingPrivateApiError) {
                         message = "This BlueBubbles server is missing required private API features.";
                 } else if(error instanceof BlueBubblesAuthError) {
