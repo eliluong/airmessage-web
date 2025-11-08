@@ -1,7 +1,7 @@
 import React, {useCallback, useContext, useEffect, useRef, useState} from "react";
 import Sidebar from "../master/Sidebar";
 import * as ConnectionManager from "../../../connection/connectionManager";
-import {ConnectionListener, warnCommVer} from "../../../connection/connectionManager";
+import {ConnectionListener} from "../../../connection/connectionManager";
 import {ConnectionErrorCode, MessageError} from "../../../data/stateCodes";
 import {Conversation} from "../../../data/blocks";
 import SnackbarProvider from "../../control/SnackbarProvider";
@@ -16,7 +16,6 @@ import DetailError from "shared/components/messaging/detail/DetailError";
 import DetailWelcome from "shared/components/messaging/detail/DetailWelcome";
 import {arrayContainsAll} from "shared/util/arrayUtils";
 import {normalizeAddress} from "shared/util/addressHelper";
-import {compareVersions} from "shared/util/versionUtils";
 import DetailThread from "shared/components/messaging/thread/DetailThread";
 import {PeopleContext} from "shared/state/peopleState";
 
@@ -33,8 +32,6 @@ export default function Messaging(props: {
         const [sidebarBanner, setSidebarBanner] = useState<ConnectionErrorCode | "connecting" | undefined>(undefined);
         const {conversations, loadConversations, addConversation, markConversationRead} =
                 useConversationState(detailPane.type === DetailType.Thread ? detailPane.conversationID : undefined, true);
-        const [needsServerUpdate, setNeedsServerUpdate] = useState(false);
-
         useEffect(() => {
                 ConnectionManager.setBlueBubblesAuth({
                         serverUrl,
@@ -126,18 +123,16 @@ export default function Messaging(props: {
 		const listener: ConnectionListener = {
 			onConnecting(): void {
 				//Checking if conversations have never been loaded
-				if(conversations === undefined) {
-					//Displaying the full-screen loading pane
-					setDetailPane({type: DetailType.Loading});
-				} else {
-					//Displaying a loading indicator on the sidebar
-					setSidebarBanner("connecting");
-				}
-				
-				setNeedsServerUpdate(false);
-			},
-			
-			onOpen(): void {
+                                if(conversations === undefined) {
+                                        //Displaying the full-screen loading pane
+                                        setDetailPane({type: DetailType.Loading});
+                                } else {
+                                        //Displaying a loading indicator on the sidebar
+                                        setSidebarBanner("connecting");
+                                }
+                        },
+
+                        onOpen(): void {
 				//Check if conversations have never been loaded
 				if(conversations === undefined) {
 					//Request conversation details
@@ -163,29 +158,21 @@ export default function Messaging(props: {
 					
 					//Fetch missed messages
 					ConnectionManager.requestMissedMessages();
-				}
-				
-				//Set if we require a server update
-				const activeCommVer = ConnectionManager.getActiveCommVer();
-				if(activeCommVer !== undefined && compareVersions(activeCommVer, warnCommVer) < 0) {
-					setNeedsServerUpdate(true);
-				}
-			},
-			
-			onClose(error: ConnectionErrorCode): void {
+                                }
+                        },
+
+                        onClose(error: ConnectionErrorCode): void {
 				//Check if conversations have never been loaded
 				if(conversations === undefined) {
 					//Display a full-screen error pane
 					setDetailPane({type: DetailType.Error, errorCode: error});
-				} else {
-					//Displaying an error in the sidebar
-					setSidebarBanner(error);
-				}
-				
-				setNeedsServerUpdate(false);
-			},
-		};
-		ConnectionManager.addConnectionListener(listener);
+                                } else {
+                                        //Displaying an error in the sidebar
+                                        setSidebarBanner(error);
+                                }
+                        },
+                };
+                ConnectionManager.addConnectionListener(listener);
 		
 		//Connect
 		if(!connectionListenerInitialized.current) {
@@ -203,7 +190,7 @@ export default function Messaging(props: {
 		}
 		
 		return () => ConnectionManager.removeConnectionListener(listener);
-	}, [conversations, setDetailPane, setSidebarBanner, navigateConversation, loadConversations, setNeedsServerUpdate]);
+        }, [conversations, setDetailPane, setSidebarBanner, navigateConversation, loadConversations]);
 	
 	let masterNode: React.ReactNode;
 	switch(detailPane.type) {
@@ -237,12 +224,11 @@ export default function Messaging(props: {
 					<Sidebar
 						conversations={conversations}
 						selectedConversation={detailPane.type === DetailType.Thread ? detailPane.conversationID : undefined}
-						onConversationSelected={navigateConversation}
-						onCreateSelected={navigateConversationCreate}
-						errorBanner={(typeof sidebarBanner === "number") ? sidebarBanner : undefined}
-						needsServerUpdate={needsServerUpdate}
-						needsPeoplePermission={peopleState.needsPermission}
-						onRequestPeoplePermission={requestPeoplePermission} />
+                                                onConversationSelected={navigateConversation}
+                                                onCreateSelected={navigateConversationCreate}
+                                                errorBanner={(typeof sidebarBanner === "number") ? sidebarBanner : undefined}
+                                                needsPeoplePermission={peopleState.needsPermission}
+                                                onRequestPeoplePermission={requestPeoplePermission} />
 				</Box>
 				
 				<Divider orientation="vertical" />

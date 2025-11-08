@@ -6,7 +6,7 @@ import ListConversation from "./ListConversation";
 import {Conversation} from "../../../data/blocks";
 import ConnectionBanner from "./ConnectionBanner";
 import {ConnectionErrorCode, FaceTimeLinkErrorCode} from "../../../data/stateCodes";
-import {AddRounded, Contacts, MoreVertRounded, SyncProblem, Update, VideoCallOutlined} from "@mui/icons-material";
+import {AddRounded, Contacts, MoreVertRounded, Update, VideoCallOutlined} from "@mui/icons-material";
 import ChangelogDialog from "../dialog/ChangelogDialog";
 import FeedbackDialog from "shared/components/messaging/dialog/FeedbackDialog";
 import SignOutDialog from "shared/components/messaging/dialog/SignOutDialog";
@@ -18,7 +18,6 @@ import SidebarBanner from "shared/components/messaging/master/SidebarBanner";
 import {SnackbarContext} from "shared/components/control/SnackbarProvider";
 import FaceTimeLinkDialog from "shared/components/messaging/dialog/FaceTimeLinkDialog";
 import {useIsFaceTimeSupported, useNonNullableCacheState} from "shared/util/hookUtils";
-import UpdateRequiredDialog from "../dialog/UpdateRequiredDialog";
 import ConversationSkeleton from "shared/components/skeleton/ConversationSkeleton";
 import {TransitionGroup} from "react-transition-group";
 
@@ -27,10 +26,9 @@ export default function Sidebar(props: {
 	selectedConversation?: number;
 	onConversationSelected: (id: number) => void;
 	onCreateSelected: () => void;
-	errorBanner?: ConnectionErrorCode;
-	needsServerUpdate?: boolean;
-	needsPeoplePermission?: boolean;
-	onRequestPeoplePermission?: () => void;
+        errorBanner?: ConnectionErrorCode;
+        needsPeoplePermission?: boolean;
+        onRequestPeoplePermission?: () => void;
 }) {
 	const displaySnackbar = useContext(SnackbarContext);
 	
@@ -53,8 +51,7 @@ export default function Sidebar(props: {
 	const [isChangelogDialog, showChangelogDialog, hideChangelogDialog] = useSidebarDialog(closeOverflowMenu);
 	const [isFeedbackDialog, showFeedbackDialog, hideFeedbackDialog] = useSidebarDialog(closeOverflowMenu);
 	const [isSignOutDialog, showSignOutDialog, hideSignOutDialog] = useSidebarDialog(closeOverflowMenu);
-	const [isRemoteUpdateDialog, showRemoteUpdateDialog, hideRemoteUpdateDialog] = useSidebarDialog();
-	const [isUpdateRequiredDialog, showUpdateRequiredDialog, hideUpdateRequiredDialog] = useSidebarDialog();
+        const [isRemoteUpdateDialog, showRemoteUpdateDialog, hideRemoteUpdateDialog] = useSidebarDialog();
 	const [faceTimeLinkDialog, setFaceTimeLinkDialog] = useState<string | undefined>(undefined);
 	
 	//Keep track of remote updates
@@ -104,8 +101,7 @@ export default function Sidebar(props: {
 			<ChangelogDialog isOpen={isChangelogDialog} onDismiss={hideChangelogDialog} />
 			<FeedbackDialog isOpen={isFeedbackDialog} onDismiss={hideFeedbackDialog} />
 			<SignOutDialog isOpen={isSignOutDialog} onDismiss={hideSignOutDialog} />
-			<RemoteUpdateDialog isOpen={isRemoteUpdateDialog} onDismiss={hideRemoteUpdateDialog} update={remoteUpdateCache} />
-			<UpdateRequiredDialog isOpen={isUpdateRequiredDialog} onDismiss={hideUpdateRequiredDialog} />
+                        <RemoteUpdateDialog isOpen={isRemoteUpdateDialog} onDismiss={hideRemoteUpdateDialog} update={remoteUpdateCache} />
 			<FaceTimeLinkDialog isOpen={faceTimeLinkDialog !== undefined} onDismiss={() => setFaceTimeLinkDialog(undefined)} link={faceTimeLinkDialog ?? ""} />
 			
 			<Toolbar>
@@ -177,15 +173,7 @@ export default function Sidebar(props: {
 					onClickButton={showRemoteUpdateDialog} />
 			)}
 			
-			{props.needsServerUpdate && (
-				<SidebarBanner
-					icon={<SyncProblem />}
-					message="Your server needs to be updated"
-					button="Details"
-					onClickButton={showUpdateRequiredDialog} />
-			)}
-			
-			{props.conversations !== undefined ? (
+                        {props.conversations !== undefined ? (
 				<List className={styles.sidebarList}>
 					<TransitionGroup>
 						{props.conversations.map((conversation) => (
