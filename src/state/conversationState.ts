@@ -1,18 +1,19 @@
 import {useCallback, useContext, useEffect, useRef, useState} from "react";
 import {
-	Conversation,
-	ConversationItem,
-	getConversationItemMixedID,
-	isLocalConversationID,
-	isRemoteConversationID,
-	LinkedConversation,
-	LocalConversationID,
-	MessageItem,
-	MessageModifier,
-	MixedConversationID,
-	RemoteConversationID
+        Conversation,
+        ConversationItem,
+        ConversationPreview,
+        getConversationItemMixedID,
+        isLocalConversationID,
+        isRemoteConversationID,
+        LinkedConversation,
+        LocalConversationID,
+        MessageItem,
+        MessageModifier,
+        MixedConversationID,
+        RemoteConversationID
 } from "shared/data/blocks";
-import {ConversationItemType, ParticipantActionType} from "shared/data/stateCodes";
+import {ConversationItemType, ConversationPreviewType, ParticipantActionType} from "shared/data/stateCodes";
 import {getPlatformUtils} from "shared/interface/platform/platformUtils";
 import {isModifierTapback, messageItemToConversationPreview} from "shared/util/conversationUtils";
 import * as ConnectionManager from "shared/connection/connectionManager";
@@ -163,13 +164,20 @@ export default function useConversationState(activeConversationID: LocalConversa
 			//Ignore if we haven't loaded conversations yet
 			if(conversations === undefined) return undefined;
 			
-			//Cloning the conversation array
-			const pendingConversationArray = [...conversations];
-			
-			for(const [chatID, conversationItems] of sortedConversationItems.entries()) {
-				//Match the conversation to a local conversation
-				const matchedConversationIndex = getConversationIndex(pendingConversationArray, chatID);
-				if(matchedConversationIndex === -1) continue;
+                        //Clone the conversation array lazily
+                        let pendingConversationArray: Conversation[] = conversations;
+                        let conversationsChanged = false;
+                        const ensurePendingArray = () => {
+                                if(!conversationsChanged) {
+                                        pendingConversationArray = [...pendingConversationArray];
+                                        conversationsChanged = true;
+                                }
+                        };
+
+                        for(const [chatID, conversationItems] of sortedConversationItems.entries()) {
+                                //Match the conversation to a local conversation
+                                const matchedConversationIndex = getConversationIndex(pendingConversationArray, chatID);
+                                if(matchedConversationIndex === -1) continue;
 				
 				//Filter out non-message items
 				const conversationMessages = conversationItems.filter((item): item is MessageItem => item.itemType === ConversationItemType.Message);
@@ -186,25 +194,30 @@ export default function useConversationState(activeConversationID: LocalConversa
                                 const hasNewIncomingMessage = latestMessage.sender !== undefined && latestMessage.date > existingPreviewDate;
 
                                 let updatedConversation = existingConversation;
-                                let conversationChanged = false;
+                                let previewChanged = false;
                                 if(shouldUpdatePreview) {
-                                        updatedConversation = {
-                                                ...updatedConversation,
-                                                preview: messageItemToConversationPreview(latestMessage)
-                                        };
-                                        conversationChanged = true;
+                                        const newPreview = messageItemToConversationPreview(latestMessage);
+                                        if(!arePreviewsEqual(existingConversation.preview, newPreview)) {
+                                                updatedConversation = {
+                                                        ...updatedConversation,
+                                                        preview: newPreview
+                                                };
+                                                previewChanged = true;
+                                        }
                                 }
 
-                                if(hasNewIncomingMessage && activeConversationID !== updatedConversation.localID) {
-                                        if(!conversationChanged) {
+                                let unreadChanged = false;
+                                if(hasNewIncomingMessage && activeConversationID !== updatedConversation.localID && !updatedConversation.unreadMessages) {
+                                        if(!previewChanged && updatedConversation === existingConversation) {
                                                 updatedConversation = {...updatedConversation};
-                                                conversationChanged = true;
                                         }
                                         updatedConversation.unreadMessages = true;
+                                        unreadChanged = true;
                                 }
 
-                                if(conversationChanged) {
-                                        if(shouldUpdatePreview) {
+                                if(previewChanged || unreadChanged) {
+                                        ensurePendingArray();
+                                        if(previewChanged) {
                                                 //Re-sort the conversation into the list
                                                 sortInsertConversation(pendingConversationArray, updatedConversation, matchedConversationIndex);
                                         } else {
@@ -212,44 +225,50 @@ export default function useConversationState(activeConversationID: LocalConversa
                                         }
                                 }
                         }
-			
-			//Applying side effects
-			for(const conversationItem of newItems) {
-				if(conversationItem.itemType === ConversationItemType.ParticipantAction) {
-					//Get the targeted conversation
-					const matchedConversationIndex = getConversationIndex(pendingConversationArray, getConversationItemMixedID(conversationItem));
-					if(matchedConversationIndex === -1) continue;
-					
-					//If we're the target, we can ignore this as we don't show up in our own copy of the member list
-					if(conversationItem.target === undefined) continue;
-					
-					//Update the conversation members
-					if(conversationItem.type === ParticipantActionType.Join) {
-						pendingConversationArray[matchedConversationIndex] = {
-							...pendingConversationArray[matchedConversationIndex],
-							members: pendingConversationArray[matchedConversationIndex].members.concat(conversationItem.target)
-						};
-					} else if(conversationItem.type === ParticipantActionType.Leave) {
-						pendingConversationArray[matchedConversationIndex] = {
-							...pendingConversationArray[matchedConversationIndex],
-							members: pendingConversationArray[matchedConversationIndex].members.filter((member) => member !== conversationItem.target)
-						};
-					}
-				} else if(conversationItem.itemType === ConversationItemType.ChatRenameAction) {
-					//Get the targeted conversation
-					const matchedConversationIndex = getConversationIndex(pendingConversationArray, getConversationItemMixedID(conversationItem));
-					if(matchedConversationIndex === -1) continue;
-					
-					//Rename the conversation
-					pendingConversationArray[matchedConversationIndex] = {
-						...pendingConversationArray[matchedConversationIndex],
-						name: conversationItem.chatName
-					};
-				}
-			}
-			
-			return pendingConversationArray;
-		});
+
+                        //Applying side effects
+                        for(const conversationItem of newItems) {
+                                if(conversationItem.itemType === ConversationItemType.ParticipantAction) {
+                                        //Get the targeted conversation
+                                        const matchedConversationIndex = getConversationIndex(pendingConversationArray, getConversationItemMixedID(conversationItem));
+                                        if(matchedConversationIndex === -1) continue;
+
+                                        //If we're the target, we can ignore this as we don't show up in our own copy of the member list
+                                        if(conversationItem.target === undefined) continue;
+
+                                        //Update the conversation members
+                                        if(conversationItem.type === ParticipantActionType.Join) {
+                                                ensurePendingArray();
+                                                pendingConversationArray[matchedConversationIndex] = {
+                                                        ...pendingConversationArray[matchedConversationIndex],
+                                                        members: pendingConversationArray[matchedConversationIndex].members.concat(conversationItem.target)
+                                                };
+                                        } else if(conversationItem.type === ParticipantActionType.Leave) {
+                                                ensurePendingArray();
+                                                pendingConversationArray[matchedConversationIndex] = {
+                                                        ...pendingConversationArray[matchedConversationIndex],
+                                                        members: pendingConversationArray[matchedConversationIndex].members.filter((member) => member !== conversationItem.target)
+                                                };
+                                        }
+                                } else if(conversationItem.itemType === ConversationItemType.ChatRenameAction) {
+                                        //Get the targeted conversation
+                                        const matchedConversationIndex = getConversationIndex(pendingConversationArray, getConversationItemMixedID(conversationItem));
+                                        if(matchedConversationIndex === -1) continue;
+
+                                        //Rename the conversation
+                                        const existingConversation = pendingConversationArray[matchedConversationIndex];
+                                        if(existingConversation.name !== conversationItem.chatName) {
+                                                ensurePendingArray();
+                                                pendingConversationArray[matchedConversationIndex] = {
+                                                        ...existingConversation,
+                                                        name: conversationItem.chatName
+                                                };
+                                        }
+                                }
+                        }
+
+                        return conversationsChanged ? pendingConversationArray : conversations;
+                });
 		
 		if(interactive) {
 			//Map the active conversation ID to a server GUID
@@ -431,6 +450,22 @@ export default function useConversationState(activeConversationID: LocalConversa
  * @param existingIndex The existing index of the conversation, which if provided,
  * will cause the conversation at this index to be removed from the list
  */
+function arePreviewsEqual(a: ConversationPreview, b: ConversationPreview): boolean {
+        if(a.type !== b.type) return false;
+        if(a.date.getTime() !== b.date.getTime()) return false;
+
+        if(a.type === ConversationPreviewType.Message && b.type === ConversationPreviewType.Message) {
+                if(a.text !== b.text) return false;
+                if(a.sendStyle !== b.sendStyle) return false;
+                if(a.attachments.length !== b.attachments.length) return false;
+                for(let i = 0; i < a.attachments.length; i++) {
+                        if(a.attachments[i] !== b.attachments[i]) return false;
+                }
+        }
+
+        return true;
+}
+
 function sortInsertConversation(array: Conversation[], conversation: Conversation, existingIndex?: number) {
 	//Remove the conversation from the list
 	if(existingIndex !== undefined) {
