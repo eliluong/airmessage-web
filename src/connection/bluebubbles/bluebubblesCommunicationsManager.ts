@@ -264,7 +264,8 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 this.lastMessageTimestamp = sorted[sorted.length - 1].dateCreated;
                 const {items, modifiers} = this.processMessages(sorted);
                 if(items.length > 0) {
-                        this.listener?.onMessageUpdate(items);
+                        const newestFirstItems = items.slice().reverse();
+                        this.listener?.onMessageUpdate(newestFirstItems);
                 }
                 if(modifiers.length > 0) {
                         this.listener?.onModifierUpdate(modifiers);
@@ -308,7 +309,7 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 }
 
                 const response: MessageQueryResponse = await queryMessages(this.auth, payload);
-                const ordered = response.data.slice().reverse();
+                const ordered = response.data.slice().sort((a, b) => b.dateCreated - a.dateCreated);
                 const {items, modifiers} = this.processMessages(ordered);
                 this.listener?.onMessageThread(chatGUID, firstMessageID, items);
                 if(modifiers.length > 0) {
