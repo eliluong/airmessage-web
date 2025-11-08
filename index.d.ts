@@ -19,9 +19,10 @@ declare module "*.md" {
 }
 
 declare const WPEnv: {
-	ENVIRONMENT: "production" | "development";
-	PACKAGE_VERSION: string;
-	RELEASE_HASH: string | undefined;
-	BUILD_DATE: number;
-	WINRT: boolean;
+        ENVIRONMENT: "production" | "development";
+        PACKAGE_VERSION: string;
+        RELEASE_HASH: string | undefined;
+        BUILD_DATE: number;
+        WINRT: boolean;
+        SENTRY_DSN?: string;
 };

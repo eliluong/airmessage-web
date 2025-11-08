@@ -4,7 +4,7 @@
 
 AirMessage lets people use iMessage on the devices they like.
 **AirMessage for web** brings iMessage to modern web browsers over a WebSocket proxy.
-Production builds are hosted on [web.airmessage.org](https://web.airmessage.org).
+Production builds are hosted on [web.airmessage.org](https://web.airmessage.org) while the project transitions toward a BlueBubbles-first experience.
 
 Planning your contribution? Check out the [BlueBubbles migration roadmap](project.md)
 for the current status, open tasks, and future ideas.
@@ -30,12 +30,14 @@ Want to explore the migration locally? Follow these steps:
    ```bash
    npm install
    ```
-3. **Configure secrets**
+3. **Configure Sentry (optional)**
+   If you want browser error reports locally or in production builds, provide a
+   Sentry DSN before starting webpack:
    ```bash
-   cp src/secrets.default.ts src/secrets.ts
+   export SENTRY_DSN="https://examplePublicKey@o0.ingest.sentry.io/0"
    ```
-   This copy step provides local encryption keys and a placeholder Sentry DSN so
-   the build can import `src/secrets.ts` without errors.
+   Without a DSN the app still builds and runs; Sentry initialization is simply
+   skipped.
 4. **Start the development server**
    ```bash
    npm start
@@ -44,10 +46,10 @@ Want to explore the migration locally? Follow these steps:
    Navigate to [http://localhost:8080](http://localhost:8080) to use the web
    client. When you're ready to create an optimized bundle, run `npm run build`.
 
-Other AirMessage repositories:
-[Server](https://github.com/airmessage/airmessage-server) |
-[Android](https://github.com/airmessage/airmessage-android) |
-[Connect (community)](https://github.com/airmessage/airmessage-connect-java)
+BlueBubbles ecosystem projects:
+[Server](https://github.com/BlueBubblesApp/bluebubbles-server) |
+[Android](https://github.com/BlueBubblesApp/bluebubbles-app) |
+[Desktop](https://github.com/BlueBubblesApp/bluebubbles-desktop-app)
 
 ## Getting started
 
@@ -57,8 +59,7 @@ AirMessage for web uses [React](https://reactjs.org) and [TypeScript](https://ww
 - [React - Getting started](https://reactjs.org/docs/getting-started.html)
 - [TypeScript for JavaScript Programmers](https://www.typescriptlang.org/docs/handbook/typescript-in-5-minutes.html)
 
-AirMessage for web uses a configuration file to associate with online services like Firebase and Sentry.
-The app will not build without a valid configuration, so to get started quickly, you can copy the `src/secrets.default.ts` file to `src/secrets.ts` to use a pre-configured Firebase project, or you may provide your own Firebase configuration file.
+AirMessage for web no longer relies on a private configuration bundle for Sentry or Firebase. Instead, expose a Sentry DSN through the `SENTRY_DSN` environment variable before invoking webpack (for example, `SENTRY_DSN=... npm run build`). During builds the DSN is injected as `WPEnv.SENTRY_DSN`; when it is missing the application simply omits Sentry initialization.
 
 To launch a development server, run `npm start`. To build a production-optimized bundle, run `npm run build`.
 
@@ -72,6 +73,6 @@ We kindly ask that you do not use AirMessage's official Connect servers with any
 
 ---
 
-Thank you for your interest in contributing to AirMessage!
+Thank you for your interest in contributing to AirMessage and the BlueBubbles transition!
 You're helping to shape the future of an open, secure messaging market.
-Should you have any questions, comments, or concerns, please shoot an email to [hello@airmessage.org](mailto:hello@airmessage.org).
+Should you have any questions, comments, or concerns, please reach out to [support@bluebubbles.app](mailto:support@bluebubbles.app).
