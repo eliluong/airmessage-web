@@ -147,15 +147,31 @@ export default function DetailThread({conversation}: {
 						
 						itemMatched = true;
 					}
-				}
-				
-				//If we didn't merge this item, add it to the end of the message list
-				if(!itemMatched) {
-					newMessages.push(newItem);
-				}
-			}
-			
-			pendingMessages.unshift(...newMessages);
+                                }
+
+                                //If we didn't merge this item, add it to the end of the message list
+                                if(!itemMatched) {
+                                        if(newItem.itemType === ConversationItemType.Message) {
+                                                const {guid: newItemGuid, serverID: newItemServerID} = newItem;
+                                                const duplicateInPending = pendingMessages.some((item) => {
+                                                        if(item.itemType !== ConversationItemType.Message) return false;
+                                                        if(newItemGuid && item.guid === newItemGuid) return true;
+                                                        if(newItemServerID !== undefined && item.serverID === newItemServerID) return true;
+                                                        return false;
+                                                });
+                                                const duplicateInNew = newMessages.some((item) => {
+                                                        if(item.itemType !== ConversationItemType.Message) return false;
+                                                        if(newItemGuid && item.guid === newItemGuid) return true;
+                                                        if(newItemServerID !== undefined && item.serverID === newItemServerID) return true;
+                                                        return false;
+                                                });
+                                                if(duplicateInPending || duplicateInNew) continue;
+                                        }
+                                        newMessages.push(newItem);
+                                }
+                        }
+
+                        pendingMessages.unshift(...newMessages);
 			
 			return {type: DisplayType.Messages, messages: pendingMessages};
 		});
