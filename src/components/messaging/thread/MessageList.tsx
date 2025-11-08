@@ -29,14 +29,14 @@ export default class MessageList extends React.Component<Props, State> {
 	};
 	
         private readonly virtuosoRef = React.createRef<VirtuosoHandle>();
-        private readonly scrollRef = React.createRef<HTMLDivElement>();
+        private scrollElement: HTMLDivElement | null = null;
         private isAtBottom = true;
         private snapshotScrollHeight = 0;
         private snapshotScrollTop = 0;
         private shouldScrollNextUpdate = false;
 
         private readonly handleScrollThreshold = () => {
-                const element = this.scrollRef.current;
+                const element = this.scrollElement;
                 if(!element) return;
 
                 if(element.scrollTop < historyLoadScrollThreshold) {
@@ -89,7 +89,7 @@ export default class MessageList extends React.Component<Props, State> {
                                                 List: this.renderList,
                                                 Header: this.props.showHistoryLoader ? HistoryLoadingProgress : undefined
                                         }}
-                                        itemContent={(index, item) => this.renderItem(index, item, readTargetIndex, deliveredTargetIndex)}
+                                        itemContent={(index: number, item: ConversationItem) => this.renderItem(index, item, readTargetIndex, deliveredTargetIndex)}
                                 />
                         </Box>
                 );
@@ -132,7 +132,7 @@ export default class MessageList extends React.Component<Props, State> {
         getSnapshotBeforeUpdate() {
                 this.shouldScrollNextUpdate = this.isAtBottom;
 
-                const element = this.scrollRef.current;
+                const element = this.scrollElement;
                 if(element) {
                         this.snapshotScrollHeight = element.scrollHeight;
                         this.snapshotScrollTop = element.scrollTop;
@@ -161,11 +161,11 @@ export default class MessageList extends React.Component<Props, State> {
                 });
         }
 
-        private readonly setScrollerRef = (element: HTMLElement | null) => {
+        private readonly setScrollerRef = (element: HTMLElement | Window | null) => {
                 const divElement = element instanceof HTMLDivElement ? element : null;
-                if(this.scrollRef.current === divElement) return;
+                if(this.scrollElement === divElement) return;
 
-                this.scrollRef.current = divElement;
+                this.scrollElement = divElement;
         };
 
         private readonly renderScroller = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>((props, ref) => {
@@ -173,9 +173,12 @@ export default class MessageList extends React.Component<Props, State> {
                 return (
                         <Box
                                 {...rest}
-                                ref={(instance) => {
-                                        if(typeof ref === "function") ref(instance);
-                                        else if(ref) (ref as React.MutableRefObject<HTMLDivElement | null>).current = instance;
+                                ref={(instance: HTMLDivElement | null) => {
+                                        if(typeof ref === "function") {
+                                                (ref as (instance: HTMLDivElement | null) => void)(instance);
+                                        } else if(ref) {
+                                                (ref as React.MutableRefObject<HTMLDivElement | null>).current = instance;
+                                        }
                                         this.setScrollerRef(instance);
                                 }}
                                 sx={{
@@ -224,7 +227,7 @@ export default class MessageList extends React.Component<Props, State> {
         };
 
         private handleItemChanges(previousItems: ConversationItem[]): void {
-                const element = this.scrollRef.current;
+                const element = this.scrollElement;
                 if(!element) return;
 
                 const previousLength = previousItems.length;
