@@ -552,25 +552,35 @@ function isReactionMessage(message: MessageResponse): boolean {
 }
 
 function mapTapback(message: MessageResponse): TapbackItem | undefined {
-        const typeCode = parseInt(message.associatedMessageType ?? "", 10);
-        if(Number.isNaN(typeCode)) return undefined;
+        const rawType = message.associatedMessageType ?? "";
+        if(rawType === "") return undefined;
 
         let isRemoval = false;
-        let normalized = typeCode;
-        if(typeCode >= TAPBACK_REMOVE_OFFSET) {
-                isRemoval = true;
-                normalized = typeCode - TAPBACK_REMOVE_OFFSET;
-        } else if(typeCode >= TAPBACK_ADD_OFFSET) {
-                normalized = typeCode - TAPBACK_ADD_OFFSET;
+        let tapbackType: TapbackType | undefined;
+
+        const typeCode = parseInt(rawType, 10);
+        if(!Number.isNaN(typeCode)) {
+                let normalized = typeCode;
+                if(typeCode >= TAPBACK_REMOVE_OFFSET) {
+                        isRemoval = true;
+                        normalized = typeCode - TAPBACK_REMOVE_OFFSET;
+                } else if(typeCode >= TAPBACK_ADD_OFFSET) {
+                        normalized = typeCode - TAPBACK_ADD_OFFSET;
+                }
+
+                // Some BlueBubbles servers already provide normalized tapback codes (0-5).
+                // Clamp the value after removing offsets so it maps correctly.
+                if(normalized >= TAPBACK_ADD_OFFSET) {
+                        normalized = normalized % TAPBACK_ADD_OFFSET;
+                }
+
+                tapbackType = mapTapbackType(normalized);
+        } else {
+                const normalizedString = rawType.startsWith("-") ? rawType.slice(1) : rawType;
+                isRemoval = rawType.startsWith("-");
+                tapbackType = mapTapbackTypeFromString(normalizedString);
         }
 
-        // Some BlueBubbles servers already provide normalized tapback codes (0-5).
-        // Clamp the value after removing offsets so it maps correctly.
-        if(normalized >= TAPBACK_ADD_OFFSET) {
-                normalized = normalized % TAPBACK_ADD_OFFSET;
-        }
-
-        const tapbackType = mapTapbackType(normalized);
         if(tapbackType === undefined) return undefined;
         const sender = message.isFromMe ? "me" : message.handle?.address ?? "unknown";
         return {
@@ -596,6 +606,26 @@ function mapTapbackType(code: number) {
                 case 4:
                         return TapbackType.Emphasis;
                 case 5:
+                        return TapbackType.Question;
+                default:
+                        return undefined;
+        }
+}
+
+function mapTapbackTypeFromString(name: string) {
+        switch(name.toLowerCase()) {
+                case "love":
+                        return TapbackType.Love;
+                case "like":
+                        return TapbackType.Like;
+                case "dislike":
+                        return TapbackType.Dislike;
+                case "laugh":
+                        return TapbackType.Laugh;
+                case "emphasize":
+                case "emphasis":
+                        return TapbackType.Emphasis;
+                case "question":
                         return TapbackType.Question;
                 default:
                         return undefined;
