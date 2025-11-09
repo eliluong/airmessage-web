@@ -38,7 +38,9 @@ import {
         fetchServerMetadata,
         pingServer,
         queryMessages,
-        sendTextMessage
+        searchMessages,
+        sendTextMessage,
+        type MessageSearchRequestOptions
 } from "./api";
 import {logBlueBubblesDebug} from "./debugLogging";
 
@@ -49,8 +51,6 @@ const TAPBACK_REMOVE_OFFSET = 3000;
 const SMS_TAPBACK_CACHE_LIMIT = 50;
 const APPLE_EPOCH_OFFSET_MS = Date.UTC(2001, 0, 1);
 const MICROSECOND_PRECISION_VERSION = [10, 13, 0];
-const ALWAYS_TRUE_TEXT_STATEMENT = "message.text IS NULL OR message.text IS NOT NULL";
-
 function parseVersionComponents(version?: string): number[] {
         if(!version) return [];
         const matches = version.match(/\d+/g);
@@ -393,7 +393,7 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 return toServerTimestamp(date, this.metadata?.os_version);
         }
 
-        private buildMessageSearchPayload(options: MessageSearchOptions, bypassPrivateApi: boolean): Record<string, unknown> {
+        private buildPrivateApiMessageSearchPayload(options: MessageSearchOptions): Record<string, unknown> {
                 const payload: Record<string, unknown> = {
                         sort: "DESC",
                         with: ["chat", "handle", "attachments"]
@@ -412,10 +412,6 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                         statement: "message.text LIKE :term ESCAPE '\\\\' COLLATE NOCASE",
                         args: {term: `%${escapedTerm}%`}
                 });
-
-                if(bypassPrivateApi) {
-                        where.push({statement: ALWAYS_TRUE_TEXT_STATEMENT});
-                }
 
                 if(options.startDate) {
                         where.push({
@@ -463,11 +459,59 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 return payload;
         }
 
+        private buildRestMessageSearchOptions(options: MessageSearchOptions): MessageSearchRequestOptions {
+                const request: MessageSearchRequestOptions = {
+                        term: options.term
+                };
+
+                if(options.limit !== undefined) {
+                        request.limit = Math.max(1, Math.floor(options.limit));
+                }
+                if(options.offset !== undefined) {
+                        request.offset = Math.max(0, Math.floor(options.offset));
+                }
+                if(options.endDate) {
+                        request.before = this.toServerTimestamp(options.endDate);
+                }
+                if(options.startDate) {
+                        request.after = this.toServerTimestamp(options.startDate);
+                }
+
+                return request;
+        }
+
+        private normalizeMessageSearchMetadata(metadata?: MessageQueryResponse["metadata"]): MessageSearchHydratedResult["metadata"] {
+                if(!metadata) return undefined;
+
+                const normalized = {
+                        offset: typeof metadata.offset === "number" ? metadata.offset : undefined,
+                        limit: typeof metadata.limit === "number" ? metadata.limit : undefined,
+                        total: typeof metadata.total === "number" ? metadata.total : undefined,
+                        count: typeof metadata.count === "number" ? metadata.count : undefined
+                };
+
+                if(normalized.offset === undefined
+                        && normalized.limit === undefined
+                        && normalized.total === undefined
+                        && normalized.count === undefined) {
+                        return undefined;
+                }
+
+                return normalized;
+        }
+
         private async performMessageSearch(options: MessageSearchOptions, bypassPrivateApi: boolean): Promise<MessageSearchHydratedResult> {
-                const payload = this.buildMessageSearchPayload(options, bypassPrivateApi);
+                if(bypassPrivateApi) {
+                        const requestOptions = this.buildRestMessageSearchOptions(options);
+                        const response = await searchMessages(this.auth, requestOptions);
+                        const {items} = this.processMessages(response.data ?? []);
+                        return {items, metadata: this.normalizeMessageSearchMetadata(response.metadata)};
+                }
+
+                const payload = this.buildPrivateApiMessageSearchPayload(options);
                 const response = await queryMessages(this.auth, payload);
                 const {items} = this.processMessages(response.data ?? []);
-                return {items, metadata: response.metadata};
+                return {items, metadata: this.normalizeMessageSearchMetadata(response.metadata)};
         }
 
 private async fetchLiteConversations(limit?: number) {
