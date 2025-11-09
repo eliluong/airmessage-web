@@ -466,7 +466,7 @@ function SearchPanel(props: SearchPanelProps) {
 				<ToggleButton value="month">30 days</ToggleButton>
 			</ToggleButtonGroup>
 
-			<Box flex={1} minHeight={0}>
+                        <Box flex={1} minHeight={0} display="flex" flexDirection="column">
 				{loading ? (
 					<Box height="100%" display="flex" alignItems="center" justifyContent="center">
 						<CircularProgress />
