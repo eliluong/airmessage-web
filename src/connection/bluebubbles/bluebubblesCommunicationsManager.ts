@@ -366,7 +366,7 @@ this.listener?.onMessageConversations(conversations);
                 const pendingReactions: PendingReaction[] = [];
                 const modifiers: TapbackItem[] = [];
                 for(const message of messages) {
-                        if(this.privateApiEnabled && isReactionMessage(message)) {
+                        if(isReactionMessage(message)) {
                                 const tapback = mapTapback(message);
                                 if(tapback) {
                                         pendingReactions.push({messageGuid: message.associatedMessageGuid!, tapback});
