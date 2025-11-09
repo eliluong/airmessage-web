@@ -57,7 +57,6 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
         private isClosed = false;
         private lastMessageTimestamp: number | undefined;
         private readonly tapbackCache = new Map<string, TapbackItem[]>();
-        private privateApiEnabled = false;
         private supportsDeliveredReceipts = false;
         private supportsReadReceipts = false;
         private readonly conversationGuidCache = new Map<string, string>();
@@ -206,7 +205,10 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                         const deliveredFlag = features?.delivered_receipts ?? true;
                         const readFlag = features?.read_receipts ?? deliveredFlag;
 
-                        this.privateApiEnabled = Boolean(privateApiFlag && helperFlag && reactionsFlag);
+                        const reactionsEnabled = Boolean(reactionsFlag);
+                        if(!reactionsEnabled) {
+                                this.tapbackCache.clear();
+                        }
                         this.supportsDeliveredReceipts = Boolean(privateApiFlag && helperFlag && deliveredFlag);
                         this.supportsReadReceipts = Boolean(privateApiFlag && helperFlag && readFlag);
                         const supportsFaceTime = false;
@@ -366,10 +368,25 @@ this.listener?.onMessageConversations(conversations);
                 const pendingReactions: PendingReaction[] = [];
                 const modifiers: TapbackItem[] = [];
                 for(const message of messages) {
-                        if(this.privateApiEnabled && isReactionMessage(message)) {
+                        console.log("[BlueBubbles] Message", {
+                                guid: message.guid,
+                                text: message.text,
+                                associatedMessageGuid: message.associatedMessageGuid,
+                                associatedMessageType: message.associatedMessageType,
+                                itemType: message.itemType,
+                                isFromMe: message.isFromMe
+                        });
+                        if(isReactionMessage(message)) {
                                 const tapback = mapTapback(message);
                                 if(tapback) {
-                                        pendingReactions.push({messageGuid: message.associatedMessageGuid!, tapback});
+                                        console.log("[BlueBubbles] Tapback", {
+                                                messageGuid: message.guid,
+                                                associatedMessageGuid: message.associatedMessageGuid,
+                                                tapbackType: tapback.tapbackType,
+                                                isAddition: tapback.isAddition,
+                                                sender: tapback.sender
+                                        });
+                                        pendingReactions.push({messageGuid: tapback.messageGuid, tapback});
                                         modifiers.push(tapback);
                                 }
                                 continue;
@@ -440,15 +457,16 @@ this.listener?.onMessageConversations(conversations);
                         };
                 }
 
+                const canonicalGuid = normalizeMessageGuid(message.guid) ?? message.guid;
                 const attachments = (message.attachments ?? []).map(convertAttachment);
                 const {status, statusDate} = computeMessageStatus(message, this.supportsDeliveredReceipts, this.supportsReadReceipts);
-                const tapbacks = this.tapbackCache.get(message.guid) ?? [];
+                const tapbacks = canonicalGuid ? (this.tapbackCache.get(canonicalGuid) ?? this.tapbackCache.get(message.guid) ?? []) : [];
                 const error = message.error !== 0 ? {code: MessageErrorCode.ServerExternal, detail: String(message.error)} : undefined;
 
                 const item: MessageItem = {
                         itemType: ConversationItemType.Message,
                         serverID: message.originalROWID,
-                        guid: message.guid,
+                        guid: canonicalGuid ?? message.guid,
                         chatGuid: message.chats?.[0]?.guid,
                         date: new Date(message.dateCreated),
                         text: message.text || undefined,
@@ -464,7 +482,11 @@ this.listener?.onMessageConversations(conversations);
                         progress: undefined
                 };
                 if(item.guid) {
-                        this.tapbackCache.set(item.guid, tapbacks.slice());
+                        const tapbackSnapshot = tapbacks.slice();
+                        this.tapbackCache.set(item.guid, tapbackSnapshot);
+                        if(message.guid && message.guid !== item.guid) {
+                                this.tapbackCache.set(message.guid, tapbackSnapshot);
+                        }
                 }
                 return item;
         }
@@ -551,22 +573,100 @@ function isReactionMessage(message: MessageResponse): boolean {
         return !!message.associatedMessageGuid && !!message.associatedMessageType;
 }
 
+interface NormalizedTapbackIdentifier {
+        code: number;
+        isRemoval: boolean;
+}
+
+const TAPBACK_STRING_CODE_MAP: Record<string, number> = {
+        love: 0,
+        heart: 0,
+        like: 1,
+        thumbsup: 1,
+        dislike: 2,
+        thumbsdown: 2,
+        laugh: 3,
+        haha: 3,
+        emphasize: 4,
+        emphasis: 4,
+        exclamation: 4,
+        question: 5,
+        questionmark: 5
+};
+
 function mapTapback(message: MessageResponse): TapbackItem | undefined {
-        const typeCode = parseInt(message.associatedMessageType ?? "", 10);
-        if(Number.isNaN(typeCode)) return undefined;
-        const isRemoval = typeCode >= TAPBACK_REMOVE_OFFSET;
-        const normalized = isRemoval ? typeCode - TAPBACK_REMOVE_OFFSET : typeCode - TAPBACK_ADD_OFFSET;
-        const tapbackType = mapTapbackType(normalized);
-        if(tapbackType === undefined) return undefined;
+        const rawType = message.associatedMessageType ?? "";
+        const normalized = normalizeTapbackIdentifier(rawType);
+        if(!normalized) {
+                console.warn("[BlueBubbles] Unknown tapback identifier", {
+                        identifier: rawType,
+                        guid: message.guid,
+                        associatedMessageGuid: message.associatedMessageGuid
+                });
+                return undefined;
+        }
+        const tapbackType = mapTapbackType(normalized.code);
+        if(tapbackType === undefined) {
+                console.warn("[BlueBubbles] Unsupported tapback code", {
+                        identifier: rawType,
+                        code: normalized.code,
+                        guid: message.guid,
+                        associatedMessageGuid: message.associatedMessageGuid
+                });
+                return undefined;
+        }
+        const normalizedGuid = normalizeMessageGuid(message.associatedMessageGuid);
+        if(!normalizedGuid) {
+                console.warn("[BlueBubbles] Tapback missing associated message GUID", {
+                        guid: message.guid,
+                        associatedMessageGuid: message.associatedMessageGuid
+                });
+                return undefined;
+        }
         const sender = message.isFromMe ? "me" : message.handle?.address ?? "unknown";
         return {
                 type: MessageModifierType.Tapback,
-                messageGuid: message.associatedMessageGuid!,
+                messageGuid: normalizedGuid,
                 messageIndex: 0,
                 sender,
-                isAddition: !isRemoval,
+                isAddition: !normalized.isRemoval,
                 tapbackType
         } as TapbackItem;
+}
+
+function normalizeTapbackIdentifier(rawType: string): NormalizedTapbackIdentifier | undefined {
+        const trimmed = rawType.trim();
+        if(trimmed.length === 0) return undefined;
+
+        const numeric = Number.parseInt(trimmed, 10);
+        if(!Number.isNaN(numeric)) {
+                const isRemoval = numeric >= TAPBACK_REMOVE_OFFSET;
+                const normalized = isRemoval ? numeric - TAPBACK_REMOVE_OFFSET : numeric - TAPBACK_ADD_OFFSET;
+                return {code: normalized, isRemoval};
+        }
+
+        let candidate = trimmed.toLowerCase();
+        candidate = candidate.replace(/^com\.apple\.messages\.tapback\./, "");
+        candidate = candidate.replace(/^tapback[-:_]?/, "");
+
+        let isRemoval = false;
+        if(candidate.startsWith("-")) {
+                isRemoval = true;
+                candidate = candidate.slice(1);
+        }
+        if(candidate.startsWith("remove-")) {
+                isRemoval = true;
+                candidate = candidate.slice("remove-".length);
+        }
+        if(candidate.endsWith("-remove")) {
+                isRemoval = true;
+                candidate = candidate.slice(0, -"-remove".length);
+        }
+
+        const collapsed = candidate.replace(/[^a-z]/g, "");
+        const mapped = TAPBACK_STRING_CODE_MAP[collapsed];
+        if(mapped === undefined) return undefined;
+        return {code: mapped, isRemoval};
 }
 
 function mapTapbackType(code: number) {
@@ -586,6 +686,28 @@ function mapTapbackType(code: number) {
                 default:
                         return undefined;
         }
+}
+
+export const __testables = {
+        mapTapback,
+        normalizeTapbackIdentifier,
+        normalizeMessageGuid
+};
+
+function normalizeMessageGuid(guid: string | null | undefined): string | undefined {
+        if(!guid) return undefined;
+        const trimmed = guid.trim();
+        if(trimmed.length === 0) return undefined;
+
+        const slashIndex = trimmed.indexOf("/");
+        if(slashIndex > 0) {
+                const prefix = trimmed.slice(0, slashIndex);
+                if(prefix.includes(":")) {
+                        return trimmed.slice(slashIndex + 1);
+                }
+        }
+
+        return trimmed;
 }
 
 function mapParticipantActionType(code: number): ParticipantActionType {
