@@ -3,7 +3,7 @@ import Sidebar from "../master/Sidebar";
 import * as ConnectionManager from "../../../connection/connectionManager";
 import {ConnectionListener} from "../../../connection/connectionManager";
 import {ConnectionErrorCode, MessageError} from "../../../data/stateCodes";
-import {Conversation} from "../../../data/blocks";
+import {Conversation, MessageSearchHit} from "../../../data/blocks";
 import SnackbarProvider from "../../control/SnackbarProvider";
 import {getNotificationUtils} from "shared/interface/notification/notificationUtils";
 import {getPlatformUtils} from "shared/interface/platform/platformUtils";
@@ -56,7 +56,7 @@ export default function Messaging(props: {
 	const navigateConversation = useCallback((conversationID: number | string) => {
 		//Ignore if conversations aren't loaded
 		if(conversations === undefined) return;
-		
+
 		//Get the conversation
 		let conversation: Conversation | undefined;
 		if(typeof conversationID === "number") {
@@ -78,6 +78,13 @@ export default function Messaging(props: {
 	const navigateConversationCreate = useCallback(() => {
 		setDetailPane({type: DetailType.Create});
 	}, [setDetailPane]);
+
+	const handleSearchResultSelected = useCallback((hit: MessageSearchHit) => {
+		const targetID = hit.message.chatLocalID ?? hit.conversationGuid ?? hit.message.chatGuid;
+		if(targetID === undefined) return;
+
+		navigateConversation(targetID);
+	}, [navigateConversation]);
 	
 	const createConversation = useCallback((conversation: Conversation) => {
 		//If we have a matching local conversation, select it
@@ -235,6 +242,7 @@ onLoadMoreConversations={loadMoreConversations}
 selectedConversation={detailPane.type === DetailType.Thread ? detailPane.conversationID : undefined}
                                                 onConversationSelected={navigateConversation}
                                                 onCreateSelected={navigateConversationCreate}
+                                                onSearchResultSelected={handleSearchResultSelected}
                                                 errorBanner={(typeof sidebarBanner === "number") ? sidebarBanner : undefined}
                                                 needsPeoplePermission={peopleState.needsPermission}
                                                 onRequestPeoplePermission={requestPeoplePermission} />
