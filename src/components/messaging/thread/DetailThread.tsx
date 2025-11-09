@@ -30,14 +30,17 @@ import {playSoundMessageOut} from "shared/util/soundUtils";
 import EventEmitter from "shared/util/eventEmitter";
 import localMessageCache from "shared/state/localMessageCache";
 import {installCancellablePromise} from "shared/util/cancellablePromise";
+import {ThreadFocusTarget, areFocusTargetsEqual} from "./types";
 
-export default function DetailThread({conversation}: {
-	conversation: Conversation
+export default function DetailThread({conversation, focusTarget}: {
+        conversation: Conversation;
+        focusTarget?: ThreadFocusTarget;
 }) {
         const [displayState, setDisplayState] = useState<DisplayState>({type: DisplayType.Loading});
         const [historyLoadState, setHistoryLoadState] = useState(HistoryLoadState.Idle);
         const displayStateRef = useRef(displayState);
         const historyLoadStateRef = useRef(historyLoadState);
+        const [focusMetadata, setFocusMetadata] = useState<ThreadFocusTarget | undefined>(undefined);
 
         useEffect(() => {
                 displayStateRef.current = displayState;
@@ -56,25 +59,28 @@ export default function DetailThread({conversation}: {
 	/**
 	 * Requests messages, and updates the display state
 	 */
-	const requestMessages = useCallback(() => {
-		if(conversation.localOnly) {
-			//Fetch messages from the cache
-			setDisplayState({type: DisplayType.Messages, messages: localMessageCache.get(conversation.localID) ?? []});
-			
-			return;
-		}
-		
-		//Set the state to loading
-		setDisplayState({type: DisplayType.Loading});
-		
-		//Fetch messages from the server
-		ConnectionManager.fetchThread(conversation.guid).then((messages) => {
-			setDisplayState({type: DisplayType.Messages, messages: messages});
-		}).catch(() => {
-			setDisplayState({type: DisplayType.Error});
-		});
-	}, [conversation, setDisplayState]);
-	const loadedThreadMessages = useRef<LocalConversationID | undefined>(undefined);
+        const requestMessages = useCallback((focus?: ThreadFocusTarget) => {
+                if(conversation.localOnly) {
+                        //Fetch messages from the cache
+                        setDisplayState({type: DisplayType.Messages, messages: localMessageCache.get(conversation.localID) ?? []});
+                        setFocusMetadata(focus);
+
+                        return;
+                }
+
+                //Set the state to loading
+                setDisplayState({type: DisplayType.Loading});
+                setFocusMetadata(focus);
+
+                //Fetch messages from the server
+                const firstMessageID = focus?.serverID !== undefined ? focus.serverID + 1 : undefined;
+                ConnectionManager.fetchThread(conversation.guid, firstMessageID).then((messages) => {
+                        setDisplayState({type: DisplayType.Messages, messages: messages});
+                }).catch(() => {
+                        setDisplayState({type: DisplayType.Error});
+                });
+        }, [conversation, setDisplayState]);
+        const loadedThreadMessages = useRef<string | undefined>(undefined);
 	
 	const requestHistoryUnsubscribeContainer = useUnsubscribeContainer([conversation.localID]);
         const requestHistory = useCallback(() => {
@@ -121,11 +127,20 @@ export default function DetailThread({conversation}: {
         }, [conversation, setDisplayState, setHistoryLoadState, requestHistoryUnsubscribeContainer, displayStateRef, historyLoadStateRef]);
 	
 	//Request messages when the conversation changes
-	useEffect(() => {
-		if(loadedThreadMessages.current === conversation.localID) return;
-		requestMessages();
-		loadedThreadMessages.current = conversation.localID;
-	}, [conversation.localID, requestMessages]);
+        const focusKey = focusTarget ? `${focusTarget.serverID ?? ""}|${focusTarget.guid ?? ""}` : "";
+        useEffect(() => {
+                const loadKey = `${conversation.localID}|${focusKey}`;
+                if(loadedThreadMessages.current === loadKey) return;
+                requestMessages(focusTarget);
+                loadedThreadMessages.current = loadKey;
+        }, [conversation.localID, focusKey, requestMessages, focusTarget]);
+
+        useEffect(() => {
+                setFocusMetadata((previous) => {
+                        if(areFocusTargetsEqual(previous, focusTarget)) return previous;
+                        return focusTarget;
+                });
+        }, [focusTarget]);
 	
         const handleMessageUpdate = useCallback((itemArray: ConversationItem[]) => {
                 const relevantItems = itemArray.filter((item) => checkMessageConversationOwnership(conversation, item));
@@ -507,12 +522,13 @@ export default function DetailThread({conversation}: {
 	let body: React.ReactNode;
 	if(displayState.type === DisplayType.Messages) {
 		body = (
-			<MessageList
-				conversation={conversation}
-				items={displayState.messages}
-				messageSubmitEmitter={messageSubmitEmitter.current}
-				showHistoryLoader={historyLoadState === HistoryLoadState.Loading}
-				onRequestHistory={requestHistory} />
+                        <MessageList
+                                conversation={conversation}
+                                items={displayState.messages}
+                                messageSubmitEmitter={messageSubmitEmitter.current}
+                                focusTarget={focusMetadata}
+                                showHistoryLoader={historyLoadState === HistoryLoadState.Loading}
+                                onRequestHistory={requestHistory} />
 		);
 	} else if(displayState.type === DisplayType.Loading) {
 		body = (
@@ -523,11 +539,11 @@ export default function DetailThread({conversation}: {
 	} else if(displayState.type === DisplayType.Error) {
 		body = (
 			<Stack height="100%" alignItems="center" justifyContent="center">
-				<Typography color="textSecondary" gutterBottom>Couldn&apos;t load this conversation</Typography>
-				<Button onClick={requestMessages}>Retry</Button>
-			</Stack>
-		);
-	}
+                                <Typography color="textSecondary" gutterBottom>Couldn&apos;t load this conversation</Typography>
+                                <Button onClick={() => requestMessages(focusMetadata)}>Retry</Button>
+                        </Stack>
+                );
+        }
 	
 	const cancelDrag = useCallback((event: React.DragEvent) => {
 		event.preventDefault();

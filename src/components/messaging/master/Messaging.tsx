@@ -17,6 +17,7 @@ import DetailWelcome from "shared/components/messaging/detail/DetailWelcome";
 import {arrayContainsAll} from "shared/util/arrayUtils";
 import {normalizeAddress} from "shared/util/addressHelper";
 import DetailThread from "shared/components/messaging/thread/DetailThread";
+import {ThreadFocusTarget} from "shared/components/messaging/thread/types";
 import {PeopleContext} from "shared/state/peopleState";
 
 export default function Messaging(props: {
@@ -53,12 +54,12 @@ export default function Messaging(props: {
                 };
         }, [serverUrl, accessToken, refreshToken, legacyPasswordAuth, deviceName]);
 	
-	const navigateConversation = useCallback((conversationID: number | string) => {
-		//Ignore if conversations aren't loaded
-		if(conversations === undefined) return;
+        const navigateConversation = useCallback((conversationID: number | string, focusTarget?: ThreadFocusTarget) => {
+                //Ignore if conversations aren't loaded
+                if(conversations === undefined) return;
 
-		//Get the conversation
-		let conversation: Conversation | undefined;
+                //Get the conversation
+                let conversation: Conversation | undefined;
 		if(typeof conversationID === "number") {
 			conversation = conversations.find((conversation) => conversation.localID == conversationID);
 		} else {
@@ -67,24 +68,32 @@ export default function Messaging(props: {
 		if(conversation === undefined) return;
 		
 		//Mark the conversation as read
-		if(conversation.unreadMessages) {
-			markConversationRead(conversation.localID);
-		}
-		
-		//Select the conversation
-		setDetailPane({type: DetailType.Thread, conversationID: conversation.localID});
-	}, [conversations, markConversationRead, setDetailPane]);
+                if(conversation.unreadMessages) {
+                        markConversationRead(conversation.localID);
+                }
+
+                //Select the conversation
+                setDetailPane({type: DetailType.Thread, conversationID: conversation.localID, focusTarget});
+        }, [conversations, markConversationRead, setDetailPane]);
 	
 	const navigateConversationCreate = useCallback(() => {
 		setDetailPane({type: DetailType.Create});
 	}, [setDetailPane]);
 
-	const handleSearchResultSelected = useCallback((hit: MessageSearchHit) => {
-		const targetID = hit.message.chatLocalID ?? hit.conversationGuid ?? hit.message.chatGuid;
-		if(targetID === undefined) return;
+        const handleSearchResultSelected = useCallback((hit: MessageSearchHit) => {
+                const targetID = hit.message.chatLocalID ?? hit.conversationGuid ?? hit.message.chatGuid;
+                if(targetID === undefined) return;
 
-		navigateConversation(targetID);
-	}, [navigateConversation]);
+                const focusTarget: ThreadFocusTarget | undefined =
+                        hit.message.guid || hit.message.serverID !== undefined
+                                ? {
+                                        guid: hit.message.guid,
+                                        serverID: hit.message.serverID
+                                }
+                                : undefined;
+
+                navigateConversation(targetID, focusTarget);
+        }, [navigateConversation]);
 	
 	const createConversation = useCallback((conversation: Conversation) => {
 		//If we have a matching local conversation, select it
@@ -95,14 +104,14 @@ export default function Messaging(props: {
 			matchingConversation = conversations?.find((existingConversation) => !existingConversation.localOnly && existingConversation.guid == conversation.guid);
 		}
 		if(matchingConversation !== undefined) {
-			setDetailPane({type: DetailType.Thread, conversationID: matchingConversation.localID});
-			return;
-		}
-		
-		//Add the new conversation and select it
-		addConversation(conversation);
-		setDetailPane({type: DetailType.Thread, conversationID: conversation.localID});
-	}, [conversations, addConversation, setDetailPane]);
+                        setDetailPane({type: DetailType.Thread, conversationID: matchingConversation.localID});
+                        return;
+                }
+
+                //Add the new conversation and select it
+                addConversation(conversation);
+                setDetailPane({type: DetailType.Thread, conversationID: conversation.localID});
+        }, [conversations, addConversation, setDetailPane]);
 	
 	const peopleState = useContext(PeopleContext);
 	
@@ -209,10 +218,10 @@ export default function Messaging(props: {
 	let masterNode: React.ReactNode;
 	switch(detailPane.type) {
 		case DetailType.Thread: {
-			const conversation: Conversation = conversations!.find((conversation) => conversation.localID === detailPane.conversationID)!;
-			masterNode = <DetailThread conversation={conversation} />;
-			break;
-		}
+                        const conversation: Conversation = conversations!.find((conversation) => conversation.localID === detailPane.conversationID)!;
+                        masterNode = <DetailThread conversation={conversation} focusTarget={detailPane.focusTarget} />;
+                        break;
+                }
 		case DetailType.Create:
 			masterNode = <DetailCreate onConversationCreated={createConversation} />;
 			break;
@@ -267,11 +276,12 @@ enum DetailType {
 }
 
 type DetailPane = {
-	type: DetailType.Create | DetailType.Loading | DetailType.Welcome;
+        type: DetailType.Create | DetailType.Loading | DetailType.Welcome;
 } | {
-	type: DetailType.Thread;
-	conversationID: number;
+        type: DetailType.Thread;
+        conversationID: number;
+        focusTarget?: ThreadFocusTarget;
 } | {
-	type: DetailType.Error;
-	errorCode: ConnectionErrorCode;
+        type: DetailType.Error;
+        errorCode: ConnectionErrorCode;
 };

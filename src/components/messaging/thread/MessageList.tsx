@@ -7,17 +7,19 @@ import {ConversationItemType, MessageStatusCode} from "../../../data/stateCodes"
 import EventEmitter from "../../../util/eventEmitter";
 import ConversationActionParticipant from "./item/ConversationActionParticipant";
 import ConversationActionRename from "./item/ConversationActionRename";
+import {ThreadFocusTarget, areFocusTargetsEqual} from "./types";
 
 interface Props {
-	conversation: Conversation;
-	items: ConversationItem[];
-	messageSubmitEmitter: EventEmitter<void>;
-	onRequestHistory: () => void;
-	showHistoryLoader?: boolean;
+        conversation: Conversation;
+        items: ConversationItem[];
+        messageSubmitEmitter: EventEmitter<void>;
+        onRequestHistory: () => void;
+        showHistoryLoader?: boolean;
+        focusTarget?: ThreadFocusTarget;
 }
 
 interface State {
-	isInThreshold: boolean;
+        isInThreshold: boolean;
 }
 
 const historyLoadScrollThreshold = 300;
@@ -32,11 +34,16 @@ export default class MessageList extends React.Component<Props, State> {
 	
 	//List scroll position snapshot values
 	private snapshotScrollHeight = 0;
-	private snapshotScrollTop = 0;
-	
-	//Used to track whether the message list should be scrolled to the bottom when the component is next updated
-	private shouldScrollNextUpdate = false;
-	
+        private snapshotScrollTop = 0;
+
+        //Used to track whether the message list should be scrolled to the bottom when the component is next updated
+        private shouldScrollNextUpdate = false;
+
+        private focusAppliedKey?: string;
+        private focusHighlightTimeout?: number;
+        private focusHighlightElement?: HTMLElement;
+        private focusHighlightOriginalBoxShadow?: string;
+
         private readonly handleScroll = (event: React.UIEvent<HTMLDivElement, UIEvent>) => {
                 if(event.currentTarget.scrollTop < historyLoadScrollThreshold) {
                         if(!this.state.isInThreshold) {
@@ -51,16 +58,18 @@ export default class MessageList extends React.Component<Props, State> {
         };
 
         shouldComponentUpdate(nextProps: Readonly<Props>, nextState: Readonly<State>): boolean {
+                const focusChanged = !areFocusTargetsEqual(nextProps.focusTarget, this.props.focusTarget);
                 return nextState.isInThreshold !== this.state.isInThreshold
                         || nextProps.items !== this.props.items
                         || nextProps.showHistoryLoader !== this.props.showHistoryLoader
                         || nextProps.conversation !== this.props.conversation
-                        || nextProps.messageSubmitEmitter !== this.props.messageSubmitEmitter;
+                        || nextProps.messageSubmitEmitter !== this.props.messageSubmitEmitter
+                        || focusChanged;
         }
-	
-	render() {
-		//The latest outgoing item with the "read" status
-		const readTargetIndex = this.props.items.findIndex((item) =>
+
+        render() {
+                //The latest outgoing item with the "read" status
+                const readTargetIndex = this.props.items.findIndex((item) =>
 			item.itemType === ConversationItemType.Message
 			&& item.sender === undefined
 			&& item.status === MessageStatusCode.Read);
@@ -123,21 +132,25 @@ export default class MessageList extends React.Component<Props, State> {
 		);
 	}
 	
-	componentDidMount() {
-		//Registering the submit listener
-		this.props.messageSubmitEmitter.subscribe(this.onMessageSubmit);
-		
-		//Scrolling to the bottom of the list
-		this.scrollToBottom(true);
-	}
-	
-	getSnapshotBeforeUpdate() {
-		this.shouldScrollNextUpdate = this.checkScrolledToBottom();
-		
-		const element = this.scrollRef.current!;
-		this.snapshotScrollHeight = element.scrollHeight;
-		this.snapshotScrollTop = element.scrollTop;
-		
+        componentDidMount() {
+                //Registering the submit listener
+                this.props.messageSubmitEmitter.subscribe(this.onMessageSubmit);
+
+                //Scrolling to the bottom of the list
+                if(this.props.focusTarget) {
+                        this.ensureFocusVisible();
+                } else {
+                        this.scrollToBottom(true);
+                }
+        }
+
+        getSnapshotBeforeUpdate() {
+                this.shouldScrollNextUpdate = !this.props.focusTarget && this.checkScrolledToBottom();
+
+                const element = this.scrollRef.current!;
+                this.snapshotScrollHeight = element.scrollHeight;
+                this.snapshotScrollTop = element.scrollTop;
+
 		return null;
 	}
 	
@@ -154,25 +167,29 @@ export default class MessageList extends React.Component<Props, State> {
 		}
 		
 		//Updating the submit emitter
-		if(this.props.messageSubmitEmitter !== prevProps.messageSubmitEmitter) {
-			prevProps.messageSubmitEmitter.unsubscribe(this.onMessageSubmit);
-			this.props.messageSubmitEmitter.subscribe(this.onMessageSubmit);
-		}
-	}
-	
-	
-	componentWillUnmount() {
-		//Unregistering the submit listener
-		this.props.messageSubmitEmitter.unsubscribe(this.onMessageSubmit);
-	}
-	
-	private readonly onMessageSubmit = () => {
-		setTimeout(() => this.scrollToBottom(), 0);
-	};
-	
-	private scrollToBottom(disableAnimation: boolean = false): void {
-		this.setScroll(this.scrollRef.current!.scrollHeight, disableAnimation);
-	}
+                if(this.props.messageSubmitEmitter !== prevProps.messageSubmitEmitter) {
+                        prevProps.messageSubmitEmitter.unsubscribe(this.onMessageSubmit);
+                        this.props.messageSubmitEmitter.subscribe(this.onMessageSubmit);
+                }
+
+                this.ensureFocusVisible();
+        }
+
+
+        componentWillUnmount() {
+                //Unregistering the submit listener
+                this.props.messageSubmitEmitter.unsubscribe(this.onMessageSubmit);
+                this.clearFocusHighlight();
+        }
+
+        private readonly onMessageSubmit = () => {
+                if(this.props.focusTarget) return;
+                setTimeout(() => this.scrollToBottom(), 0);
+        };
+
+        private scrollToBottom(disableAnimation: boolean = false): void {
+                this.setScroll(this.scrollRef.current!.scrollHeight, disableAnimation);
+        }
 	
 	private setScroll(scrollTop: number, disableAnimation: boolean = false) {
 		const element = this.scrollRef.current!;
@@ -186,10 +203,98 @@ export default class MessageList extends React.Component<Props, State> {
 		return element.scrollHeight - element.scrollTop - element.clientHeight <= 0;
 	}
 	
-	private checkScrolledToTop(): boolean {
-		const element = this.scrollRef.current!;
-		return element.scrollTop <= 0;
-	}
+        private checkScrolledToTop(): boolean {
+                const element = this.scrollRef.current!;
+                return element.scrollTop <= 0;
+        }
+
+        private ensureFocusVisible(): void {
+                if(!this.props.focusTarget) {
+                        this.focusAppliedKey = undefined;
+                        this.clearFocusHighlight();
+                        return;
+                }
+
+                const focusKey = this.getFocusKey(this.props.focusTarget);
+                if(focusKey && this.focusAppliedKey === focusKey) return;
+
+                if(this.tryScrollToFocus()) {
+                        this.focusAppliedKey = focusKey;
+                }
+        }
+
+        private tryScrollToFocus(): boolean {
+                const {focusTarget} = this.props;
+                const container = this.scrollRef.current;
+                if(!focusTarget || !container) return false;
+
+                const candidates = Array.from(
+                        container.querySelectorAll<HTMLElement>("[data-message-guid], [data-message-server-id]")
+                );
+
+                const element = candidates.find((candidate) => {
+                        if(focusTarget.guid && candidate.dataset.messageGuid === focusTarget.guid) return true;
+                        if(focusTarget.serverID !== undefined && candidate.dataset.messageServerId !== undefined) {
+                                const parsedServerID = Number(candidate.dataset.messageServerId);
+                                if(!Number.isNaN(parsedServerID) && parsedServerID === focusTarget.serverID) return true;
+                        }
+                        return false;
+                });
+
+                if(!element) return false;
+
+                const previousBehavior = container.style.scrollBehavior;
+                container.style.scrollBehavior = "auto";
+                element.scrollIntoView({block: "center"});
+                container.style.scrollBehavior = previousBehavior;
+
+                this.highlightElement(element);
+
+                return true;
+        }
+
+        private highlightElement(element: HTMLElement): void {
+                this.clearFocusHighlight();
+
+                if(element.animate) {
+                        element.animate(
+                                [
+                                        {boxShadow: "0 0 0 0 rgba(25, 118, 210, 0.6)"},
+                                        {boxShadow: "0 0 0 8px rgba(25, 118, 210, 0)"}
+                                ],
+                                {duration: 1200, easing: "ease-out"}
+                        );
+                        return;
+                }
+
+                this.focusHighlightElement = element;
+                this.focusHighlightOriginalBoxShadow = element.style.boxShadow;
+                element.style.boxShadow = "0 0 0 4px rgba(25, 118, 210, 0.6)";
+                this.focusHighlightTimeout = window.setTimeout(() => {
+                        if(!this.focusHighlightElement) return;
+                        this.focusHighlightElement.style.boxShadow = this.focusHighlightOriginalBoxShadow ?? "";
+                        this.focusHighlightElement = undefined;
+                        this.focusHighlightOriginalBoxShadow = undefined;
+                        this.focusHighlightTimeout = undefined;
+                }, 1200);
+        }
+
+        private clearFocusHighlight(): void {
+                if(this.focusHighlightTimeout !== undefined) {
+                        window.clearTimeout(this.focusHighlightTimeout);
+                        this.focusHighlightTimeout = undefined;
+                }
+                if(this.focusHighlightElement) {
+                        this.focusHighlightElement.style.boxShadow = this.focusHighlightOriginalBoxShadow ?? "";
+                        this.focusHighlightElement = undefined;
+                        this.focusHighlightOriginalBoxShadow = undefined;
+                }
+        }
+
+        private getFocusKey(target?: ThreadFocusTarget): string | undefined {
+                if(!target) return undefined;
+                return `${target.serverID ?? ""}|${target.guid ?? ""}`;
+        }
 }
 
 function HistoryLoadingProgress() {
