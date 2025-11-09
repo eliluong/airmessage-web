@@ -55,7 +55,7 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
         private metadata: ServerMetadataResponse | undefined;
         private pollTimer: ReturnType<typeof setInterval> | undefined;
         private isClosed = false;
-        private lastMessageTimestamp: number | undefined;
+        private lastMessageAnchor: {timestamp: number; originalROWID: number} | undefined;
         private readonly tapbackCache = new Map<string, TapbackItem[]>();
         private supportsDeliveredReceipts = false;
         private supportsReadReceipts = false;
@@ -143,6 +143,7 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                                 this.listener?.onModifierUpdate(modifiers);
                         }
                         this.listener?.onSendMessageResponse(requestID, undefined);
+                        this.advanceLastMessageAnchor([response.data]);
                         return response.data.guid;
                 } catch(error) {
                         const messageError = mapMessageError(error);
@@ -255,16 +256,18 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                         with: ["attachments", "chat"],
                         offset: 0
                 };
-                if(this.lastMessageTimestamp) {
-                        payload.after = this.lastMessageTimestamp;
+                if(this.lastMessageAnchor) {
+                        payload.after = this.lastMessageAnchor.timestamp;
                 }
 
                 const response = await queryMessages(this.auth, payload);
                 if(!response.data || response.data.length === 0) return;
 
-                const sorted = response.data.sort((a, b) => a.dateCreated - b.dateCreated);
-                this.lastMessageTimestamp = sorted[sorted.length - 1].dateCreated;
-                const {items, modifiers} = this.processMessages(sorted);
+                const sorted = response.data.slice().sort((a, b) => a.dateCreated - b.dateCreated);
+                const filtered = sorted.filter((message) => this.isMessageNewerThanAnchor(message));
+                if(filtered.length === 0) return;
+
+                const {items, modifiers} = this.processMessages(filtered);
                 if(items.length > 0) {
                         const newestFirstItems = items.slice().reverse();
                         this.listener?.onMessageUpdate(newestFirstItems);
@@ -272,6 +275,7 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 if(modifiers.length > 0) {
                         this.listener?.onModifierUpdate(modifiers);
                 }
+                this.advanceLastMessageAnchor(filtered);
         }
 
 private async fetchLiteConversations(limit?: number) {
@@ -314,7 +318,7 @@ this.listener?.onMessageConversations(conversations);
                 const response: MessageQueryResponse = await queryMessages(this.auth, payload);
                 const ordered = response.data.slice().sort((a, b) => b.dateCreated - a.dateCreated);
                 if(firstMessageID === undefined && ordered.length > 0) {
-                        this.lastMessageTimestamp = ordered[0].dateCreated;
+                        this.advanceLastMessageAnchor([ordered[0]]);
                 }
                 const {items, modifiers} = this.processMessages(ordered);
                 this.listener?.onMessageThread(chatGUID, firstMessageID, items);
@@ -339,6 +343,7 @@ this.listener?.onMessageConversations(conversations);
                         this.listener?.onModifierUpdate(modifiers);
                 }
                 this.listener?.onSendMessageResponse(requestID, undefined);
+                this.advanceLastMessageAnchor([response.data]);
         }
 
         private async resolveConversationTarget(target: ConversationTarget): Promise<string> {
@@ -361,6 +366,40 @@ this.listener?.onMessageConversations(conversations);
                 this.conversationGuidCache.set(key, conversation.guid);
                 this.listener?.onCreateChatResponse(requestID, undefined, conversation.guid);
                 this.listener?.onConversationUpdate([[conversation.guid, conversation]]);
+        }
+
+        private createMessageAnchor(message: MessageResponse): {timestamp: number; originalROWID: number} {
+                return {
+                        timestamp: message.dateCreated,
+                        originalROWID: message.originalROWID ?? Number.MIN_SAFE_INTEGER
+                };
+        }
+
+        private isAnchorNewer(
+                candidate: {timestamp: number; originalROWID: number},
+                reference: {timestamp: number; originalROWID: number} | undefined
+        ): boolean {
+                if(!reference) return true;
+                if(candidate.timestamp > reference.timestamp) return true;
+                if(candidate.timestamp < reference.timestamp) return false;
+                return candidate.originalROWID > reference.originalROWID;
+        }
+
+        private isMessageNewerThanAnchor(message: MessageResponse): boolean {
+                return this.isAnchorNewer(this.createMessageAnchor(message), this.lastMessageAnchor);
+        }
+
+        private advanceLastMessageAnchor(messages: MessageResponse[]): void {
+                let newestCandidate: {timestamp: number; originalROWID: number} | undefined;
+                for(const message of messages) {
+                        const candidate = this.createMessageAnchor(message);
+                        if(!newestCandidate || this.isAnchorNewer(candidate, newestCandidate)) {
+                                newestCandidate = candidate;
+                        }
+                }
+                if(newestCandidate && this.isAnchorNewer(newestCandidate, this.lastMessageAnchor)) {
+                        this.lastMessageAnchor = newestCandidate;
+                }
         }
 
         private processMessages(messages: MessageResponse[]): {items: ConversationItem[]; modifiers: TapbackItem[]} {
