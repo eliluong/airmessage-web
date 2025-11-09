@@ -48,6 +48,41 @@ const TAPBACK_ADD_OFFSET = 2000;
 const TAPBACK_REMOVE_OFFSET = 3000;
 const SMS_TAPBACK_CACHE_LIMIT = 50;
 
+const SQLITE_LIKE_SPECIAL_CHARS = /[%_\[]/g;
+
+/**
+ * Converts a JavaScript date into the timestamp format expected by the BlueBubbles
+ * REST API. Although the API documentation references seconds, the deployed service
+ * currently expects millisecond precision (matching `Date.getTime()`).
+ */
+function toBlueBubblesTimestamp(date: Date): number {
+        return date.getTime();
+}
+
+/**
+ * Escapes user-provided text for a SQLite LIKE query that looks for substring matches.
+ *
+ * SQLite doesn't reliably honor `ESCAPE` when queries are parameterized, so we translate the
+ * wildcard characters into bracket expressions instead. This allows literal matches for "%",
+ * "_", and "[" characters while still surrounding the value with "%" wildcards to perform a
+ * contains search. Characters outside of this set keep their default behavior.
+ */
+function buildSqliteLikeContainsPattern(value: string): string {
+        const escapedValue = value.replace(SQLITE_LIKE_SPECIAL_CHARS, (match) => {
+                switch(match) {
+                        case "%":
+                                return "[%]";
+                        case "_":
+                                return "[_]";
+                        case "[":
+                                return "[[]";
+                        default:
+                                return match;
+                }
+        });
+        return `%${escapedValue}%`;
+}
+
 interface PendingReaction {
         messageGuid: string;
         tapback: TapbackItem;
@@ -149,23 +184,17 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 }
 
                 const where: {statement: string; args?: Record<string, unknown>}[] = [];
-                const escapedTerm = term.replace(/([%_\\])/g, "\\$1");
+                const likeTerm = buildSqliteLikeContainsPattern(term);
                 where.push({
-                        statement: "message.text LIKE :term ESCAPE '\\\\'",
-                        args: {term: `%${escapedTerm}%`}
+                        statement: "message.text LIKE :term",
+                        args: {term: likeTerm}
                 });
 
                 if(options.startDate) {
-                        where.push({
-                                statement: "message.dateCreated >= :startDate",
-                                args: {startDate: options.startDate.getTime()}
-                        });
+                        payload.after = toBlueBubblesTimestamp(options.startDate);
                 }
                 if(options.endDate) {
-                        where.push({
-                                statement: "message.dateCreated <= :endDate",
-                                args: {endDate: options.endDate.getTime()}
-                        });
+                        payload.before = toBlueBubblesTimestamp(options.endDate);
                 }
 
                 if(options.chatGuids && options.chatGuids.length > 0) {
