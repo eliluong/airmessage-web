@@ -47,6 +47,75 @@ const DEFAULT_THREAD_PAGE_SIZE = 50;
 const TAPBACK_ADD_OFFSET = 2000;
 const TAPBACK_REMOVE_OFFSET = 3000;
 const SMS_TAPBACK_CACHE_LIMIT = 50;
+const APPLE_EPOCH_OFFSET_MS = Date.UTC(2001, 0, 1);
+const MICROSECOND_PRECISION_VERSION = [10, 13, 0];
+const ALWAYS_TRUE_TEXT_STATEMENT = "message.text IS NULL OR message.text IS NOT NULL";
+
+function parseVersionComponents(version?: string): number[] {
+        if(!version) return [];
+        const matches = version.match(/\d+/g);
+        if(!matches) return [];
+        return matches.slice(0, 3).map((part) => Number.parseInt(part, 10)).filter((value) => !Number.isNaN(value));
+}
+
+function compareVersionComponents(left: number[], right: number[]): number {
+        const length = Math.max(left.length, right.length);
+        for(let index = 0; index < length; index += 1) {
+                const a = left[index] ?? 0;
+                const b = right[index] ?? 0;
+                if(a > b) return 1;
+                if(a < b) return -1;
+        }
+        return 0;
+}
+
+function shouldUseMicrosecondPrecision(osVersion?: string): boolean {
+        const components = parseVersionComponents(osVersion);
+        if(components.length === 0) return true;
+        return compareVersionComponents(components, MICROSECOND_PRECISION_VERSION) >= 0;
+}
+
+function toServerTimestamp(date: Date, osVersion?: string): number {
+        const diffMs = date.getTime() - APPLE_EPOCH_OFFSET_MS;
+        if(!Number.isFinite(diffMs) || diffMs <= 0) {
+                return 0;
+        }
+
+        if(shouldUseMicrosecondPrecision(osVersion)) {
+                return Math.round(diffMs * 1_000_000);
+        }
+
+        return Math.round(diffMs / 1000);
+}
+
+function includesPrivateApiMessage(value: unknown): boolean {
+        if(typeof value !== "string") return false;
+        return value.toLowerCase().includes("private api");
+}
+
+function shouldRetrySearchWithoutPrivateApi(error: unknown): boolean {
+        if(error instanceof BlueBubblesApiError) {
+                if(includesPrivateApiMessage(error.message)) {
+                        return true;
+                }
+
+                const detailsMessage = (error.details as {message?: unknown; error?: unknown} | undefined)?.message;
+                if(includesPrivateApiMessage(detailsMessage)) {
+                        return true;
+                }
+
+                const detailError = (error.details as {error?: unknown} | undefined)?.error;
+                if(includesPrivateApiMessage(detailError)) {
+                        return true;
+                }
+        } else if(error instanceof Error) {
+                if(includesPrivateApiMessage(error.message)) {
+                        return true;
+                }
+        }
+
+        return false;
+}
 
 interface PendingReaction {
         messageGuid: string;
@@ -137,70 +206,21 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                         return {items: [], metadata: undefined};
                 }
 
-                const payload: Record<string, unknown> = {
-                        sort: "DESC",
-                        with: ["chat", "handle", "attachments"]
+                const normalizedOptions: MessageSearchOptions = {
+                        ...options,
+                        term
                 };
-                if(options.limit !== undefined) {
-                        payload.limit = Math.max(1, Math.floor(options.limit));
-                }
-                if(options.offset !== undefined) {
-                        payload.offset = Math.max(0, Math.floor(options.offset));
-                }
 
-                const where: {statement: string; args?: Record<string, unknown>}[] = [];
-                const escapedTerm = term.replace(/([%_\\])/g, "\\$1");
-                where.push({
-                        statement: "message.text LIKE :term ESCAPE '\\\\'",
-                        args: {term: `%${escapedTerm}%`}
-                });
+                const shouldBypassPrivateApi = !this.isPrivateApiSearchReady();
 
-                if(options.startDate) {
-                        where.push({
-                                statement: "message.dateCreated >= :startDate",
-                                args: {startDate: options.startDate.getTime()}
-                        });
+                try {
+                        return await this.performMessageSearch(normalizedOptions, shouldBypassPrivateApi);
+                } catch(error) {
+                        if(!shouldBypassPrivateApi && shouldRetrySearchWithoutPrivateApi(error)) {
+                                return await this.performMessageSearch(normalizedOptions, true);
+                        }
+                        throw error;
                 }
-                if(options.endDate) {
-                        where.push({
-                                statement: "message.dateCreated <= :endDate",
-                                args: {endDate: options.endDate.getTime()}
-                        });
-                }
-
-                if(options.chatGuids && options.chatGuids.length > 0) {
-                        const args: Record<string, string> = {};
-                        const placeholders = options.chatGuids.map((guid, index) => {
-                                const key = `chat${index}`;
-                                args[key] = guid;
-                                return `:${key}`;
-                        });
-                        where.push({
-                                statement: `chat.guid IN (${placeholders.join(", ")})`,
-                                args
-                        });
-                }
-
-                if(options.handleGuids && options.handleGuids.length > 0) {
-                        const args: Record<string, string> = {};
-                        const placeholders = options.handleGuids.map((guid, index) => {
-                                const key = `handle${index}`;
-                                args[key] = guid;
-                                return `:${key}`;
-                        });
-                        where.push({
-                                statement: `handle.guid IN (${placeholders.join(", ")})`,
-                                args
-                        });
-                }
-
-                if(where.length > 0) {
-                        payload.where = where;
-                }
-
-                const response = await queryMessages(this.auth, payload);
-                const {items} = this.processMessages(response.data ?? []);
-                return {items, metadata: response.metadata};
         }
 
         public override sendMessage(requestID: number, conversation: ConversationTarget, message: string): boolean {
@@ -360,6 +380,94 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 if(modifiers.length > 0) {
                         this.listener?.onModifierUpdate(modifiers);
                 }
+        }
+
+        private isPrivateApiSearchReady(): boolean {
+                const features = this.metadata?.features;
+                const privateApiEnabled = features?.private_api ?? this.metadata?.private_api;
+                const helperConnected = features?.helper_connected ?? this.metadata?.helper_connected;
+                return Boolean(privateApiEnabled && helperConnected);
+        }
+
+        private toServerTimestamp(date: Date): number {
+                return toServerTimestamp(date, this.metadata?.os_version);
+        }
+
+        private buildMessageSearchPayload(options: MessageSearchOptions, bypassPrivateApi: boolean): Record<string, unknown> {
+                const payload: Record<string, unknown> = {
+                        sort: "DESC",
+                        with: ["chat", "handle", "attachments"]
+                };
+
+                if(options.limit !== undefined) {
+                        payload.limit = Math.max(1, Math.floor(options.limit));
+                }
+                if(options.offset !== undefined) {
+                        payload.offset = Math.max(0, Math.floor(options.offset));
+                }
+
+                const where: {statement: string; args?: Record<string, unknown>}[] = [];
+                const escapedTerm = options.term.replace(/([%_\\])/g, "\\$1");
+                where.push({
+                        statement: "message.text LIKE :term ESCAPE '\\\\' COLLATE NOCASE",
+                        args: {term: `%${escapedTerm}%`}
+                });
+
+                if(bypassPrivateApi) {
+                        where.push({statement: ALWAYS_TRUE_TEXT_STATEMENT});
+                }
+
+                if(options.startDate) {
+                        where.push({
+                                statement: "message.date >= :startDate",
+                                args: {startDate: this.toServerTimestamp(options.startDate)}
+                        });
+                }
+                if(options.endDate) {
+                        where.push({
+                                statement: "message.date <= :endDate",
+                                args: {endDate: this.toServerTimestamp(options.endDate)}
+                        });
+                }
+
+                if(options.chatGuids && options.chatGuids.length > 0) {
+                        const args: Record<string, string> = {};
+                        const placeholders = options.chatGuids.map((guid, index) => {
+                                const key = `chat${index}`;
+                                args[key] = guid;
+                                return `:${key}`;
+                        });
+                        where.push({
+                                statement: `chat.guid IN (${placeholders.join(", ")})`,
+                                args
+                        });
+                }
+
+                if(options.handleGuids && options.handleGuids.length > 0) {
+                        const args: Record<string, string> = {};
+                        const placeholders = options.handleGuids.map((guid, index) => {
+                                const key = `handle${index}`;
+                                args[key] = guid;
+                                return `:${key}`;
+                        });
+                        where.push({
+                                statement: `handle.guid IN (${placeholders.join(", ")})`,
+                                args
+                        });
+                }
+
+                if(where.length > 0) {
+                        payload.where = where;
+                }
+
+                return payload;
+        }
+
+        private async performMessageSearch(options: MessageSearchOptions, bypassPrivateApi: boolean): Promise<MessageSearchHydratedResult> {
+                const payload = this.buildMessageSearchPayload(options, bypassPrivateApi);
+                const response = await queryMessages(this.auth, payload);
+                const {items} = this.processMessages(response.data ?? []);
+                return {items, metadata: response.metadata};
         }
 
 private async fetchLiteConversations(limit?: number) {
