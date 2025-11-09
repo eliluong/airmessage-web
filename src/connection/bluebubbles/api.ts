@@ -158,7 +158,7 @@ export async function sendTextMessage(auth: BlueBubblesAuthState, payload: Recor
 }
 
 export async function downloadAttachment(auth: BlueBubblesAuthState, guid: string, signal?: AbortSignal): Promise<Response> {
-        const requestPath = appendLegacyAuthParams(auth, `${API_ROOT}/attachment/${encodeURIComponent(guid)}`);
+        const requestPath = appendLegacyAuthParams(auth, `${API_ROOT}/attachment/${encodeURIComponent(guid)}/download`);
         const response = await fetch(buildEndpoint(auth, requestPath), {
                 method: "GET",
                 headers: {
