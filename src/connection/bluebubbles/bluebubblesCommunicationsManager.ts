@@ -52,10 +52,11 @@ const SQLITE_LIKE_SPECIAL_CHARS = /[%_\[]/g;
 
 /**
  * Converts a JavaScript date into the timestamp format expected by the BlueBubbles
- * REST API. The service expects seconds since the Unix epoch.
+ * REST API. Although the API documentation references seconds, the deployed service
+ * currently expects millisecond precision (matching `Date.getTime()`).
  */
 function toBlueBubblesTimestamp(date: Date): number {
-        return Math.floor(date.getTime() / 1000);
+        return date.getTime();
 }
 
 /**
