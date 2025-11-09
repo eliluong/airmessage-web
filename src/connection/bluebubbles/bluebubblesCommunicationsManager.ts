@@ -44,10 +44,21 @@ const POLL_INTERVAL_MS = 5000;
 const DEFAULT_THREAD_PAGE_SIZE = 50;
 const TAPBACK_ADD_OFFSET = 2000;
 const TAPBACK_REMOVE_OFFSET = 3000;
+const SMS_TAPBACK_CACHE_LIMIT = 50;
 
 interface PendingReaction {
         messageGuid: string;
         tapback: TapbackItem;
+}
+
+interface SmsTapbackCacheRecord {
+        normalizedText: string;
+        guid: string;
+}
+
+interface SmsTapbackCacheEntry {
+        map: Map<string, string[]>;
+        order: SmsTapbackCacheRecord[];
 }
 
 export default class BlueBubblesCommunicationsManager extends CommunicationsManager {
@@ -57,6 +68,7 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
         private isClosed = false;
         private lastMessageTimestamp: number | undefined;
         private readonly tapbackCache = new Map<string, TapbackItem[]>();
+        private readonly smsTapbackCache = new Map<string, SmsTapbackCacheEntry>();
         private supportsDeliveredReceipts = false;
         private supportsReadReceipts = false;
         private readonly conversationGuidCache = new Map<string, string>();
@@ -196,6 +208,7 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
         private async initialize() {
                 this.isClosed = false;
                 this.conversationGuidCache.clear();
+                this.clearSmsTapbackCache();
                 try {
                         this.metadata = await fetchServerMetadata(this.auth);
                         const features = this.metadata.features;
@@ -208,6 +221,7 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                         const reactionsEnabled = Boolean(reactionsFlag);
                         if(!reactionsEnabled) {
                                 this.tapbackCache.clear();
+                                this.clearSmsTapbackCache();
                         }
                         this.supportsDeliveredReceipts = Boolean(privateApiFlag && helperFlag && deliveredFlag);
                         this.supportsReadReceipts = Boolean(privateApiFlag && helperFlag && readFlag);
@@ -368,14 +382,40 @@ this.listener?.onMessageConversations(conversations);
                 const pendingReactions: PendingReaction[] = [];
                 const modifiers: TapbackItem[] = [];
                 for(const message of messages) {
+                        const service = getMessageService(message);
                         console.log("[BlueBubbles] Message", {
                                 guid: message.guid,
                                 text: message.text,
                                 associatedMessageGuid: message.associatedMessageGuid,
                                 associatedMessageType: message.associatedMessageType,
                                 itemType: message.itemType,
-                                isFromMe: message.isFromMe
+                                isFromMe: message.isFromMe,
+                                service
                         });
+                        const smsTapback = !message.associatedMessageGuid && isSmsService(service)
+                                ? parseSmsTapback(message)
+                                : undefined;
+                        if(smsTapback) {
+                                const targetGuid = this.resolveSmsTapbackTargetGuid(message, smsTapback, messages);
+                                if(targetGuid) {
+                                        const tapback: TapbackItem = {
+                                                type: MessageModifierType.Tapback,
+                                                messageGuid: targetGuid,
+                                                messageIndex: 0,
+                                                sender: message.isFromMe ? "me" : message.handle?.address ?? "unknown",
+                                                isAddition: smsTapback.isAddition,
+                                                tapbackType: smsTapback.tapbackType
+                                        } as TapbackItem;
+                                        pendingReactions.push({messageGuid: targetGuid, tapback});
+                                        modifiers.push(tapback);
+                                        continue;
+                                }
+                                console.warn("[BlueBubbles] Unable to resolve SMS tapback target", {
+                                        guid: message.guid,
+                                        chatGuid: message.chats?.[0]?.guid,
+                                        targetText: smsTapback.targetText
+                                });
+                        }
                         if(isReactionMessage(message)) {
                                 const tapback = mapTapback(message);
                                 if(tapback) {
@@ -430,6 +470,7 @@ this.listener?.onMessageConversations(conversations);
         }
 
         private convertMessage(message: MessageResponse): ConversationItem | undefined {
+                const service = getMessageService(message);
                 if(isGroupAction(message)) {
                         const actionType = mapParticipantActionType(message.groupActionType);
                         if(actionType === ParticipantActionType.Unknown) return undefined;
@@ -487,8 +528,82 @@ this.listener?.onMessageConversations(conversations);
                         if(message.guid && message.guid !== item.guid) {
                                 this.tapbackCache.set(message.guid, tapbackSnapshot);
                         }
+                        if(isSmsService(service) && item.chatGuid && item.text) {
+                                this.rememberSmsTapbackTarget(item.chatGuid, item.text, item.guid);
+                        }
                 }
                 return item;
+        }
+
+        private resolveSmsTapbackTargetGuid(message: MessageResponse, tapback: ParsedSmsTapback, batch: MessageResponse[]): string | undefined {
+                const chatGuid = message.chats?.[0]?.guid;
+                if(!chatGuid) return undefined;
+
+                const normalizedTarget = normalizeTapbackTargetText(tapback.targetText);
+                if(normalizedTarget.length === 0) return undefined;
+
+                let bestGuid: string | undefined;
+                let bestDate = -Infinity;
+
+                for(const candidate of batch) {
+                        if(candidate.guid === message.guid) continue;
+                        if(candidate.chats?.[0]?.guid !== chatGuid) continue;
+                        const candidateGuid = normalizeMessageGuid(candidate.guid) ?? candidate.guid;
+                        if(!candidateGuid) continue;
+                        if(!candidate.text) continue;
+                        const candidateNormalizedText = normalizeTapbackTargetText(candidate.text);
+                        if(candidateNormalizedText !== normalizedTarget) continue;
+
+                        const candidateDate = candidate.dateCreated ?? 0;
+                        if(candidateDate >= bestDate) {
+                                bestGuid = candidateGuid;
+                                bestDate = candidateDate;
+                        }
+                }
+
+                if(bestGuid) return bestGuid;
+                return this.lookupSmsTapbackTarget(chatGuid, normalizedTarget);
+        }
+
+        private lookupSmsTapbackTarget(chatGuid: string, normalizedText: string): string | undefined {
+                const entry = this.smsTapbackCache.get(chatGuid);
+                if(!entry) return undefined;
+                const guids = entry.map.get(normalizedText);
+                if(!guids || guids.length === 0) return undefined;
+                return guids[guids.length - 1];
+        }
+
+        private rememberSmsTapbackTarget(chatGuid: string, text: string, messageGuid: string) {
+                const normalizedText = normalizeTapbackTargetText(text);
+                if(normalizedText.length === 0) return;
+
+                let entry = this.smsTapbackCache.get(chatGuid);
+                if(!entry) {
+                        entry = {map: new Map<string, string[]>(), order: []};
+                        this.smsTapbackCache.set(chatGuid, entry);
+                }
+
+                let guids = entry.map.get(normalizedText);
+                if(!guids) {
+                        guids = [];
+                        entry.map.set(normalizedText, guids);
+                }
+                guids.push(messageGuid);
+                entry.order.push({normalizedText, guid: messageGuid});
+
+                while(entry.order.length > SMS_TAPBACK_CACHE_LIMIT) {
+                        const oldest = entry.order.shift();
+                        if(!oldest) break;
+                        const stored = entry.map.get(oldest.normalizedText);
+                        if(!stored) continue;
+                        const index = stored.indexOf(oldest.guid);
+                        if(index !== -1) stored.splice(index, 1);
+                        if(stored.length === 0) entry.map.delete(oldest.normalizedText);
+                }
+        }
+
+        private clearSmsTapbackCache() {
+                this.smsTapbackCache.clear();
         }
 
         private convertChat(chat: ChatResponse): LinkedConversation {
@@ -578,6 +693,12 @@ interface NormalizedTapbackIdentifier {
         isRemoval: boolean;
 }
 
+interface ParsedSmsTapback {
+        tapbackType: TapbackType;
+        isAddition: boolean;
+        targetText: string;
+}
+
 const TAPBACK_STRING_CODE_MAP: Record<string, number> = {
         love: 0,
         heart: 0,
@@ -593,6 +714,133 @@ const TAPBACK_STRING_CODE_MAP: Record<string, number> = {
         question: 5,
         questionmark: 5
 };
+
+const ZERO_WIDTH_REGEX = /[\u200B-\u200D\u2060\uFEFF]/g;
+const VARIATION_SELECTOR_REGEX = /[\uFE0E\uFE0F]/g;
+const EMOJI_MODIFIER_REGEX = /[\u{1F3FB}-\u{1F3FF}]/gu;
+const SMS_TAPBACK_QUOTE_REGEX = /^(.*?)[“"”'’]([\s\S]*)[”"'’]$/;
+
+const SMS_TAPBACK_PREFIX_MAP: Record<string, {tapbackType: TapbackType; isAddition: boolean}> = {
+        loved: {tapbackType: TapbackType.Love, isAddition: true},
+        love: {tapbackType: TapbackType.Love, isAddition: true},
+        "❤": {tapbackType: TapbackType.Love, isAddition: true},
+        liked: {tapbackType: TapbackType.Like, isAddition: true},
+        like: {tapbackType: TapbackType.Like, isAddition: true},
+        "👍": {tapbackType: TapbackType.Like, isAddition: true},
+        disliked: {tapbackType: TapbackType.Dislike, isAddition: true},
+        dislike: {tapbackType: TapbackType.Dislike, isAddition: true},
+        "👎": {tapbackType: TapbackType.Dislike, isAddition: true},
+        "laughed at": {tapbackType: TapbackType.Laugh, isAddition: true},
+        laughed: {tapbackType: TapbackType.Laugh, isAddition: true},
+        "😂": {tapbackType: TapbackType.Laugh, isAddition: true},
+        emphasized: {tapbackType: TapbackType.Emphasis, isAddition: true},
+        emphasised: {tapbackType: TapbackType.Emphasis, isAddition: true},
+        "‼": {tapbackType: TapbackType.Emphasis, isAddition: true},
+        questioned: {tapbackType: TapbackType.Question, isAddition: true},
+        question: {tapbackType: TapbackType.Question, isAddition: true},
+        "?": {tapbackType: TapbackType.Question, isAddition: true},
+        "❓": {tapbackType: TapbackType.Question, isAddition: true},
+        "removed a heart from": {tapbackType: TapbackType.Love, isAddition: false},
+        "removed heart from": {tapbackType: TapbackType.Love, isAddition: false},
+        "removed a ❤ from": {tapbackType: TapbackType.Love, isAddition: false},
+        "removed ❤ from": {tapbackType: TapbackType.Love, isAddition: false},
+        "removed a like from": {tapbackType: TapbackType.Like, isAddition: false},
+        "removed like from": {tapbackType: TapbackType.Like, isAddition: false},
+        "removed a thumbs up from": {tapbackType: TapbackType.Like, isAddition: false},
+        "removed thumbs up from": {tapbackType: TapbackType.Like, isAddition: false},
+        "removed a 👍 from": {tapbackType: TapbackType.Like, isAddition: false},
+        "removed 👍 from": {tapbackType: TapbackType.Like, isAddition: false},
+        "removed a dislike from": {tapbackType: TapbackType.Dislike, isAddition: false},
+        "removed dislike from": {tapbackType: TapbackType.Dislike, isAddition: false},
+        "removed a thumbs down from": {tapbackType: TapbackType.Dislike, isAddition: false},
+        "removed thumbs down from": {tapbackType: TapbackType.Dislike, isAddition: false},
+        "removed a 👎 from": {tapbackType: TapbackType.Dislike, isAddition: false},
+        "removed 👎 from": {tapbackType: TapbackType.Dislike, isAddition: false},
+        "removed a laugh from": {tapbackType: TapbackType.Laugh, isAddition: false},
+        "removed laugh from": {tapbackType: TapbackType.Laugh, isAddition: false},
+        "removed 😂 from": {tapbackType: TapbackType.Laugh, isAddition: false},
+        "removed an exclamation mark from": {tapbackType: TapbackType.Emphasis, isAddition: false},
+        "removed exclamation mark from": {tapbackType: TapbackType.Emphasis, isAddition: false},
+        "removed an exclamation point from": {tapbackType: TapbackType.Emphasis, isAddition: false},
+        "removed exclamation point from": {tapbackType: TapbackType.Emphasis, isAddition: false},
+        "removed an exclamation from": {tapbackType: TapbackType.Emphasis, isAddition: false},
+        "removed exclamation from": {tapbackType: TapbackType.Emphasis, isAddition: false},
+        "removed an emphasis from": {tapbackType: TapbackType.Emphasis, isAddition: false},
+        "removed emphasis from": {tapbackType: TapbackType.Emphasis, isAddition: false},
+        "removed ‼ from": {tapbackType: TapbackType.Emphasis, isAddition: false},
+        "removed a question mark from": {tapbackType: TapbackType.Question, isAddition: false},
+        "removed question mark from": {tapbackType: TapbackType.Question, isAddition: false},
+        "removed a question from": {tapbackType: TapbackType.Question, isAddition: false},
+        "removed question from": {tapbackType: TapbackType.Question, isAddition: false},
+        "removed ❓ from": {tapbackType: TapbackType.Question, isAddition: false}
+};
+
+function parseSmsTapback(message: MessageResponse): ParsedSmsTapback | undefined {
+        const text = message.text;
+        if(!text) return undefined;
+
+        const sanitized = stripInvisibleSelectors(text).trim();
+        if(sanitized.length === 0) return undefined;
+
+        const match = sanitized.match(SMS_TAPBACK_QUOTE_REGEX);
+        if(!match) return undefined;
+
+        const rawPrefix = match[1].trim();
+        const rawTarget = match[2].trim();
+        if(rawPrefix.length === 0 || rawTarget.length === 0) return undefined;
+
+        const normalizedPrefix = normalizeSmsTapbackPrefix(rawPrefix);
+        const mapping = SMS_TAPBACK_PREFIX_MAP[normalizedPrefix];
+        if(!mapping) return undefined;
+
+        const targetText = stripInvisibleSelectors(rawTarget).trim();
+        if(targetText.length === 0) return undefined;
+
+        return {
+                tapbackType: mapping.tapbackType,
+                isAddition: mapping.isAddition,
+                targetText
+        };
+}
+
+function normalizeTapbackTargetText(text: string): string {
+        return stripInvisibleSelectors(text).trim();
+}
+
+function normalizeSmsTapbackPrefix(prefix: string): string {
+        const stripped = stripInvisibleSelectors(prefix);
+        const withoutModifiers = removeEmojiModifiers(stripped);
+        return withoutModifiers.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function stripInvisibleSelectors(text: string): string {
+        return text.replace(ZERO_WIDTH_REGEX, "").replace(VARIATION_SELECTOR_REGEX, "");
+}
+
+function removeEmojiModifiers(text: string): string {
+        return text.replace(EMOJI_MODIFIER_REGEX, "");
+}
+
+function getMessageService(message: MessageResponse): string | undefined {
+        const handleService = message.handle?.service?.trim();
+        if(handleService) return handleService;
+
+        const participants = message.chats?.[0]?.participants;
+        if(participants) {
+                for(const participant of participants) {
+                        const participantService = participant.service?.trim();
+                        if(participantService) return participantService;
+                }
+        }
+
+        return undefined;
+}
+
+function isSmsService(service: string | undefined): boolean {
+        if(!service) return false;
+        const normalized = service.trim().toLowerCase();
+        return normalized === "sms" || normalized === "mms" || normalized === "sms/mms";
+}
 
 function mapTapback(message: MessageResponse): TapbackItem | undefined {
         const rawType = message.associatedMessageType ?? "";
