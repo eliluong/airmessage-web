@@ -756,7 +756,6 @@ this.listener?.onMessageConversations(conversations);
                                 if(value) {
                                         received += value.length;
                                         const chunk = value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength);
-                                        accumulator.push(chunk);
                                         this.listener?.onFileRequestData(requestID, chunk);
                                 }
                         }
