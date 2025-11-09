@@ -122,6 +122,7 @@ export default function DetailThread({conversation, focusTarget}: {
         const displayStateRef = useRef(displayState);
         const historyLoadStateRef = useRef(historyLoadState);
         const futureLoadStateRef = useRef(futureLoadState);
+        const highestLoadedServerIDRef = useRef<number | undefined>(undefined);
         const [focusMetadata, setFocusMetadata] = useState<ThreadFocusTarget | undefined>(undefined);
 
         useEffect(() => {
@@ -145,12 +146,15 @@ export default function DetailThread({conversation, focusTarget}: {
 	 * Requests messages, and updates the display state
 	 */
         const requestMessages = useCallback((focus?: ThreadFocusTarget) => {
+                highestLoadedServerIDRef.current = undefined;
+
                 if(conversation.localOnly) {
                         const messages = localMessageCache.get(conversation.localID) ?? [];
                         const metadata = metadataFromItems(messages);
                         setDisplayState({type: DisplayType.Messages, messages, metadata});
                         setHistoryLoadState(HistoryLoadState.Complete);
                         setFutureLoadState(FutureLoadState.Complete);
+                        highestLoadedServerIDRef.current = metadata?.newestServerID;
                         setFocusMetadata(focus);
 
                         return;
@@ -166,6 +170,12 @@ export default function DetailThread({conversation, focusTarget}: {
                         ConnectionManager.fetchThread(conversation.guid).then((result) => {
                                 const metadata = mergeThreadFetchMetadata([result], result.items);
                                 setDisplayState({type: DisplayType.Messages, messages: result.items, metadata});
+                                const newestServerID = metadata?.newestServerID
+                                        ?? result.metadata?.newestServerID
+                                        ?? metadataFromItems(result.items)?.newestServerID;
+                                if(newestServerID !== undefined) {
+                                        highestLoadedServerIDRef.current = newestServerID;
+                                }
                         }).catch(() => {
                                 setDisplayState({type: DisplayType.Error});
                         });
@@ -187,6 +197,15 @@ export default function DetailThread({conversation, focusTarget}: {
                         const combinedItems = dedupeAndSortNewestFirst([beforeResult.items, afterResult.items]);
                         const metadata = mergeThreadFetchMetadata([beforeResult, afterResult], combinedItems);
                         setDisplayState({type: DisplayType.Messages, messages: combinedItems, metadata});
+
+                        const afterMetadata = metadataFromItems(afterResult.items);
+                        if(afterMetadata?.newestServerID !== undefined) {
+                                highestLoadedServerIDRef.current = afterMetadata.newestServerID;
+                        } else if(focus?.serverID !== undefined) {
+                                highestLoadedServerIDRef.current = focus.serverID;
+                        } else if(metadata?.newestServerID !== undefined) {
+                                highestLoadedServerIDRef.current = metadata.newestServerID;
+                        }
                 }).catch(() => {
                         setDisplayState({type: DisplayType.Error});
                 });
@@ -261,7 +280,9 @@ export default function DetailThread({conversation, focusTarget}: {
                 const currentMetadata = currentDisplayState.metadata;
                 const displayStateMessages = currentDisplayState.messages;
                 const fallbackAnchor = displayStateMessages[0]?.serverID;
-                const anchorServerID = currentMetadata?.newestServerID ?? fallbackAnchor;
+                const anchorServerID = highestLoadedServerIDRef.current
+                        ?? currentMetadata?.newestServerID
+                        ?? fallbackAnchor;
 
                 if(anchorServerID === undefined) {
                         setFutureLoadState(FutureLoadState.Complete);
@@ -286,6 +307,15 @@ export default function DetailThread({conversation, focusTarget}: {
                                 );
 
                                 if(result.items.length === 0) return;
+
+                                const futureMetadata = metadataFromItems(result.items);
+                                if(futureMetadata?.newestServerID !== undefined) {
+                                        const {newestServerID} = futureMetadata;
+                                        if(highestLoadedServerIDRef.current === undefined
+                                                || newestServerID > highestLoadedServerIDRef.current) {
+                                                highestLoadedServerIDRef.current = newestServerID;
+                                        }
+                                }
 
                                 setDisplayState((displayState) => {
                                         if(displayState.type !== DisplayType.Messages) return displayState;
