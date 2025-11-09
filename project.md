@@ -1,71 +1,41 @@
-# BlueBubbles migration roadmap
+# BlueBubbles migration progress
 
-This document tracks the BlueBubbles transport migration for AirMessage Web.
-It summarizes what has already landed, what still blocks parity with the
-legacy Connect workflow, and ideas worth exploring once the core experience is
-solid.
+This roadmap tracks the BlueBubbles transport work that landed after the fork. Pull request numbers match the upstream GitHub IDs; missing numbers were not merged into this branch.
 
-## Completed work
-
-- **BlueBubbles-first onboarding and session storage.** Contributors introduced a
-  new onboarding surface that collects a BlueBubbles server URL, API password,
-  and optional device label, and validates common mistakes before submitting to
-  the server. The paired sign-in gate persists session credentials in secure
-  storage, refreshes expiring tokens, and funnels the authenticated session into
-  the existing messaging UI. 【F:src/components/Onboarding.tsx†L13-L106】【F:src/components/SignInGate.tsx†L1-L207】
-- **BlueBubbles REST communications pipeline.** The connection manager now
-  instantiates dedicated BlueBubbles data proxy and communications manager
-  classes when BlueBubbles auth is configured. The communications manager
-  handles metadata bootstrapping, chat and thread retrieval, message send and
-  attachment uploads over the REST API, and reconciles tapbacks delivered via
-  private API polling. 【F:src/connection/connectionManager.ts†L64-L110】【F:src/connection/connectionManager.ts†L492-L509】【F:src/connection/bluebubbles/bluebubblesCommunicationsManager.ts†L37-L210】
-- **Authentication utilities.** Shared helpers normalize server URLs, surface
-  certificate and private API errors, and support register/login/refresh flows
-  against both the new `/api/v1/auth/*` endpoints and legacy fallbacks. 【F:src/util/bluebubblesAuth.ts†L1-L119】【F:src/util/bluebubblesAuth.ts†L123-L197】
+## Completed pull requests since fork
+1. **PR #1 – Remove Firebase and Google integrations**: Introduced a BlueBubbles-centric onboarding form and sign-in gate that validate server credentials, persist sessions securely, and feed the messaging UI. 【F:src/components/Onboarding.tsx†L1-L165】【F:src/components/SignInGate.tsx†L1-L260】
+2. **PR #2 – Implement BlueBubbles communications manager**: Added the REST transport, connection lifecycle wiring, and event emitters that hydrate chats, threads, and updates from BlueBubbles servers. 【F:src/connection/bluebubbles/bluebubblesCommunicationsManager.ts†L1-L210】【F:src/connection/connectionManager.ts†L1-L120】
+3. **PR #3 – Add the migration roadmap**: Published this living roadmap so contributors can understand the BlueBubbles state of play. 【F:project.md†L1-L200】
+4. **PR #4 – Refresh contributor documentation**: Updated the README to highlight the migration plan, cloning steps, and environment-based Sentry configuration. 【F:README.md†L1-L64】
+5. **PR #5 – Fix invalid host header errors**: Configured the webpack dev server to bind to `0.0.0.0` and accept forwarded hosts, unblocking remote development. 【F:webpack.config.js†L10-L26】
+6. **PR #6 – Refactor secure storage for crypto fallbacks**: Hardened secure storage helpers to detect browser crypto support, fall back gracefully, and expose BlueBubbles credential keys. 【F:src/util/secureStorageUtils.ts†L1-L187】
+7. **PR #7 – Remove legacy tracking scripts**: Simplified the HTML shell so it only loads the compiled bundle, eliminating the deprecated analytics tag. 【F:public/index.html†L1-L26】
+8. **PR #8 – Refactor Sentry integration and secrets**: Loaded Sentry settings from build-time environment variables and documented the opt-in workflow. 【F:src/index.tsx†L1-L44】【F:README.md†L33-L64】
+9. **PR #9 – Extend BlueBubbles auth for legacy servers**: Added password-based probing and metadata so clients can authenticate against legacy BlueBubbles deployments. 【F:src/util/bluebubblesAuth.ts†L121-L218】
+10. **PR #10 – Investigate BlueBubbles login errors**: Improved token refresh, error handling, and persistence logic in the sign-in gate to recover from mismatched auth flows. 【F:src/components/SignInGate.tsx†L52-L215】
+11. **PR #11 – Adjust message ordering in the BlueBubbles communications manager**: Normalized thread fetches and polling so message updates arrive in newest-first order. 【F:src/connection/bluebubbles/bluebubblesCommunicationsManager.ts†L333-L412】
+12. **PR #12 – Fix duplicate message handling**: Normalized BlueBubbles GUIDs, cached tapbacks, and filtered duplicates when hydrating message batches. 【F:src/connection/bluebubbles/bluebubblesCommunicationsManager.ts†L454-L610】
+13. **PR #13 – Investigate notification sound issues**: Guarded conversation preview lookups, unread state, and notification playback to avoid redundant alerts. 【F:src/state/conversationState.ts†L96-L320】
+14. **PR #14 – Remove unused update-related code**: Simplified the connection error dialog to focus on recovery and reconfiguration instead of the old update prompts. 【F:src/components/messaging/detail/DetailError.tsx†L1-L180】
+15. **PR #17 – Add settings item to the menu icon**: Exposed the settings dialog in the sidebar overflow menu so users can tweak local preferences. 【F:src/components/messaging/master/Sidebar.tsx†L54-L205】
+16. **PR #18 – Optimize message fetching and rendering**: Reworked conversation state bookkeeping to merge new items efficiently, update previews, and manage unread badges. 【F:src/state/conversationState.ts†L96-L320】
+17. **PR #22 – Add initial load count for conversation settings**: Persisted the conversation chunk size in settings and surfaced a UI to tune lazy loading. 【F:src/components/settings/SettingsProvider.tsx†L1-L171】【F:src/components/messaging/dialog/SettingsDialog.tsx†L26-L142】
+18. **PR #23 – Optimize MessageList rendering**: Added targeted `shouldComponentUpdate` guards and scroll snapshots to the thread list to reduce unnecessary renders. 【F:src/components/messaging/thread/MessageList.tsx†L25-L193】
+19. **PR #25 – Add instrumentation and extend tapback parsing**: Introduced BlueBubbles debug logging and richer reaction mapping to diagnose tapback payloads. 【F:src/connection/bluebubbles/debugLogging.ts†L1-L20】【F:src/connection/bluebubbles/bluebubblesCommunicationsManager.ts†L454-L505】
+20. **PR #26 – Add hover information for tapback sender**: Displayed sender tooltips on tapback chips to clarify who reacted. 【F:src/components/messaging/thread/item/bubble/TapbackChip.tsx†L17-L78】
+21. **PR #28 – Add message service helpers and extend processing**: Detected SMS transports, parsed wrapped tapbacks, and hardened attachment downloads in the BlueBubbles transport. 【F:src/connection/bluebubbles/bluebubblesCommunicationsManager.ts†L454-L686】
+22. **PR #29 – Augment bootstrap flow for conversation prefetching**: Prefetched conversation lists after connection and manual loads to keep the sidebar populated. 【F:src/state/conversationState.ts†L469-L538】
+23. **PR #30 – Add debug setting for console messages**: Added a developer toggle that enables or silences BlueBubbles debug logging while persisting the choice locally. 【F:src/components/settings/SettingsProvider.tsx†L1-L171】【F:src/components/messaging/dialog/SettingsDialog.tsx†L42-L142】
+24. **PR #31 – Add message search functionality to BlueBubbles**: Wired the REST `/message/query` endpoint into the connection manager and message-search hook with SQL escaping and user-facing errors. 【F:src/connection/bluebubbles/bluebubblesCommunicationsManager.ts†L134-L205】【F:src/connection/connectionManager.ts†L646-L671】【F:src/state/useMessageSearch.ts†L1-L112】
 
 ## Outstanding integration gaps
-
-- **Live updates.** The current BlueBubbles transport polls the REST API every
-  five seconds for new messages because there is no push channel yet. We still
-  need to evaluate socket or server-sent event options so message updates arrive
-  instantly and polling intervals can be relaxed. 【F:src/connection/bluebubbles/bluebubblesCommunicationsManager.ts†L30-L117】【F:src/connection/bluebubbles/bluebubblesCommunicationsManager.ts†L218-L276】
-- **People data and contact permissions.** When running under BlueBubbles
-  authentication the app disables the contact sync prompt and falls back to a
-  “reconfigure” flow. We should design a BlueBubbles-compatible people data
-  story or hide people-centric UI affordances. 【F:src/components/messaging/master/Messaging.tsx†L60-L89】
-- **Conversation bootstrap for ad-hoc chats.** Creating a new chat caches the
-  resolved GUID locally, but the transport currently cannot resolve an unlinked
-  conversation without that cache entry. Improving lookup logic or exposing a
-  helper endpoint will unblock more seamless compose experiences. 【F:src/connection/bluebubbles/bluebubblesCommunicationsManager.ts†L300-L362】
-- **Retrieval APIs parity.** Time/ID-based history retrieval hooks are stubbed
-  out because the REST API lacks equivalent endpoints. Aligning with BlueBubbles
-  capabilities or updating the backend would let us reuse the legacy fetch
-  pathways for advanced history recovery. 【F:src/connection/bluebubbles/bluebubblesCommunicationsManager.ts†L184-L215】
+- **Live updates**: The REST transport still polls every five seconds; we should evaluate push channels or server-sent events to deliver updates instantly. 【F:src/connection/bluebubbles/bluebubblesCommunicationsManager.ts†L333-L364】
+- **People data and contact permissions**: BlueBubbles-authenticated sessions currently surface a reconfigure flow instead of enabling contacts, so we need a BlueBubbles-compatible contacts story. 【F:src/components/messaging/master/Messaging.tsx†L100-L125】
+- **Conversation bootstrap for ad-hoc chats**: Creating new chats relies on cached GUIDs because the transport cannot yet resolve unlinked conversations on demand. 【F:src/connection/bluebubbles/bluebubblesCommunicationsManager.ts†L432-L452】
+- **Retrieval API parity**: Time/ID-based history retrieval is still stubbed because the REST API lacks equivalent endpoints, limiting recovery for deep history. 【F:src/connection/bluebubbles/bluebubblesCommunicationsManager.ts†L385-L410】
 
 ## Future enhancements
-
-These items are not prerequisites for launch but will improve parity and user
-experience.
-
-- **Search across message history.** The BlueBubbles API already exposes a
-  flexible message query endpoint. Wiring that into the global search UI would
-  restore message lookup for migrated users. 【F:src/connection/bluebubbles/api.ts†L89-L140】
-- **Typing indicators and presence.** Server metadata advertises optional typing
-  indicator support, but the client does not yet subscribe to or render those
-  events. Investigating how BlueBubbles signals typing state would let us expose
-  presence cues again. 【F:src/connection/bluebubbles/types.ts†L1-L45】
-- **Richer delivery state feedback.** The transport already checks whether the
-  server’s private API and read/delivered receipt features are enabled. Surfacing
-  that state in the UI—and gracefully degrading when unavailable—will improve
-  trust in the migration. 【F:src/connection/bluebubbles/bluebubblesCommunicationsManager.ts†L117-L160】
-- **Attachment lifecycle polish.** Upload flows now emit updates when the REST
-  API returns the created message, but we still rely on polling to backfill
-  metadata and tapbacks. Tightening the attachment progress UX and caching
-  server-provided metadata will smooth the experience. 【F:src/connection/bluebubbles/bluebubblesCommunicationsManager.ts†L210-L360】
-
-## How to contribute
-
-Pick an outstanding item above, open an issue or PR, and drop a note in the new
-PR template so others know the migration area you touched. If you are starting a
-larger feature (live updates, search, typing), please propose an implementation
-outline in an issue first so the community can coordinate backend changes.
+- **Typing indicators and presence**: The server advertises typing indicator support, but the client does not subscribe or render those events yet. 【F:src/connection/bluebubbles/types.ts†L1-L24】
+- **Richer delivery state feedback**: Delivered/read receipt support is detected but not exposed in the UI; surfacing those states would improve confidence. 【F:src/connection/bluebubbles/bluebubblesCommunicationsManager.ts†L320-L370】
+- **Attachment lifecycle polish**: Attachment uploads and downloads still rely on polling, and we could expose better progress/status feedback. 【F:src/connection/bluebubbles/bluebubblesCommunicationsManager.ts†L414-L610】
+- **Advanced message search UX**: The REST integration returns metadata, but the UI does not yet expose paging or filters beyond the basic hook. 【F:src/state/useMessageSearch.ts†L1-L112】
