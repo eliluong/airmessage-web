@@ -27,6 +27,7 @@ This roadmap tracks the BlueBubbles transport work that landed after the fork. P
 22. **PR #29 – Augment bootstrap flow for conversation prefetching**: Prefetched conversation lists after connection and manual loads to keep the sidebar populated. 【F:src/state/conversationState.ts†L469-L538】
 23. **PR #30 – Add debug setting for console messages**: Added a developer toggle that enables or silences BlueBubbles debug logging while persisting the choice locally. 【F:src/components/settings/SettingsProvider.tsx†L1-L171】【F:src/components/messaging/dialog/SettingsDialog.tsx†L42-L142】
 24. **PR #31 – Add message search functionality to BlueBubbles**: Wired the REST `/message/query` endpoint into the connection manager and message-search hook with SQL escaping and user-facing errors. 【F:src/connection/bluebubbles/bluebubblesCommunicationsManager.ts†L134-L205】【F:src/connection/connectionManager.ts†L646-L671】【F:src/state/useMessageSearch.ts†L1-L112】
+25. **PR #32 – Add sidebar message search UI**: Added a toolbar toggle, dedicated search panel, and result list that ties into the debounced hook so users can filter by time range and jump to matching threads. 【F:src/components/messaging/master/Sidebar.tsx†L55-L372】【F:src/components/messaging/master/Messaging.tsx†L41-L113】
 
 ## Outstanding integration gaps
 - **Live updates**: The REST transport still polls every five seconds; we should evaluate push channels or server-sent events to deliver updates instantly. 【F:src/connection/bluebubbles/bluebubblesCommunicationsManager.ts†L333-L364】
@@ -38,4 +39,4 @@ This roadmap tracks the BlueBubbles transport work that landed after the fork. P
 - **Typing indicators and presence**: The server advertises typing indicator support, but the client does not subscribe or render those events yet. 【F:src/connection/bluebubbles/types.ts†L1-L24】
 - **Richer delivery state feedback**: Delivered/read receipt support is detected but not exposed in the UI; surfacing those states would improve confidence. 【F:src/connection/bluebubbles/bluebubblesCommunicationsManager.ts†L320-L370】
 - **Attachment lifecycle polish**: Attachment uploads and downloads still rely on polling, and we could expose better progress/status feedback. 【F:src/connection/bluebubbles/bluebubblesCommunicationsManager.ts†L414-L610】
-- **Advanced message search UX**: The REST integration returns metadata, but the UI does not yet expose paging or filters beyond the basic hook. 【F:src/state/useMessageSearch.ts†L1-L112】
+- **Advanced message search UX**: Build on the new sidebar search panel by surfacing pagination controls and richer filtering powered by the hook metadata. 【F:src/state/useMessageSearch.ts†L1-L112】【F:src/components/messaging/master/Sidebar.tsx†L287-L372】
