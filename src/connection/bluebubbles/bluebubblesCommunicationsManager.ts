@@ -57,7 +57,6 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
         private isClosed = false;
         private lastMessageTimestamp: number | undefined;
         private readonly tapbackCache = new Map<string, TapbackItem[]>();
-        private privateApiEnabled = false;
         private supportsDeliveredReceipts = false;
         private supportsReadReceipts = false;
         private readonly conversationGuidCache = new Map<string, string>();
@@ -206,7 +205,10 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                         const deliveredFlag = features?.delivered_receipts ?? true;
                         const readFlag = features?.read_receipts ?? deliveredFlag;
 
-                        this.privateApiEnabled = Boolean(privateApiFlag && helperFlag && reactionsFlag);
+                        const reactionsEnabled = Boolean(reactionsFlag);
+                        if(!reactionsEnabled) {
+                                this.tapbackCache.clear();
+                        }
                         this.supportsDeliveredReceipts = Boolean(privateApiFlag && helperFlag && deliveredFlag);
                         this.supportsReadReceipts = Boolean(privateApiFlag && helperFlag && readFlag);
                         const supportsFaceTime = false;
@@ -374,7 +376,7 @@ this.listener?.onMessageConversations(conversations);
                                 itemType: message.itemType,
                                 isFromMe: message.isFromMe
                         });
-                        if(this.privateApiEnabled && isReactionMessage(message)) {
+                        if(isReactionMessage(message)) {
                                 const tapback = mapTapback(message);
                                 if(tapback) {
                                         console.log("[BlueBubbles] Tapback", {
@@ -384,7 +386,7 @@ this.listener?.onMessageConversations(conversations);
                                                 isAddition: tapback.isAddition,
                                                 sender: tapback.sender
                                         });
-                                        pendingReactions.push({messageGuid: message.associatedMessageGuid!, tapback});
+                                        pendingReactions.push({messageGuid: tapback.messageGuid, tapback});
                                         modifiers.push(tapback);
                                 }
                                 continue;
@@ -455,15 +457,16 @@ this.listener?.onMessageConversations(conversations);
                         };
                 }
 
+                const canonicalGuid = normalizeMessageGuid(message.guid) ?? message.guid;
                 const attachments = (message.attachments ?? []).map(convertAttachment);
                 const {status, statusDate} = computeMessageStatus(message, this.supportsDeliveredReceipts, this.supportsReadReceipts);
-                const tapbacks = this.tapbackCache.get(message.guid) ?? [];
+                const tapbacks = canonicalGuid ? (this.tapbackCache.get(canonicalGuid) ?? this.tapbackCache.get(message.guid) ?? []) : [];
                 const error = message.error !== 0 ? {code: MessageErrorCode.ServerExternal, detail: String(message.error)} : undefined;
 
                 const item: MessageItem = {
                         itemType: ConversationItemType.Message,
                         serverID: message.originalROWID,
-                        guid: message.guid,
+                        guid: canonicalGuid ?? message.guid,
                         chatGuid: message.chats?.[0]?.guid,
                         date: new Date(message.dateCreated),
                         text: message.text || undefined,
@@ -479,7 +482,11 @@ this.listener?.onMessageConversations(conversations);
                         progress: undefined
                 };
                 if(item.guid) {
-                        this.tapbackCache.set(item.guid, tapbacks.slice());
+                        const tapbackSnapshot = tapbacks.slice();
+                        this.tapbackCache.set(item.guid, tapbackSnapshot);
+                        if(message.guid && message.guid !== item.guid) {
+                                this.tapbackCache.set(message.guid, tapbackSnapshot);
+                        }
                 }
                 return item;
         }
@@ -608,10 +615,18 @@ function mapTapback(message: MessageResponse): TapbackItem | undefined {
                 });
                 return undefined;
         }
+        const normalizedGuid = normalizeMessageGuid(message.associatedMessageGuid);
+        if(!normalizedGuid) {
+                console.warn("[BlueBubbles] Tapback missing associated message GUID", {
+                        guid: message.guid,
+                        associatedMessageGuid: message.associatedMessageGuid
+                });
+                return undefined;
+        }
         const sender = message.isFromMe ? "me" : message.handle?.address ?? "unknown";
         return {
                 type: MessageModifierType.Tapback,
-                messageGuid: message.associatedMessageGuid!,
+                messageGuid: normalizedGuid,
                 messageIndex: 0,
                 sender,
                 isAddition: !normalized.isRemoval,
@@ -675,8 +690,25 @@ function mapTapbackType(code: number) {
 
 export const __testables = {
         mapTapback,
-        normalizeTapbackIdentifier
+        normalizeTapbackIdentifier,
+        normalizeMessageGuid
 };
+
+function normalizeMessageGuid(guid: string | null | undefined): string | undefined {
+        if(!guid) return undefined;
+        const trimmed = guid.trim();
+        if(trimmed.length === 0) return undefined;
+
+        const slashIndex = trimmed.indexOf("/");
+        if(slashIndex > 0) {
+                const prefix = trimmed.slice(0, slashIndex);
+                if(prefix.includes(":")) {
+                        return trimmed.slice(slashIndex + 1);
+                }
+        }
+
+        return trimmed;
+}
 
 function mapParticipantActionType(code: number): ParticipantActionType {
         switch(code) {

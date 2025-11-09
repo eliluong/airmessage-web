@@ -3,7 +3,7 @@ import type {MessageResponse} from "../../../src/connection/bluebubbles/types";
 import {__testables} from "../../../src/connection/bluebubbles/bluebubblesCommunicationsManager";
 
 describe("mapTapback", () => {
-        const {mapTapback} = __testables;
+        const {mapTapback, normalizeMessageGuid} = __testables;
         let warnSpy: jest.SpyInstance;
 
         beforeEach(() => {
@@ -78,5 +78,21 @@ describe("mapTapback", () => {
                 const expectedSender = overrides?.isFromMe ? "me" : "friend@example.com";
                 expect(tapback?.sender).toBe(expectedSender);
                 expect(warnSpy).not.toHaveBeenCalled();
+        });
+
+        it("normalizes associated message GUID prefixes", () => {
+                const tapback = mapTapback(createMessage("laugh", {associatedMessageGuid: "p:0/target-guid"}));
+                expect(tapback?.messageGuid).toBe("target-guid");
+        });
+
+        it.each([
+                {input: undefined, expected: undefined},
+                {input: "", expected: undefined},
+                {input: "FF9E0E18-EA94-42EB-9CC0-F2963E86D7E1", expected: "FF9E0E18-EA94-42EB-9CC0-F2963E86D7E1"},
+                {input: "p:0/FF9E0E18-EA94-42EB-9CC0-F2963E86D7E1", expected: "FF9E0E18-EA94-42EB-9CC0-F2963E86D7E1"},
+                {input: "foo:bar/FF9E0E18", expected: "FF9E0E18"},
+                {input: "no-prefix", expected: "no-prefix"}
+        ])("normalizeMessageGuid(%o) returns %o", ({input, expected}) => {
+                expect(normalizeMessageGuid(input)).toBe(expected);
         });
 });
