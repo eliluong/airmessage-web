@@ -201,9 +201,11 @@ export default function Message(props: {
 	);
 	
 	return (<>
-		<MessageStack
-			direction="column"
-			amLinked={props.flow.anchorTop}>
+                <MessageStack
+                        direction="column"
+                        amLinked={props.flow.anchorTop}
+                        data-message-guid={props.message.guid}
+                        data-message-server-id={props.message.serverID !== undefined ? props.message.serverID.toString() : undefined}>
 			{/* Time divider */}
 			{props.flow.showDivider && (
 				<Typography
