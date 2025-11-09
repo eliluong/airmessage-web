@@ -1,4 +1,8 @@
 import React, {useCallback, useEffect, useMemo, useState} from "react";
+import {
+        DEFAULT_BLUEBUBBLES_DEBUG_LOGGING_ENABLED,
+        setBlueBubblesDebugLoggingEnabled
+} from "../../connection/bluebubbles/debugLogging";
 
 export type SettingsColorScheme = "system" | "light" | "dark";
 
@@ -8,6 +12,9 @@ export interface SettingsState {
         };
         conversations: {
                 initialLoadCount: number;
+        };
+        developer: {
+                blueBubblesDebugLogging: boolean;
         };
 }
 
@@ -27,6 +34,9 @@ const DEFAULT_SETTINGS: SettingsState = Object.freeze({
         },
         conversations: {
                 initialLoadCount: 50
+        },
+        developer: {
+                blueBubblesDebugLogging: DEFAULT_BLUEBUBBLES_DEBUG_LOGGING_ENABLED
         }
 });
 
@@ -39,6 +49,9 @@ function createDefaultSettings(): SettingsState {
                 },
                 conversations: {
                         initialLoadCount: DEFAULT_SETTINGS.conversations.initialLoadCount
+                },
+                developer: {
+                        blueBubblesDebugLogging: DEFAULT_SETTINGS.developer.blueBubblesDebugLogging
                 }
         };
 }
@@ -53,6 +66,7 @@ function sanitizeSettings(candidate: Partial<SettingsState> | undefined): Settin
 
         const colorScheme = candidate.appearance?.colorScheme;
         const initialLoadCount = candidate.conversations?.initialLoadCount;
+        const blueBubblesDebugLogging = candidate.developer?.blueBubblesDebugLogging;
 
         return {
                 appearance: {
@@ -60,6 +74,12 @@ function sanitizeSettings(candidate: Partial<SettingsState> | undefined): Settin
                 },
                 conversations: {
                         initialLoadCount: sanitizeInitialLoadCount(initialLoadCount, defaults.conversations.initialLoadCount)
+                },
+                developer: {
+                        blueBubblesDebugLogging: sanitizeBoolean(
+                                blueBubblesDebugLogging,
+                                defaults.developer.blueBubblesDebugLogging
+                        )
                 }
         };
 }
@@ -72,6 +92,13 @@ function sanitizeInitialLoadCount(value: unknown, fallback: number): number {
                         return normalized;
                 }
         }
+        return fallback;
+}
+
+function sanitizeBoolean(value: unknown, fallback: boolean): boolean {
+        if(typeof value === "boolean") return value;
+        if(value === "true") return true;
+        if(value === "false") return false;
         return fallback;
 }
 
@@ -113,6 +140,9 @@ export function SettingsProvider(props: {children: React.ReactNode}) {
                                 },
                                 conversations: {
                                         initialLoadCount: previous.conversations.initialLoadCount
+                                },
+                                developer: {
+                                        blueBubblesDebugLogging: previous.developer.blueBubblesDebugLogging
                                 }
                         };
                         const result = updater(draft);
@@ -129,6 +159,10 @@ export function SettingsProvider(props: {children: React.ReactNode}) {
                 updateSettings,
                 resetSettings
         }), [settings, updateSettings, resetSettings]);
+
+        useEffect(() => {
+                setBlueBubblesDebugLoggingEnabled(settings.developer.blueBubblesDebugLogging);
+        }, [settings.developer.blueBubblesDebugLogging]);
 
         return (
                 <SettingsContext.Provider value={contextValue}>

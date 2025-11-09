@@ -11,6 +11,7 @@ import {
         ListItemText,
         ListSubheader,
         Stack,
+        Switch,
         TextField,
         Typography
 } from "@mui/material";
@@ -37,6 +38,20 @@ export default function SettingsDialog(props: {isOpen: boolean; onDismiss: () =>
                         };
                 });
         }, [updateSettings]);
+
+        const handleBlueBubblesDebugLoggingChange = useCallback(
+                (event: React.ChangeEvent<HTMLInputElement>) => {
+                        const isEnabled = event.target.checked;
+                        updateSettings((previous) => ({
+                                ...previous,
+                                developer: {
+                                        ...previous.developer,
+                                        blueBubblesDebugLogging: isEnabled
+                                }
+                        }));
+                },
+                [updateSettings]
+        );
 
         return (
                 <Dialog open={props.isOpen} onClose={props.onDismiss} fullWidth maxWidth="sm">
@@ -96,6 +111,32 @@ export default function SettingsDialog(props: {isOpen: boolean; onDismiss: () =>
                                                         <ListItemText
                                                                 primary="Initial load count"
                                                                 secondary="Controls how many conversations load in the sidebar at a time"
+                                                        />
+                                                </ListItem>
+                                        </List>
+
+                                        <List
+                                                dense
+                                                sx={{
+                                                        borderRadius: 1,
+                                                        border: (theme) => `1px solid ${theme.palette.divider}`
+                                                }}
+                                                subheader={
+                                                        <ListSubheader component="div" disableSticky>
+                                                                Debugging
+                                                        </ListSubheader>
+                                                }>
+                                                <ListItem
+                                                        secondaryAction={
+                                                                <Switch
+                                                                        edge="end"
+                                                                        checked={settings.developer.blueBubblesDebugLogging}
+                                                                        onChange={handleBlueBubblesDebugLoggingChange}
+                                                                />
+                                                        }>
+                                                        <ListItemText
+                                                                primary="BlueBubbles console logs"
+                                                                secondary="Toggle diagnostic messages from BlueBubbles"
                                                         />
                                                 </ListItem>
                                         </List>

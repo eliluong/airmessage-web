@@ -39,6 +39,7 @@ import {
         queryMessages,
         sendTextMessage
 } from "./api";
+import {logBlueBubblesDebug} from "./debugLogging";
 
 const POLL_INTERVAL_MS = 5000;
 const DEFAULT_THREAD_PAGE_SIZE = 50;
@@ -383,7 +384,7 @@ this.listener?.onMessageConversations(conversations);
                 const modifiers: TapbackItem[] = [];
                 for(const message of messages) {
                         const service = getMessageService(message);
-                        console.log("[BlueBubbles] Message", {
+                        logBlueBubblesDebug("Message", {
                                 guid: message.guid,
                                 text: message.text,
                                 associatedMessageGuid: message.associatedMessageGuid,
@@ -419,7 +420,7 @@ this.listener?.onMessageConversations(conversations);
                         if(isReactionMessage(message)) {
                                 const tapback = mapTapback(message);
                                 if(tapback) {
-                                        console.log("[BlueBubbles] Tapback", {
+                                        logBlueBubblesDebug("Tapback", {
                                                 messageGuid: message.guid,
                                                 associatedMessageGuid: message.associatedMessageGuid,
                                                 tapbackType: tapback.tapbackType,
