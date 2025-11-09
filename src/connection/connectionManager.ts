@@ -667,7 +667,23 @@ export async function searchMessages(options: MessageSearchOptions): Promise<Mes
                 return accumulator;
         }, []);
 
-        return {items: hits, metadata: rawResult.metadata};
+        const filteredHits = hits.filter((hit) => {
+                const messageDate = hit.message.date;
+
+                if(options.startDate && messageDate < options.startDate) {
+                        return false;
+                }
+
+                if(options.endDate && messageDate > options.endDate) {
+                        return false;
+                }
+
+                return true;
+        });
+
+        const metadata = {...(rawResult.metadata ?? {}), count: filteredHits.length};
+
+        return {items: filteredHits, metadata};
 }
 
 export function fetchAttachment(attachmentGUID: string): EmitterPromiseTuple<FileDownloadProgress, FileDownloadResult> {
