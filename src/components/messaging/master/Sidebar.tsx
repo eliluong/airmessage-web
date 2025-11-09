@@ -226,8 +226,7 @@ export default function Sidebar(props: {
 
         const handleSearchResultSelected = useCallback((hit: MessageSearchHit) => {
                 props.onSearchResultSelected(hit);
-                handleCloseSearchMode();
-        }, [handleCloseSearchMode, props]);
+        }, [props]);
 
         const clearScrollThrottle = useCallback(() => {
                 if(scrollThrottleRef.current !== undefined) {
