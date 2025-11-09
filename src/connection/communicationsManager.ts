@@ -12,14 +12,36 @@ import {MessageSearchHydratedResult, MessageSearchOptions} from "./messageSearch
 import ServerUpdateData from "shared/data/serverUpdateData";
 import ConversationTarget from "shared/data/conversationTarget";
 
+export type ThreadFetchDirection = "before" | "after" | "latest";
+
+export interface ThreadFetchOptions {
+        anchorMessageID?: number;
+        direction?: ThreadFetchDirection;
+        limit?: number;
+}
+
+export interface ThreadFetchMetadata {
+        oldestServerID?: number;
+        newestServerID?: number;
+}
+
+export function normalizeThreadFetchOptions(options?: ThreadFetchOptions): ThreadFetchOptions | undefined {
+        if(!options) return undefined;
+        const normalized: ThreadFetchOptions = {};
+        if(options.anchorMessageID !== undefined) normalized.anchorMessageID = options.anchorMessageID;
+        if(options.direction !== undefined) normalized.direction = options.direction;
+        if(options.limit !== undefined) normalized.limit = options.limit;
+        return normalized;
+}
+
 export interface CommunicationsManagerListener {
-	onOpen(computerName: string, systemVersion: string, softwareVersion: string, supportsFaceTime: boolean): void;
-	onClose(reason: ConnectionErrorCode): void;
-	onPacket(): void;
-	
-	onMessageUpdate(data: ConversationItem[]): void;
-	onConversationUpdate(data: [string, Conversation | undefined][]): void;
-	onModifierUpdate(data: MessageModifier[]): void;
+        onOpen(computerName: string, systemVersion: string, softwareVersion: string, supportsFaceTime: boolean): void;
+        onClose(reason: ConnectionErrorCode): void;
+        onPacket(): void;
+
+        onMessageUpdate(data: ConversationItem[]): void;
+        onConversationUpdate(data: [string, Conversation | undefined][]): void;
+        onModifierUpdate(data: MessageModifier[]): void;
 	
 	onFileRequestStart(requestID: number, downloadFileName: string | undefined, downloadFileType: string | undefined, dataLength: number, accumulator: TransferAccumulator): void;
 	onFileRequestData(requestID: number, data: ArrayBuffer): void;
@@ -29,7 +51,12 @@ export interface CommunicationsManagerListener {
 	onIDUpdate(messageID: number): void;
 	
 	onMessageConversations(data: LinkedConversation[]): void;
-	onMessageThread(chatGUID: string, firstMessageID: number | undefined, data: ConversationItem[]): void;
+        onMessageThread(
+                chatGUID: string,
+                options: ThreadFetchOptions | undefined,
+                data: ConversationItem[],
+                metadata?: ThreadFetchMetadata
+        ): void;
 	
 	onSendMessageResponse(requestID: number, error: MessageError | undefined): void;
 	onCreateChatResponse(requestID: number, error: CreateChatErrorCode | undefined, details: string | undefined): void;
@@ -128,7 +155,7 @@ public abstract requestLiteConversations(limit?: number): boolean;
 	 * @param firstMessageID The ID of the first received message
 	 * @return whether or not the request was successfully sent
 	 */
-	public abstract requestLiteThread(chatGUID: string, firstMessageID?: number): boolean;
+        public abstract requestLiteThread(chatGUID: string, options?: ThreadFetchOptions): boolean;
 	
 	/**
 	 * Sends a message to the specified conversation

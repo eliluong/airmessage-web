@@ -1,4 +1,4 @@
-import CommunicationsManager from "../communicationsManager";
+import CommunicationsManager, {ThreadFetchOptions} from "../communicationsManager";
 import ProtocolManager from "./protocolManager";
 import AirUnpacker from "./airUnpacker";
 import {ConnectionErrorCode, MessageError, MessageErrorCode} from "../../data/stateCodes";
@@ -142,9 +142,9 @@ export default class ClientComm5 extends CommunicationsManager {
 		return this.protocolManager?.requestConversationInfo(chatGUIDs) ?? false;
 	}
 	
-	requestLiteThread(chatGUID: string, firstMessageID?: number): boolean {
-		return this.protocolManager?.requestLiteThread(chatGUID, firstMessageID) || false;
-	}
+        requestLiteThread(chatGUID: string, options?: ThreadFetchOptions): boolean {
+                return this.protocolManager?.requestLiteThread(chatGUID, options) ?? false;
+        }
 	
 	requestInstallRemoteUpdate(updateID: number): boolean {
 		return this.protocolManager?.requestInstallRemoteUpdate(updateID) || false;

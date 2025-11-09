@@ -1,6 +1,7 @@
 import AirUnpacker from "./airUnpacker";
 import ClientComm5 from "./clientComm5";
 import DataProxy from "../dataProxy";
+import {ThreadFetchOptions} from "../communicationsManager";
 import ConversationTarget from "shared/data/conversationTarget";
 
 export default abstract class ProtocolManager {
@@ -83,7 +84,7 @@ public abstract requestLiteConversation(limit?: number): boolean;
 	 * * @param firstMessageID The ID of the first received message
 	 * @return whether or not the action was successful
 	 */
-	public abstract requestLiteThread(chatGUID: string, firstMessageID?: number): boolean;
+        public abstract requestLiteThread(chatGUID: string, options?: ThreadFetchOptions): boolean;
 	
 	/**
 	 * Requests a time range-based message retrieval
