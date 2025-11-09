@@ -34,10 +34,12 @@ import {installCancellablePromise} from "shared/util/cancellablePromise";
 import {ThreadFocusTarget, areFocusTargetsEqual} from "./types";
 
 const DEFAULT_FOCUS_PAGE_LIMIT = 15;
+const DEFAULT_FUTURE_PAGE_LIMIT = 50;
 
 type ThreadPageMetadata = {
         oldestServerID?: number;
         newestServerID?: number;
+        highestLoadedServerID?: number;
 };
 
 function getConversationItemKey(item: ConversationItem): string {
@@ -78,13 +80,14 @@ function metadataFromItems(items: ConversationItem[]): ThreadPageMetadata | unde
                 if(newest === undefined || message.serverID > newest) newest = message.serverID;
         }
         if(oldest === undefined && newest === undefined) return undefined;
-        return {oldestServerID: oldest, newestServerID: newest};
+        return {oldestServerID: oldest, newestServerID: newest, highestLoadedServerID: newest};
 }
 
 function mergeMetadata(base: ThreadPageMetadata | undefined, incoming: ThreadPageMetadata | undefined): ThreadPageMetadata | undefined {
         if(!incoming) return base;
         let oldest = base?.oldestServerID;
         let newest = base?.newestServerID;
+        let highest = base?.highestLoadedServerID;
         let changed = false;
         if(incoming.oldestServerID !== undefined && (oldest === undefined || incoming.oldestServerID < oldest)) {
                 oldest = incoming.oldestServerID;
@@ -94,8 +97,12 @@ function mergeMetadata(base: ThreadPageMetadata | undefined, incoming: ThreadPag
                 newest = incoming.newestServerID;
                 changed = true;
         }
+        if(incoming.highestLoadedServerID !== undefined && (highest === undefined || incoming.highestLoadedServerID > highest)) {
+                highest = incoming.highestLoadedServerID;
+                changed = true;
+        }
         if(!changed) return base;
-        return {oldestServerID: oldest, newestServerID: newest};
+        return {oldestServerID: oldest, newestServerID: newest, highestLoadedServerID: highest ?? newest};
 }
 
 function computeMetadataFromItems(items: ConversationItem[], seed?: ThreadPageMetadata): ThreadPageMetadata | undefined {
@@ -106,7 +113,13 @@ function computeMetadataFromItems(items: ConversationItem[], seed?: ThreadPageMe
 function mergeThreadFetchMetadata(results: ThreadFetchResult[], items: ConversationItem[]): ThreadPageMetadata | undefined {
         let metadata: ThreadPageMetadata | undefined;
         for(const result of results) {
-                metadata = mergeMetadata(metadata, result.metadata);
+                const decorated: ThreadPageMetadata | undefined = result.metadata
+                        ? {
+                                ...result.metadata,
+                                highestLoadedServerID: result.metadata.newestServerID
+                        }
+                        : undefined;
+                metadata = mergeMetadata(metadata, decorated);
         }
         return computeMetadataFromItems(items, metadata);
 }
@@ -117,8 +130,10 @@ export default function DetailThread({conversation, focusTarget}: {
 }) {
         const [displayState, setDisplayState] = useState<DisplayState>({type: DisplayType.Loading});
         const [historyLoadState, setHistoryLoadState] = useState(HistoryLoadState.Idle);
+        const [futureLoadState, setFutureLoadState] = useState(FutureLoadState.Idle);
         const displayStateRef = useRef(displayState);
         const historyLoadStateRef = useRef(historyLoadState);
+        const futureLoadStateRef = useRef(futureLoadState);
         const [focusMetadata, setFocusMetadata] = useState<ThreadFocusTarget | undefined>(undefined);
 
         useEffect(() => {
@@ -127,6 +142,9 @@ export default function DetailThread({conversation, focusTarget}: {
         useEffect(() => {
                 historyLoadStateRef.current = historyLoadState;
         }, [historyLoadState]);
+        useEffect(() => {
+                futureLoadStateRef.current = futureLoadState;
+        }, [futureLoadState]);
 	
 	const conversationTitle = useConversationTitle(conversation);
 	const faceTimeSupported = useIsFaceTimeSupported();
@@ -144,20 +162,24 @@ export default function DetailThread({conversation, focusTarget}: {
                         const metadata = metadataFromItems(messages);
                         setDisplayState({type: DisplayType.Messages, messages, metadata});
                         setFocusMetadata(focus);
+                        setFutureLoadState(FutureLoadState.Idle);
 
                         return;
                 }
 
                 setDisplayState({type: DisplayType.Loading});
                 setFocusMetadata(focus);
+                setFutureLoadState(FutureLoadState.Idle);
 
                 const anchorServerID = focus?.serverID;
                 if(anchorServerID === undefined) {
                         ConnectionManager.fetchThread(conversation.guid).then((result) => {
                                 const metadata = mergeThreadFetchMetadata([result], result.items);
                                 setDisplayState({type: DisplayType.Messages, messages: result.items, metadata});
+                                setFutureLoadState(FutureLoadState.Idle);
                         }).catch(() => {
                                 setDisplayState({type: DisplayType.Error});
+                                setFutureLoadState(FutureLoadState.Idle);
                         });
                         return;
                 }
@@ -177,13 +199,16 @@ export default function DetailThread({conversation, focusTarget}: {
                         const combinedItems = dedupeAndSortNewestFirst([beforeResult.items, afterResult.items]);
                         const metadata = mergeThreadFetchMetadata([beforeResult, afterResult], combinedItems);
                         setDisplayState({type: DisplayType.Messages, messages: combinedItems, metadata});
+                        setFutureLoadState(FutureLoadState.Idle);
                 }).catch(() => {
                         setDisplayState({type: DisplayType.Error});
+                        setFutureLoadState(FutureLoadState.Idle);
                 });
         }, [conversation, setDisplayState]);
         const loadedThreadMessages = useRef<string | undefined>(undefined);
-	
-	const requestHistoryUnsubscribeContainer = useUnsubscribeContainer([conversation.localID]);
+
+        const requestHistoryUnsubscribeContainer = useUnsubscribeContainer([conversation.localID]);
+        const requestFutureUnsubscribeContainer = useUnsubscribeContainer([conversation.localID]);
         const requestHistory = useCallback(() => {
                 const currentDisplayState = displayStateRef.current;
                 const currentHistoryLoadState = historyLoadStateRef.current;
@@ -236,6 +261,54 @@ export default function DetailThread({conversation, focusTarget}: {
                         setHistoryLoadState(HistoryLoadState.Idle);
                 });
         }, [conversation, setDisplayState, setHistoryLoadState, requestHistoryUnsubscribeContainer, displayStateRef, historyLoadStateRef]);
+
+        const requestFuture = useCallback(() => {
+                const currentDisplayState = displayStateRef.current;
+                const currentFutureLoadState = futureLoadStateRef.current;
+
+                if(currentDisplayState.type !== DisplayType.Messages
+                        || conversation.localOnly
+                        || currentFutureLoadState !== FutureLoadState.Idle) return;
+
+                const highestServerID = currentDisplayState.metadata?.highestLoadedServerID;
+                if(highestServerID === undefined) {
+                        setFutureLoadState(FutureLoadState.Complete);
+                        return;
+                }
+
+                setFutureLoadState(FutureLoadState.Loading);
+
+                installCancellablePromise(
+                        ConnectionManager.fetchThreadAfter(conversation.guid, highestServerID, DEFAULT_FUTURE_PAGE_LIMIT),
+                        requestFutureUnsubscribeContainer
+                )
+                        .then((result) => {
+                                if(result.items.length === 0) {
+                                        setFutureLoadState(FutureLoadState.Complete);
+                                        return;
+                                }
+
+                                setFutureLoadState(result.items.length < DEFAULT_FUTURE_PAGE_LIMIT
+                                        ? FutureLoadState.Complete
+                                        : FutureLoadState.Idle);
+
+                                setDisplayState((displayState) => {
+                                        if(displayState.type !== DisplayType.Messages) return displayState;
+
+                                        const combinedItems = dedupeAndSortNewestFirst([result.items, displayState.messages]);
+                                        const metadata = mergeThreadFetchMetadata([result], combinedItems);
+
+                                        return {
+                                                type: DisplayType.Messages,
+                                                messages: combinedItems,
+                                                metadata
+                                        };
+                                });
+                        })
+                        .catch(() => {
+                                setFutureLoadState(FutureLoadState.Idle);
+                        });
+        }, [conversation, requestFutureUnsubscribeContainer, setDisplayState]);
 	
 	//Request messages when the conversation changes
         const focusKey = focusTarget ? `${focusTarget.serverID ?? ""}|${focusTarget.guid ?? ""}` : "";
@@ -641,8 +714,10 @@ export default function DetailThread({conversation, focusTarget}: {
                                 messageSubmitEmitter={messageSubmitEmitter.current}
                                 focusTarget={focusMetadata}
                                 showHistoryLoader={historyLoadState === HistoryLoadState.Loading}
-                                onRequestHistory={requestHistory} />
-		);
+                                showFutureLoader={futureLoadState === FutureLoadState.Loading}
+                                onRequestHistory={requestHistory}
+                                onRequestNewer={requestFuture} />
+                );
 	} else if(displayState.type === DisplayType.Loading) {
 		body = (
 			<Stack height="100%" alignItems="center" justifyContent="center">
@@ -740,7 +815,13 @@ type DisplayState = {
 } | DisplayStateMessages;
 
 enum HistoryLoadState {
-	Idle,
-	Loading,
-	Complete
+        Idle,
+        Loading,
+        Complete
+}
+
+enum FutureLoadState {
+        Idle,
+        Loading,
+        Complete
 }

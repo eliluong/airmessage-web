@@ -675,6 +675,14 @@ export function fetchThread(chatGUID: string, options?: ThreadFetchOptions): Pro
         }));
 }
 
+export function fetchThreadAfter(chatGUID: string, anchorMessageID: number, limit?: number): Promise<ThreadFetchResult> {
+        return fetchThread(chatGUID, {
+                anchorMessageID,
+                direction: "after",
+                limit
+        });
+}
+
 export async function searchMessages(options: MessageSearchOptions): Promise<MessageSearchResult> {
         if(!isConnected()) return Promise.reject(messageErrorNetwork);
 
