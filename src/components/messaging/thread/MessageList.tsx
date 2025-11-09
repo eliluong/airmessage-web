@@ -15,23 +15,28 @@ interface Props {
         messageSubmitEmitter: EventEmitter<void>;
         onRequestHistory: () => void;
         showHistoryLoader?: boolean;
+        onRequestNewer?: () => void;
+        showFutureLoader?: boolean;
         focusTarget?: ThreadFocusTarget;
 }
 
 interface State {
-        isInThreshold: boolean;
+        isHistoryThreshold: boolean;
+        isFutureThreshold: boolean;
 }
 
 const historyLoadScrollThreshold = 300;
+const futureLoadScrollThreshold = 300;
 
 export default class MessageList extends React.Component<Props, State> {
         state = {
-                isInThreshold: false
+                isHistoryThreshold: false,
+                isFutureThreshold: false
         };
 
         //Reference to the message scroll list element
         readonly scrollRef = React.createRef<HTMLDivElement>();
-	
+
 	//List scroll position snapshot values
 	private snapshotScrollHeight = 0;
         private snapshotScrollTop = 0;
@@ -45,23 +50,35 @@ export default class MessageList extends React.Component<Props, State> {
         private focusHighlightOriginalBoxShadow?: string;
 
         private readonly handleScroll = (event: React.UIEvent<HTMLDivElement, UIEvent>) => {
-                if(event.currentTarget.scrollTop < historyLoadScrollThreshold) {
-                        if(!this.state.isInThreshold) {
-                                this.setState({isInThreshold: true});
-                                this.props.onRequestHistory();
-                        }
-                } else {
-                        if(this.state.isInThreshold) {
-                                this.setState({isInThreshold: false});
-                        }
+                const element = event.currentTarget;
+                const nextHistoryThreshold = element.scrollTop < historyLoadScrollThreshold;
+                const distanceToBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
+                const nextFutureThreshold = distanceToBottom < futureLoadScrollThreshold;
+
+                const {isHistoryThreshold, isFutureThreshold} = this.state;
+
+                if(nextHistoryThreshold && !isHistoryThreshold) {
+                        this.props.onRequestHistory();
+                }
+                if(nextFutureThreshold && !isFutureThreshold) {
+                        this.props.onRequestNewer?.();
+                }
+
+                if(nextHistoryThreshold !== isHistoryThreshold || nextFutureThreshold !== isFutureThreshold) {
+                        this.setState({
+                                isHistoryThreshold: nextHistoryThreshold,
+                                isFutureThreshold: nextFutureThreshold
+                        });
                 }
         };
 
         shouldComponentUpdate(nextProps: Readonly<Props>, nextState: Readonly<State>): boolean {
                 const focusChanged = !areFocusTargetsEqual(nextProps.focusTarget, this.props.focusTarget);
-                return nextState.isInThreshold !== this.state.isInThreshold
+                return nextState.isHistoryThreshold !== this.state.isHistoryThreshold
+                        || nextState.isFutureThreshold !== this.state.isFutureThreshold
                         || nextProps.items !== this.props.items
                         || nextProps.showHistoryLoader !== this.props.showHistoryLoader
+                        || nextProps.showFutureLoader !== this.props.showFutureLoader
                         || nextProps.conversation !== this.props.conversation
                         || nextProps.messageSubmitEmitter !== this.props.messageSubmitEmitter
                         || focusChanged;
@@ -93,16 +110,17 @@ export default class MessageList extends React.Component<Props, State> {
 				overflowY: "scroll",
 				scrollBehavior: "smooth"
 			}} ref={this.scrollRef} onScroll={this.handleScroll}>
-				<Stack sx={{
-					width: "100%",
-					maxWidth: "1000px",
-					marginX: "auto"
-				}} direction="column-reverse">
-					{this.props.items.map((item, i, array) => {
-						if(item.itemType === ConversationItemType.Message) {
-							return (
-								<Message
-									key={(item.localID ?? item.guid)}
+                                <Stack sx={{
+                                        width: "100%",
+                                        maxWidth: "1000px",
+                                        marginX: "auto"
+                                }} direction="column-reverse">
+                                        {this.props.showFutureLoader && <LoadingProgress key="static-futureloader" />}
+                                        {this.props.items.map((item, i, array) => {
+                                                if(item.itemType === ConversationItemType.Message) {
+                                                        return (
+                                                                <Message
+                                                                        key={(item.localID ?? item.guid)}
 									message={item}
 									isGroupChat={this.props.conversation.members.length > 1}
 									service={this.props.conversation.service}
@@ -123,14 +141,14 @@ export default class MessageList extends React.Component<Props, State> {
 							);
 						} else {
 							return null;
-						}
-					})}
-					
-					{this.props.showHistoryLoader && <HistoryLoadingProgress key="static-historyloader" />}
-				</Stack>
-			</Box>
-		);
-	}
+                                                }
+                                        })}
+
+                                        {this.props.showHistoryLoader && <LoadingProgress key="static-historyloader" />}
+                                </Stack>
+                        </Box>
+                );
+        }
 	
         componentDidMount() {
                 //Registering the submit listener
@@ -297,12 +315,12 @@ export default class MessageList extends React.Component<Props, State> {
         }
 }
 
-function HistoryLoadingProgress() {
-	return (
-		<Box sx={{
-			display: "flex",
-			alignItems: "center",
-			justifyContent: "center"
+function LoadingProgress() {
+        return (
+                <Box sx={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center"
 		}}>
 			<CircularProgress />
 		</Box>
