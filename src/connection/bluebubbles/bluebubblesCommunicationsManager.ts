@@ -366,9 +366,24 @@ this.listener?.onMessageConversations(conversations);
                 const pendingReactions: PendingReaction[] = [];
                 const modifiers: TapbackItem[] = [];
                 for(const message of messages) {
+                        console.log("[BlueBubbles] Message", {
+                                guid: message.guid,
+                                text: message.text,
+                                associatedMessageGuid: message.associatedMessageGuid,
+                                associatedMessageType: message.associatedMessageType,
+                                itemType: message.itemType,
+                                isFromMe: message.isFromMe
+                        });
                         if(this.privateApiEnabled && isReactionMessage(message)) {
                                 const tapback = mapTapback(message);
                                 if(tapback) {
+                                        console.log("[BlueBubbles] Tapback", {
+                                                messageGuid: message.guid,
+                                                associatedMessageGuid: message.associatedMessageGuid,
+                                                tapbackType: tapback.tapbackType,
+                                                isAddition: tapback.isAddition,
+                                                sender: tapback.sender
+                                        });
                                         pendingReactions.push({messageGuid: message.associatedMessageGuid!, tapback});
                                         modifiers.push(tapback);
                                 }
