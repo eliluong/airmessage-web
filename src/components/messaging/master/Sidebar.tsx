@@ -22,6 +22,133 @@ import ConversationSkeleton from "shared/components/skeleton/ConversationSkeleto
 import {TransitionGroup} from "react-transition-group";
 import SettingsDialog from "shared/components/messaging/dialog/SettingsDialog";
 
+type SidebarHeaderProps = {
+        isFaceTimeSupported: boolean;
+        isFaceTimeLinkLoading: boolean;
+        onCreateSelected: () => void;
+        onCreateFaceTimeLink: () => void | Promise<void>;
+        onOpenSettings: VoidFunction;
+        onOpenChangelog: VoidFunction;
+        onOpenFeedback: VoidFunction;
+        onOpenSignOut: VoidFunction;
+        actionsDisabled: boolean;
+};
+
+const SidebarHeader = React.memo(function SidebarHeader({
+        isFaceTimeSupported,
+        isFaceTimeLinkLoading,
+        onCreateSelected,
+        onCreateFaceTimeLink,
+        onOpenSettings,
+        onOpenChangelog,
+        onOpenFeedback,
+        onOpenSignOut,
+        actionsDisabled,
+}: SidebarHeaderProps) {
+        const [overflowMenu, setOverflowMenu] = useState<HTMLElement | null>(null);
+
+        useEffect(() => {
+                return () => {
+                        setOverflowMenu(null);
+                };
+        }, [setOverflowMenu]);
+
+        const openOverflowMenu = useCallback((event: React.MouseEvent<HTMLElement>) => {
+                setOverflowMenu(event.currentTarget);
+        }, [setOverflowMenu]);
+
+        const closeOverflowMenu = useCallback(() => {
+                setOverflowMenu(null);
+        }, [setOverflowMenu]);
+
+        const handleMenuItem = useCallback((callback: VoidFunction) => () => {
+                closeOverflowMenu();
+                callback();
+        }, [closeOverflowMenu]);
+
+        return (
+                <Toolbar>
+                        <AirMessageLogo />
+
+                        <Box sx={{flexGrow: 1}} />
+
+                        <Box sx={{display: "flex"}}>
+                                {isFaceTimeSupported && (
+                                        <IconButton
+                                                size="large"
+                                                onClick={onCreateFaceTimeLink}
+                                                disabled={isFaceTimeLinkLoading}>
+                                                <VideoCallOutlined />
+                                        </IconButton>
+                                )}
+
+                                <IconButton
+                                        size="large"
+                                        onClick={onCreateSelected}
+                                        disabled={actionsDisabled}>
+                                        <AddRounded />
+                                </IconButton>
+
+                                <IconButton
+                                        aria-haspopup="true"
+                                        size="large"
+                                        edge="end"
+                                        onClick={openOverflowMenu}
+                                        disabled={actionsDisabled}>
+                                        <MoreVertRounded data-testid="MoreVertRoundedIcon" />
+                                </IconButton>
+
+                                <Menu
+                                        anchorEl={overflowMenu}
+                                        anchorOrigin={{
+                                                vertical: "top",
+                                                horizontal: "right",
+                                        }}
+                                        keepMounted
+                                        transformOrigin={{
+                                                vertical: "top",
+                                                horizontal: "right",
+                                        }}
+                                        open={!!overflowMenu}
+                                        onClose={closeOverflowMenu}>
+                                        <MenuItem onClick={handleMenuItem(onOpenSettings)}>Settings</MenuItem>
+                                        <MenuItem onClick={handleMenuItem(onOpenChangelog)}>What&apos;s new</MenuItem>
+                                        <MenuItem onClick={handleMenuItem(onOpenFeedback)}>Help and feedback</MenuItem>
+                                        <MenuItem onClick={handleMenuItem(onOpenSignOut)}>Sign out</MenuItem>
+                                </Menu>
+                        </Box>
+                </Toolbar>
+        );
+});
+
+type SidebarConversationListProps = {
+        conversations: Conversation[];
+        selectedConversation?: number;
+        onConversationSelected: (id: number) => void;
+};
+
+const SidebarConversationList = React.memo(function SidebarConversationList({
+        conversations,
+        selectedConversation,
+        onConversationSelected,
+}: SidebarConversationListProps) {
+        return (
+                <List className={styles.sidebarList}>
+                        <TransitionGroup>
+                                {conversations.map((conversation) => (
+                                        <Collapse key={conversation.localID}>
+                                                <ListConversation
+                                                        conversation={conversation}
+                                                        selected={conversation.localID === selectedConversation}
+                                                        highlighted={conversation.unreadMessages}
+                                                        onSelected={() => onConversationSelected(conversation.localID)} />
+                                        </Collapse>
+                                ))}
+                        </TransitionGroup>
+                </List>
+        );
+});
+
 export default function Sidebar(props: {
 	conversations: Conversation[] | undefined;
 	selectedConversation?: number;
@@ -33,26 +160,10 @@ export default function Sidebar(props: {
 }) {
 	const displaySnackbar = useContext(SnackbarContext);
 	
-	//The anchor element for the overflow menu
-	const [overflowMenu, setOverflowMenu] = useState<HTMLElement | null>(null);
-	useEffect(() => {
-		//Don't hold dangling references to DOM elements
-		return () => {
-			setOverflowMenu(null);
-		};
-	}, [setOverflowMenu]);
-	
-	const openOverflowMenu = useCallback((event: React.MouseEvent<HTMLElement>) => {
-		setOverflowMenu(event.currentTarget);
-	}, [setOverflowMenu]);
-	const closeOverflowMenu = useCallback(() => {
-		setOverflowMenu(null);
-	}, [setOverflowMenu]);
-	
-        const [isSettingsDialog, showSettingsDialog, hideSettingsDialog] = useSidebarDialog(closeOverflowMenu);
-        const [isChangelogDialog, showChangelogDialog, hideChangelogDialog] = useSidebarDialog(closeOverflowMenu);
-        const [isFeedbackDialog, showFeedbackDialog, hideFeedbackDialog] = useSidebarDialog(closeOverflowMenu);
-        const [isSignOutDialog, showSignOutDialog, hideSignOutDialog] = useSidebarDialog(closeOverflowMenu);
+        const [isSettingsDialog, showSettingsDialog, hideSettingsDialog] = useSidebarDialog();
+        const [isChangelogDialog, showChangelogDialog, hideChangelogDialog] = useSidebarDialog();
+        const [isFeedbackDialog, showFeedbackDialog, hideFeedbackDialog] = useSidebarDialog();
+        const [isSignOutDialog, showSignOutDialog, hideSignOutDialog] = useSidebarDialog();
         const [isRemoteUpdateDialog, showRemoteUpdateDialog, hideRemoteUpdateDialog] = useSidebarDialog();
 	const [faceTimeLinkDialog, setFaceTimeLinkDialog] = useState<string | undefined>(undefined);
 	
@@ -96,7 +207,7 @@ export default function Sidebar(props: {
 		} finally {
 			setFaceTimeLinkLoading(false);
 		}
-	}, [setFaceTimeLinkLoading, displaySnackbar]);
+        }, [setFaceTimeLinkLoading, displaySnackbar, setFaceTimeLinkDialog]);
 	
 	return (
 		<Stack height="100%">
@@ -107,57 +218,17 @@ export default function Sidebar(props: {
                         <RemoteUpdateDialog isOpen={isRemoteUpdateDialog} onDismiss={hideRemoteUpdateDialog} update={remoteUpdateCache} />
 			<FaceTimeLinkDialog isOpen={faceTimeLinkDialog !== undefined} onDismiss={() => setFaceTimeLinkDialog(undefined)} link={faceTimeLinkDialog ?? ""} />
 			
-			<Toolbar>
-				<AirMessageLogo />
-				
-				<Box sx={{flexGrow: 1}} />
-				
-				<Box sx={{display: "flex"}}>
-					{isFaceTimeSupported && (
-						<IconButton
-							size="large"
-							onClick={createFaceTimeLink}
-							disabled={isFaceTimeLinkLoading}>
-							<VideoCallOutlined />
-						</IconButton>
-					)}
-					
-					<IconButton
-						size="large"
-						onClick={props.onCreateSelected}
-						disabled={props.conversations === undefined}>
-						<AddRounded />
-					</IconButton>
-					
-                                        <IconButton
-                                                aria-haspopup="true"
-                                                size="large"
-                                                edge="end"
-                                                onClick={openOverflowMenu}
-                                                disabled={props.conversations === undefined}>
-                                                <MoreVertRounded data-testid="MoreVertRoundedIcon" />
-                                        </IconButton>
-
-                                        <Menu
-						anchorEl={overflowMenu}
-						anchorOrigin={{
-							vertical: "top",
-							horizontal: "right",
-						}}
-						keepMounted
-						transformOrigin={{
-							vertical: "top",
-							horizontal: "right",
-						}}
-						open={!!overflowMenu}
-						onClose={closeOverflowMenu}>
-                                                <MenuItem onClick={showSettingsDialog}>Settings</MenuItem>
-                                                <MenuItem onClick={showChangelogDialog}>What&apos;s new</MenuItem>
-						<MenuItem onClick={showFeedbackDialog}>Help and feedback</MenuItem>
-						<MenuItem onClick={showSignOutDialog}>Sign out</MenuItem>
-					</Menu>
-				</Box>
-			</Toolbar>
+                        <SidebarHeader
+                                isFaceTimeSupported={isFaceTimeSupported}
+                                isFaceTimeLinkLoading={isFaceTimeLinkLoading}
+                                onCreateSelected={props.onCreateSelected}
+                                onCreateFaceTimeLink={createFaceTimeLink}
+                                onOpenSettings={showSettingsDialog}
+                                onOpenChangelog={showChangelogDialog}
+                                onOpenFeedback={showFeedbackDialog}
+                                onOpenSignOut={showSignOutDialog}
+                                actionsDisabled={props.conversations === undefined}
+                        />
 			
 			{props.errorBanner !== undefined && <ConnectionBanner error={props.errorBanner} /> }
 			
@@ -178,19 +249,11 @@ export default function Sidebar(props: {
 			)}
 			
                         {props.conversations !== undefined ? (
-				<List className={styles.sidebarList}>
-					<TransitionGroup>
-						{props.conversations.map((conversation) => (
-							<Collapse key={conversation.localID}>
-								<ListConversation
-									conversation={conversation}
-									selected={conversation.localID === props.selectedConversation}
-									highlighted={conversation.unreadMessages}
-									onSelected={() => props.onConversationSelected(conversation.localID)} />
-							</Collapse>
-						))}
-					</TransitionGroup>
-				</List>
+				<SidebarConversationList
+					conversations={props.conversations}
+					selectedConversation={props.selectedConversation}
+					onConversationSelected={props.onConversationSelected}
+				/>
 			) : (
 				<Box className={styles.sidebarListLoading}>
 					{[...Array(16)].map((element, index) => <ConversationSkeleton key={`skeleton-${index}`} />)}
