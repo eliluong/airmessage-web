@@ -143,8 +143,7 @@ export default class ClientComm5 extends CommunicationsManager {
 	}
 	
         requestLiteThread(chatGUID: string, options?: ThreadFetchOptions): boolean {
-                const firstMessageID = options?.anchorMessageID;
-                return this.protocolManager?.requestLiteThread(chatGUID, firstMessageID) || false;
+                return this.protocolManager?.requestLiteThread(chatGUID, options) ?? false;
         }
 	
 	requestInstallRemoteUpdate(updateID: number): boolean {
