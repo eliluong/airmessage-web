@@ -23,12 +23,12 @@ interface State {
 const historyLoadScrollThreshold = 300;
 
 export default class MessageList extends React.Component<Props, State> {
-	state = {
-		isInThreshold: false
-	};
-	
-	//Reference to the message scroll list element
-	readonly scrollRef = React.createRef<HTMLDivElement>();
+        state = {
+                isInThreshold: false
+        };
+
+        //Reference to the message scroll list element
+        readonly scrollRef = React.createRef<HTMLDivElement>();
 	
 	//List scroll position snapshot values
 	private snapshotScrollHeight = 0;
@@ -37,18 +37,26 @@ export default class MessageList extends React.Component<Props, State> {
 	//Used to track whether the message list should be scrolled to the bottom when the component is next updated
 	private shouldScrollNextUpdate = false;
 	
-	private readonly handleScroll = (event: React.UIEvent<HTMLDivElement, UIEvent>) => {
-		if(event.currentTarget.scrollTop < historyLoadScrollThreshold) {
-			if(!this.state.isInThreshold) {
-				this.setState({isInThreshold: true});
-				this.props.onRequestHistory();
-			}
-		} else {
-			if(this.state.isInThreshold) {
-				this.setState({isInThreshold: false});
-			}
-		}
-	};
+        private readonly handleScroll = (event: React.UIEvent<HTMLDivElement, UIEvent>) => {
+                if(event.currentTarget.scrollTop < historyLoadScrollThreshold) {
+                        if(!this.state.isInThreshold) {
+                                this.setState({isInThreshold: true});
+                                this.props.onRequestHistory();
+                        }
+                } else {
+                        if(this.state.isInThreshold) {
+                                this.setState({isInThreshold: false});
+                        }
+                }
+        };
+
+        shouldComponentUpdate(nextProps: Readonly<Props>, nextState: Readonly<State>): boolean {
+                return nextState.isInThreshold !== this.state.isInThreshold
+                        || nextProps.items !== this.props.items
+                        || nextProps.showHistoryLoader !== this.props.showHistoryLoader
+                        || nextProps.conversation !== this.props.conversation
+                        || nextProps.messageSubmitEmitter !== this.props.messageSubmitEmitter;
+        }
 	
 	render() {
 		//The latest outgoing item with the "read" status
