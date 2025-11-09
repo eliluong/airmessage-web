@@ -29,12 +29,12 @@ export default function useMessageSearch(config: UseMessageSearchConfig = {}): U
         const [error, setError] = useState<Error | undefined>(undefined);
         const [pendingOptions, setPendingOptions] = useState<MessageSearchOptions | undefined>(undefined);
         const [requestSequence, setRequestSequence] = useState(0);
-        const debounceHandleRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+        const debounceHandleRef = useRef<ReturnType<typeof window.setTimeout> | undefined>(undefined);
         const activeRequestRef = useRef(0);
 
         const clearPendingTimeout = useCallback(() => {
                 if(debounceHandleRef.current !== undefined) {
-                        clearTimeout(debounceHandleRef.current);
+                        window.clearTimeout(debounceHandleRef.current);
                         debounceHandleRef.current = undefined;
                 }
         }, []);
