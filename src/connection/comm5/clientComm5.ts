@@ -134,9 +134,9 @@ export default class ClientComm5 extends CommunicationsManager {
 		else return this.protocolManager.sendPing();
 	}
 	
-	requestLiteConversations(): boolean {
-		return this.protocolManager?.requestLiteConversation() ?? false;
-	}
+        requestLiteConversations(limit?: number): boolean {
+                return this.protocolManager?.requestLiteConversation(limit) ?? false;
+        }
 	
 	requestConversationInfo(chatGUIDs: string[]): boolean {
 		return this.protocolManager?.requestConversationInfo(chatGUIDs) ?? false;

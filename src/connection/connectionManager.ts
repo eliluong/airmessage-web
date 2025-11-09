@@ -597,18 +597,18 @@ export function sendFile(chatGUID: ConversationTarget, file: File): EmitterPromi
 	return {emitter, promise};
 }
 
-export function fetchConversations(): Promise<LinkedConversation[]> {
-	//Failing immediately if there is no network connection
-	if(!isConnected()) return Promise.reject(messageErrorNetwork);
-	
-	//Starting a new promise
-	return requestTimeoutArray(liteConversationPromiseArray, undefined, new Promise<LinkedConversation[]>((resolve, reject) => {
-		//Sending the request
-		communicationsManager!.requestLiteConversations();
-		
-		//Recording the promise
-		liteConversationPromiseArray.push({resolve: resolve, reject: reject});
-	}));
+export function fetchConversations(limit?: number): Promise<LinkedConversation[]> {
+        //Failing immediately if there is no network connection
+        if(!isConnected()) return Promise.reject(messageErrorNetwork);
+
+        //Starting a new promise
+        return requestTimeoutArray(liteConversationPromiseArray, undefined, new Promise<LinkedConversation[]>((resolve, reject) => {
+                //Sending the request
+                communicationsManager!.requestLiteConversations(limit);
+
+                //Recording the promise
+                liteConversationPromiseArray.push({resolve: resolve, reject: reject});
+        }));
 }
 
 export function fetchConversationInfo(chatGUIDs: string[]): Promise<[string, LinkedConversation | undefined][]> {

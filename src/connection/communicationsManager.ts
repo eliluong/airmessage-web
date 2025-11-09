@@ -110,7 +110,7 @@ export default abstract class CommunicationsManager {
 	 *
 	 * @return whether or not the request was successfully sent
 	 */
-	public abstract requestLiteConversations(): boolean;
+public abstract requestLiteConversations(limit?: number): boolean;
 	
 	/**
 	 * Requests information regarding a certain list of conversations

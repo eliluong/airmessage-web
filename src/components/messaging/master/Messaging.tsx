@@ -30,8 +30,15 @@ export default function Messaging(props: {
         const {serverUrl, accessToken, refreshToken, legacyPasswordAuth, deviceName, onReset} = props;
         const [detailPane, setDetailPane] = useState<DetailPane>({type: DetailType.Loading});
         const [sidebarBanner, setSidebarBanner] = useState<ConnectionErrorCode | "connecting" | undefined>(undefined);
-        const {conversations, loadConversations, addConversation, markConversationRead} =
-                useConversationState(detailPane.type === DetailType.Thread ? detailPane.conversationID : undefined, true);
+        const {
+                conversations,
+                visibleConversations,
+                hasMoreConversations,
+                loadConversations,
+                loadMoreConversations,
+                addConversation,
+                markConversationRead
+        } = useConversationState(detailPane.type === DetailType.Thread ? detailPane.conversationID : undefined, true);
         useEffect(() => {
                 ConnectionManager.setBlueBubblesAuth({
                         serverUrl,
@@ -221,9 +228,11 @@ export default function Messaging(props: {
 					minWidth="350px"
 					maxWidth="400px"
 					bgcolor="background.sidebar">
-					<Sidebar
-						conversations={conversations}
-						selectedConversation={detailPane.type === DetailType.Thread ? detailPane.conversationID : undefined}
+<Sidebar
+conversations={visibleConversations}
+hasMoreConversations={hasMoreConversations}
+onLoadMoreConversations={loadMoreConversations}
+selectedConversation={detailPane.type === DetailType.Thread ? detailPane.conversationID : undefined}
                                                 onConversationSelected={navigateConversation}
                                                 onCreateSelected={navigateConversationCreate}
                                                 errorBanner={(typeof sidebarBanner === "number") ? sidebarBanner : undefined}

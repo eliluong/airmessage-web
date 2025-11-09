@@ -677,13 +677,13 @@ export default class ClientProtocol5 extends ProtocolManager {
 		return true;
 	}
 	
-	requestLiteConversation(): boolean {
-		const packer = AirPacker.get();
-		try {
-			packer.packInt(nhtLiteConversationRetrieval);
-			this.dataProxy.send(packer.toArrayBuffer(), true);
-		} finally {
-			packer.reset();
+        requestLiteConversation(_limit?: number): boolean {
+                const packer = AirPacker.get();
+                try {
+                        packer.packInt(nhtLiteConversationRetrieval);
+                        this.dataProxy.send(packer.toArrayBuffer(), true);
+                } finally {
+                        packer.reset();
 		}
 		
 		return true;

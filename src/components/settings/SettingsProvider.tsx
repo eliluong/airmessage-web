@@ -6,6 +6,9 @@ export interface SettingsState {
         appearance: {
                 colorScheme: SettingsColorScheme;
         };
+        conversations: {
+                initialLoadCount: number;
+        };
 }
 
 export type SettingsUpdater = (previous: SettingsState) => SettingsState;
@@ -21,6 +24,9 @@ const STORAGE_KEY = "airmessage.web.settings";
 const DEFAULT_SETTINGS: SettingsState = Object.freeze({
         appearance: {
                 colorScheme: "system" as SettingsColorScheme
+        },
+        conversations: {
+                initialLoadCount: 50
         }
 });
 
@@ -30,6 +36,9 @@ function createDefaultSettings(): SettingsState {
         return {
                 appearance: {
                         colorScheme: DEFAULT_SETTINGS.appearance.colorScheme
+                },
+                conversations: {
+                        initialLoadCount: DEFAULT_SETTINGS.conversations.initialLoadCount
                 }
         };
 }
@@ -43,12 +52,27 @@ function sanitizeSettings(candidate: Partial<SettingsState> | undefined): Settin
         if(!candidate) return defaults;
 
         const colorScheme = candidate.appearance?.colorScheme;
+        const initialLoadCount = candidate.conversations?.initialLoadCount;
 
         return {
                 appearance: {
                         colorScheme: isColorScheme(colorScheme) ? colorScheme : defaults.appearance.colorScheme
+                },
+                conversations: {
+                        initialLoadCount: sanitizeInitialLoadCount(initialLoadCount, defaults.conversations.initialLoadCount)
                 }
         };
+}
+
+function sanitizeInitialLoadCount(value: unknown, fallback: number): number {
+        const parsed = typeof value === "number" ? value : Number(value);
+        if(Number.isFinite(parsed)) {
+                const normalized = Math.round(parsed);
+                if(normalized >= 1 && normalized <= 1000) {
+                        return normalized;
+                }
+        }
+        return fallback;
 }
 
 function readStoredSettings(): SettingsState {
@@ -86,6 +110,9 @@ export function SettingsProvider(props: {children: React.ReactNode}) {
                         const draft: SettingsState = {
                                 appearance: {
                                         colorScheme: previous.appearance.colorScheme
+                                },
+                                conversations: {
+                                        initialLoadCount: previous.conversations.initialLoadCount
                                 }
                         };
                         const result = updater(draft);

@@ -103,8 +103,8 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 return true;
         }
 
-        public override requestLiteConversations(): boolean {
-                this.fetchLiteConversations();
+        public override requestLiteConversations(limit?: number): boolean {
+                this.fetchLiteConversations(limit);
                 return true;
         }
 
@@ -272,11 +272,12 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 }
         }
 
-        private async fetchLiteConversations() {
-                const response: ChatQueryResponse = await fetchChats(this.auth);
-                const conversations = response.data.map((chat) => this.convertChat(chat));
-                this.listener?.onMessageConversations(conversations);
-        }
+private async fetchLiteConversations(limit?: number) {
+const requestLimit = limit !== undefined ? Math.max(1, limit) : undefined;
+const response: ChatQueryResponse = await fetchChats(this.auth, {limit: requestLimit});
+const conversations = response.data.map((chat) => this.convertChat(chat));
+this.listener?.onMessageConversations(conversations);
+}
 
         private async fetchConversationInfo(chatGUIDs: string[]) {
                 const results: [string, Conversation | undefined][] = await Promise.all(chatGUIDs.map(async (guid) => {
