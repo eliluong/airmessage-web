@@ -554,8 +554,22 @@ function isReactionMessage(message: MessageResponse): boolean {
 function mapTapback(message: MessageResponse): TapbackItem | undefined {
         const typeCode = parseInt(message.associatedMessageType ?? "", 10);
         if(Number.isNaN(typeCode)) return undefined;
-        const isRemoval = typeCode >= TAPBACK_REMOVE_OFFSET;
-        const normalized = isRemoval ? typeCode - TAPBACK_REMOVE_OFFSET : typeCode - TAPBACK_ADD_OFFSET;
+
+        let isRemoval = false;
+        let normalized = typeCode;
+        if(typeCode >= TAPBACK_REMOVE_OFFSET) {
+                isRemoval = true;
+                normalized = typeCode - TAPBACK_REMOVE_OFFSET;
+        } else if(typeCode >= TAPBACK_ADD_OFFSET) {
+                normalized = typeCode - TAPBACK_ADD_OFFSET;
+        }
+
+        // Some BlueBubbles servers already provide normalized tapback codes (0-5).
+        // Clamp the value after removing offsets so it maps correctly.
+        if(normalized >= TAPBACK_ADD_OFFSET) {
+                normalized = normalized % TAPBACK_ADD_OFFSET;
+        }
+
         const tapbackType = mapTapbackType(normalized);
         if(tapbackType === undefined) return undefined;
         const sender = message.isFromMe ? "me" : message.handle?.address ?? "unknown";
