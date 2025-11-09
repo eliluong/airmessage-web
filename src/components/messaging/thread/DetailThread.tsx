@@ -34,8 +34,17 @@ import {installCancellablePromise} from "shared/util/cancellablePromise";
 export default function DetailThread({conversation}: {
 	conversation: Conversation
 }) {
-	const [displayState, setDisplayState] = useState<DisplayState>({type: DisplayType.Loading});
-	const [historyLoadState, setHistoryLoadState] = useState(HistoryLoadState.Idle);
+        const [displayState, setDisplayState] = useState<DisplayState>({type: DisplayType.Loading});
+        const [historyLoadState, setHistoryLoadState] = useState(HistoryLoadState.Idle);
+        const displayStateRef = useRef(displayState);
+        const historyLoadStateRef = useRef(historyLoadState);
+
+        useEffect(() => {
+                displayStateRef.current = displayState;
+        }, [displayState]);
+        useEffect(() => {
+                historyLoadStateRef.current = historyLoadState;
+        }, [historyLoadState]);
 	
 	const conversationTitle = useConversationTitle(conversation);
 	const faceTimeSupported = useIsFaceTimeSupported();
@@ -68,45 +77,48 @@ export default function DetailThread({conversation}: {
 	const loadedThreadMessages = useRef<LocalConversationID | undefined>(undefined);
 	
 	const requestHistoryUnsubscribeContainer = useUnsubscribeContainer([conversation.localID]);
-	const requestHistory = useCallback(() => {
-		//Return if this is a local conversation, or if the state is already loading or is complete
-		if(displayState.type !== DisplayType.Messages
-			|| conversation.localOnly
-			|| historyLoadState !== HistoryLoadState.Idle) return;
-		
-		//Set the state to loading
-		setHistoryLoadState(HistoryLoadState.Loading);
-		
-		//Fetch history
-		const displayStateMessages = displayState.messages;
-		
-		//Make sure we cancel if the conversation changes while we're loading
-		installCancellablePromise(
-			ConnectionManager.fetchThread(conversation.guid, displayStateMessages[displayStateMessages.length - 1].serverID),
-			requestHistoryUnsubscribeContainer
-		)
-			.then((messages) => {
-				if(messages.length > 0) {
-					//Return to idle, and add new messages
-					setHistoryLoadState(HistoryLoadState.Idle);
-					
-					setDisplayState((displayState) => {
-						if(displayState.type !== DisplayType.Messages) return displayState;
-						
-						return {
-							type: DisplayType.Messages,
-							messages: displayState.messages.concat(messages)
-						};
-					});
-				} else {
-					//No more history, we're done
-					setHistoryLoadState(HistoryLoadState.Complete);
-				}
-			}).catch(() => {
-			//Ignore, and wait for the user to retry
-			setHistoryLoadState(HistoryLoadState.Idle);
-		});
-	}, [conversation, displayState, setDisplayState, historyLoadState, setHistoryLoadState, requestHistoryUnsubscribeContainer]);
+        const requestHistory = useCallback(() => {
+                const currentDisplayState = displayStateRef.current;
+                const currentHistoryLoadState = historyLoadStateRef.current;
+
+                //Return if this is a local conversation, or if the state is already loading or is complete
+                if(currentDisplayState.type !== DisplayType.Messages
+                        || conversation.localOnly
+                        || currentHistoryLoadState !== HistoryLoadState.Idle) return;
+
+                //Set the state to loading
+                setHistoryLoadState(HistoryLoadState.Loading);
+
+                //Fetch history
+                const displayStateMessages = currentDisplayState.messages;
+
+                //Make sure we cancel if the conversation changes while we're loading
+                installCancellablePromise(
+                        ConnectionManager.fetchThread(conversation.guid, displayStateMessages[displayStateMessages.length - 1].serverID),
+                        requestHistoryUnsubscribeContainer
+                )
+                        .then((messages) => {
+                                if(messages.length > 0) {
+                                        //Return to idle, and add new messages
+                                        setHistoryLoadState(HistoryLoadState.Idle);
+
+                                        setDisplayState((displayState) => {
+                                                if(displayState.type !== DisplayType.Messages) return displayState;
+
+                                                return {
+                                                        type: DisplayType.Messages,
+                                                        messages: displayState.messages.concat(messages)
+                                                };
+                                        });
+                                } else {
+                                        //No more history, we're done
+                                        setHistoryLoadState(HistoryLoadState.Complete);
+                                }
+                        }).catch(() => {
+                        //Ignore, and wait for the user to retry
+                        setHistoryLoadState(HistoryLoadState.Idle);
+                });
+        }, [conversation, setDisplayState, setHistoryLoadState, requestHistoryUnsubscribeContainer, displayStateRef, historyLoadStateRef]);
 	
 	//Request messages when the conversation changes
 	useEffect(() => {
