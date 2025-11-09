@@ -150,6 +150,26 @@ export async function queryMessages(auth: BlueBubblesAuthState, payload: Record<
         });
 }
 
+export interface MessageSearchRequestOptions {
+        term: string;
+        limit?: number;
+        offset?: number;
+        before?: number;
+        after?: number;
+}
+
+export async function searchMessages(auth: BlueBubblesAuthState, options: MessageSearchRequestOptions): Promise<MessageQueryResponse> {
+        const params = new URLSearchParams();
+        params.set("term", options.term);
+        if(options.limit !== undefined) params.set("limit", String(options.limit));
+        if(options.offset !== undefined) params.set("offset", String(options.offset));
+        if(options.before !== undefined) params.set("before", String(options.before));
+        if(options.after !== undefined) params.set("after", String(options.after));
+        const queryString = params.toString();
+        const path = queryString.length > 0 ? `/message/search?${queryString}` : "/message/search";
+        return requestJson<MessageQueryResponse>(auth, path, {method: "GET"});
+}
+
 export async function sendTextMessage(auth: BlueBubblesAuthState, payload: Record<string, unknown>): Promise<MessageSendResponse> {
         return requestJson<MessageSendResponse>(auth, "/message/text", {
                 method: "POST",
