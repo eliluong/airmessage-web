@@ -6,7 +6,7 @@ import TapbackDislikeIcon from "shared/components/icon/TapbackDislikeIcon";
 import TapbackLaughIcon from "shared/components/icon/TapbackLaughIcon";
 import TapbackEmphasisIcon from "shared/components/icon/TapbackEmphasisIcon";
 import TapbackQuestionIcon from "shared/components/icon/TapbackQuestionIcon";
-import {Stack, Typography} from "@mui/material";
+import {Stack, Tooltip, Typography} from "@mui/material";
 import {Theme} from "@mui/material/styles";
 
 /**
@@ -15,8 +15,9 @@ import {Theme} from "@mui/material/styles";
  * @param props.count The amount of reactions of this tapback type
  */
 export default function TapbackChip(props: {
-	type: TapbackType;
-	count: number;
+        type: TapbackType;
+        count: number;
+        senders: readonly string[];
 }) {
 	let Icon: React.ElementType;
 	switch(props.type) {
@@ -40,33 +41,39 @@ export default function TapbackChip(props: {
 			break;
 	}
 	
-	return (
-		<Stack
-			sx={{
-				paddingX: "6px",
-				minWidth: 8,
-				height: 18,
-				borderStyle: "solid",
-				borderRadius: 4,
-				borderWidth: 2,
-				backgroundColor: "messageIncoming.main",
-				borderColor: "background.default"
-			}}
-			direction="row"
-			alignItems="center"
-			justifyContent="center">
-			<Icon
-				sx={{
-					color: (theme: Theme) => theme.palette.text.secondary,
-					width: 12,
-					height: 12
-				}} />
-			
-			{props.count > 1 && (
-				<Typography variant="body2" color="secondary">
-					{props.count}
-				</Typography>
-			)}
-		</Stack>
-	);
+        const tooltipTitle = props.senders
+                .map((sender) => sender || "Unknown sender")
+                .join(", ");
+
+        return (
+                <Tooltip title={tooltipTitle} placement="top" disableInteractive>
+                        <Stack
+                                sx={{
+                                        paddingX: "6px",
+                                        minWidth: 8,
+                                        height: 18,
+                                        borderStyle: "solid",
+                                        borderRadius: 4,
+                                        borderWidth: 2,
+                                        backgroundColor: "messageIncoming.main",
+                                        borderColor: "background.default"
+                                }}
+                                direction="row"
+                                alignItems="center"
+                                justifyContent="center">
+                                <Icon
+                                        sx={{
+                                                color: (theme: Theme) => theme.palette.text.secondary,
+                                                width: 12,
+                                                height: 12
+                                        }} />
+
+                                {props.count > 1 && (
+                                        <Typography variant="body2" color="secondary">
+                                                {props.count}
+                                        </Typography>
+                                )}
+                        </Stack>
+                </Tooltip>
+        );
 }

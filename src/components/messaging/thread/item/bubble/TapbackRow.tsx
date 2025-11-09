@@ -11,14 +11,19 @@ import TapbackChip from "shared/components/messaging/thread/item/bubble/TapbackC
 export default function TapbackRow(props: {
 	tapbacks: TapbackItem[]
 }) {
-	//Counting tapbacks
-	const tapbackCounts = useMemo(() =>
-		props.tapbacks.reduce<Map<TapbackType, number>>((accumulator, item) => {
-			const key = item.tapbackType;
-			accumulator.set(key, (accumulator.get(key) ?? 0) + 1);
-			return accumulator;
-		}, new Map())
-	, [props.tapbacks]);
+        //Group tapbacks by type to calculate counts and tooltip content
+        const tapbacksByType = useMemo(() =>
+                props.tapbacks.reduce<Map<TapbackType, string[]>>((accumulator, item) => {
+                        const key = item.tapbackType;
+                        const existingSenders = accumulator.get(key);
+                        if(existingSenders) {
+                                existingSenders.push(item.sender);
+                        } else {
+                                accumulator.set(key, [item.sender]);
+                        }
+                        return accumulator;
+                }, new Map())
+        , [props.tapbacks]);
 	
 	return (
 		<Stack
@@ -30,9 +35,14 @@ export default function TapbackRow(props: {
 			}}
 			direction="row"
 			gap={0.5}>
-			{Array.from(tapbackCounts.entries()).map(([tapbackType, count]) => (
-				<TapbackChip key={tapbackType} type={tapbackType} count={count} />
-			))}
-		</Stack>
-	);
+                        {Array.from(tapbacksByType.entries()).map(([tapbackType, senders]) => (
+                                <TapbackChip
+                                        key={tapbackType}
+                                        type={tapbackType}
+                                        count={senders.length}
+                                        senders={senders}
+                                />
+                        ))}
+                </Stack>
+        );
 }
