@@ -66,7 +66,7 @@ export default abstract class ProtocolManager {
 	 *
 	 * @return whether or not the action was successful
 	 */
-	public abstract requestLiteConversation(): boolean;
+public abstract requestLiteConversation(limit?: number): boolean;
 	
 	/**
 	 * Requests information regarding a certain list of conversations

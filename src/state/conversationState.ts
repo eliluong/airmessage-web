@@ -1,4 +1,4 @@
-import {useCallback, useContext, useEffect, useRef, useState} from "react";
+import {useCallback, useContext, useEffect, useMemo, useRef, useState} from "react";
 import {
         Conversation,
         ConversationItem,
@@ -24,21 +24,35 @@ import {normalizeAddress} from "shared/util/addressHelper";
 import {arrayContainsAll} from "shared/util/arrayUtils";
 import localMessageCache from "shared/state/localMessageCache";
 import {PeopleContext} from "shared/state/peopleState";
+import {useSettings} from "shared/components/settings/SettingsProvider";
 
 interface ConversationsState {
-	conversations: Conversation[] | undefined,
-	loadConversations(): Promise<Conversation[]>,
-	addConversation(newConversation: Conversation): void,
-	markConversationRead(conversationID: LocalConversationID): void
+        conversations: Conversation[] | undefined,
+        visibleConversations: Conversation[] | undefined,
+        hasMoreConversations: boolean,
+        loadConversations(): Promise<Conversation[]>,
+        loadMoreConversations(): Promise<Conversation[]>,
+        addConversation(newConversation: Conversation): void,
+        markConversationRead(conversationID: LocalConversationID): void
 }
 
 export default function useConversationState(activeConversationID: LocalConversationID | undefined, interactive: boolean = false): ConversationsState {
-	const [conversations, setConversations] = useState<Conversation[] | undefined>(undefined);
-	const pendingConversationDataMap = useRef(new Map<RemoteConversationID, ConversationItem[]>()).current;
-	
-	const peopleState = useContext(PeopleContext);
-	
-	const applyUpdateMessages = useCallback(async (newItems: ConversationItem[]) => {
+        const [conversations, setConversations] = useState<Conversation[] | undefined>(undefined);
+        const {settings} = useSettings();
+        const loadChunkSize = useMemo(() => Math.max(1, settings.conversations.initialLoadCount), [settings.conversations.initialLoadCount]);
+        const [visibleCount, setVisibleCount] = useState<number>(loadChunkSize);
+        const [requestedCount, setRequestedCount] = useState<number>(loadChunkSize);
+        const [hasMoreServerResults, setHasMoreServerResults] = useState<boolean>(false);
+        const pendingConversationDataMap = useRef(new Map<RemoteConversationID, ConversationItem[]>()).current;
+
+        const peopleState = useContext(PeopleContext);
+
+        useEffect(() => {
+                setVisibleCount((current) => Math.max(current, loadChunkSize));
+                setRequestedCount((current) => Math.max(current, loadChunkSize));
+        }, [loadChunkSize]);
+
+        const applyUpdateMessages = useCallback(async (newItems: ConversationItem[]) => {
 		//Sort new items into their conversations
 		const sortedConversationItems = newItems.reduce<Map<MixedConversationID, ConversationItem[]>>((accumulator, item) => {
 			//Get this item's ID
@@ -372,26 +386,55 @@ export default function useConversationState(activeConversationID: LocalConversa
 		return () => ConnectionManager.messageUpdateEmitter.unsubscribe(applyUpdateMessages);
 	}, [applyUpdateMessages]);
 	
-	//Subscribe to modifier updates
-	useEffect(() => {
-		if(!interactive) return;
-		
-		const listener = (modifierArray: MessageModifier[]) => {
-			//Play a tapback sound
-			if(modifierArray.some((modifier) => isModifierTapback(modifier) && modifier.isAddition)) {
-				playSoundTapback();
-			}
-		};
-		modifierUpdateEmitter.subscribe(listener);
-		return () => modifierUpdateEmitter.unsubscribe(listener);
-	}, [interactive]);
-	
-	const loadConversations = useCallback((): Promise<Conversation[]> => {
-		return ConnectionManager.fetchConversations().then((conversations) => {
-			setConversations(conversations);
-			return conversations;
-		});
-	}, [setConversations]);
+        //Subscribe to modifier updates
+        useEffect(() => {
+                if(!interactive) return;
+
+                const listener = (modifierArray: MessageModifier[]) => {
+                        //Play a tapback sound
+                        if(modifierArray.some((modifier) => isModifierTapback(modifier) && modifier.isAddition)) {
+                                playSoundTapback();
+                        }
+                };
+                modifierUpdateEmitter.subscribe(listener);
+                return () => modifierUpdateEmitter.unsubscribe(listener);
+        }, [interactive]);
+
+        const visibleConversations = useMemo(() => {
+                if(conversations === undefined) return undefined;
+                const limit = Math.min(visibleCount, conversations.length);
+                return conversations.slice(0, limit);
+        }, [conversations, visibleCount]);
+
+        const hasMoreConversations = useMemo(() => {
+                if(conversations === undefined) return false;
+                const safeVisibleCount = Math.min(visibleCount, conversations.length);
+                if(conversations.length > safeVisibleCount) return true;
+                return hasMoreServerResults && conversations.length >= requestedCount;
+        }, [conversations, visibleCount, hasMoreServerResults, requestedCount]);
+
+        const fetchAndSetConversations = useCallback((count?: number): Promise<Conversation[]> => {
+                return ConnectionManager.fetchConversations(count).then((fetchedConversations) => {
+                        setConversations(fetchedConversations);
+                        if(count !== undefined) {
+                                setHasMoreServerResults(fetchedConversations.length >= count);
+                        } else {
+                                setHasMoreServerResults(false);
+                        }
+                        return fetchedConversations;
+                });
+        }, [setConversations, setHasMoreServerResults]);
+
+        const loadConversations = useCallback((): Promise<Conversation[]> => {
+                return fetchAndSetConversations(requestedCount);
+        }, [fetchAndSetConversations, requestedCount]);
+
+        const loadMoreConversations = useCallback((): Promise<Conversation[]> => {
+                const target = requestedCount + loadChunkSize;
+                setRequestedCount(target);
+                setVisibleCount((current) => Math.max(current, target));
+                return fetchAndSetConversations(target);
+        }, [fetchAndSetConversations, loadChunkSize, requestedCount]);
 	
 	//Adds a new conversation at the top of the list
 	const addConversation = useCallback((newConversation: Conversation) => {
@@ -435,12 +478,15 @@ export default function useConversationState(activeConversationID: LocalConversa
                 }
         }, [setConversations]);
 	
-	return {
-		conversations,
-		loadConversations,
-		addConversation,
-		markConversationRead
-	};
+        return {
+                conversations,
+                visibleConversations,
+                hasMoreConversations,
+                loadConversations,
+                loadMoreConversations,
+                addConversation,
+                markConversationRead
+        };
 }
 
 /**

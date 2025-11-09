@@ -101,14 +101,19 @@ export async function pingServer(auth: BlueBubblesAuthState): Promise<void> {
         await requestJson(auth, "/general/ping", {method: "GET"});
 }
 
-export async function fetchChats(auth: BlueBubblesAuthState): Promise<ChatQueryResponse> {
+export async function fetchChats(auth: BlueBubblesAuthState, options: {limit?: number} = {}): Promise<ChatQueryResponse> {
+        const body: Record<string, unknown> = {
+                with: ["participants", "lastmessage"],
+                sort: "lastmessage"
+        };
+        if(options.limit !== undefined) {
+                body.limit = options.limit;
+        } else {
+                body.limit = 1000;
+        }
         return requestJson<ChatQueryResponse>(auth, "/chat/query", {
                 method: "POST",
-                body: JSON.stringify({
-                        with: ["participants", "lastmessage"],
-                        limit: 1000,
-                        sort: "lastmessage"
-                })
+                body: JSON.stringify(body)
         });
 }
 

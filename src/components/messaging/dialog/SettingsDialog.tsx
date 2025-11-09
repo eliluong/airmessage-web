@@ -1,4 +1,4 @@
-import React from "react";
+import React, {useCallback} from "react";
 import {
         Box,
         Button,
@@ -11,6 +11,7 @@ import {
         ListItemText,
         ListSubheader,
         Stack,
+        TextField,
         Typography
 } from "@mui/material";
 import {SettingsColorScheme, useSettings} from "shared/components/settings/SettingsProvider";
@@ -22,7 +23,20 @@ const COLOR_SCHEME_LABEL: Record<SettingsColorScheme, string> = {
 };
 
 export default function SettingsDialog(props: {isOpen: boolean; onDismiss: () => void}) {
-        const {settings} = useSettings();
+        const {settings, updateSettings} = useSettings();
+
+        const handleInitialLoadCountChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+                const value = Number.parseInt(event.target.value, 10);
+                updateSettings((previous) => {
+                        const nextValue = Number.isFinite(value) ? Math.min(1000, Math.max(1, value)) : previous.conversations.initialLoadCount;
+                        return {
+                                ...previous,
+                                conversations: {
+                                        initialLoadCount: nextValue
+                                }
+                        };
+                });
+        }, [updateSettings]);
 
         return (
                 <Dialog open={props.isOpen} onClose={props.onDismiss} fullWidth maxWidth="sm">
@@ -54,6 +68,34 @@ export default function SettingsDialog(props: {isOpen: boolean; onDismiss: () =>
                                                         <ListItemText
                                                                 primary="Theme"
                                                                 secondary={`Currently using ${COLOR_SCHEME_LABEL[settings.appearance.colorScheme]} mode`}
+                                                        />
+                                                </ListItem>
+                                        </List>
+
+                                        <List
+                                                dense
+                                                sx={{
+                                                        borderRadius: 1,
+                                                        border: (theme) => `1px solid ${theme.palette.divider}`
+                                                }}
+                                                subheader={
+                                                        <ListSubheader component="div" disableSticky>
+                                                                Conversations
+                                                        </ListSubheader>
+                                                }>
+                                                <ListItem
+                                                        secondaryAction={
+                                                                <TextField
+                                                                        type="number"
+                                                                        inputProps={{min: 1, max: 1000}}
+                                                                        size="small"
+                                                                        value={settings.conversations.initialLoadCount}
+                                                                        onChange={handleInitialLoadCountChange}
+                                                                />
+                                                        }>
+                                                        <ListItemText
+                                                                primary="Initial load count"
+                                                                secondary="Controls how many conversations load in the sidebar at a time"
                                                         />
                                                 </ListItem>
                                         </List>

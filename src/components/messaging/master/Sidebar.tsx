@@ -1,7 +1,7 @@
-import React, {useCallback, useContext, useEffect, useState} from "react";
+import React, {useCallback, useContext, useEffect, useRef, useState} from "react";
 import styles from "./Sidebar.module.css";
 import AirMessageLogo from "../../logo/AirMessageLogo";
-import {Box, Collapse, IconButton, List, Menu, MenuItem, Stack, Toolbar} from "@mui/material";
+import {Box, CircularProgress, Collapse, IconButton, List, Menu, MenuItem, Stack, Toolbar, Typography} from "@mui/material";
 import ListConversation from "./ListConversation";
 import {Conversation} from "../../../data/blocks";
 import ConnectionBanner from "./ConnectionBanner";
@@ -23,10 +23,12 @@ import {TransitionGroup} from "react-transition-group";
 import SettingsDialog from "shared/components/messaging/dialog/SettingsDialog";
 
 export default function Sidebar(props: {
-	conversations: Conversation[] | undefined;
-	selectedConversation?: number;
-	onConversationSelected: (id: number) => void;
-	onCreateSelected: () => void;
+        conversations: Conversation[] | undefined;
+        hasMoreConversations: boolean;
+        onLoadMoreConversations: () => Promise<Conversation[]>;
+        selectedConversation?: number;
+        onConversationSelected: (id: number) => void;
+        onCreateSelected: () => void;
         errorBanner?: ConnectionErrorCode;
         needsPeoplePermission?: boolean;
         onRequestPeoplePermission?: () => void;
@@ -54,7 +56,11 @@ export default function Sidebar(props: {
         const [isFeedbackDialog, showFeedbackDialog, hideFeedbackDialog] = useSidebarDialog(closeOverflowMenu);
         const [isSignOutDialog, showSignOutDialog, hideSignOutDialog] = useSidebarDialog(closeOverflowMenu);
         const [isRemoteUpdateDialog, showRemoteUpdateDialog, hideRemoteUpdateDialog] = useSidebarDialog();
-	const [faceTimeLinkDialog, setFaceTimeLinkDialog] = useState<string | undefined>(undefined);
+        const [faceTimeLinkDialog, setFaceTimeLinkDialog] = useState<string | undefined>(undefined);
+        const [isLoadingMore, setIsLoadingMore] = useState(false);
+        const scrollThrottleRef = useRef<number | undefined>(undefined);
+        const isLoadingMoreRef = useRef(false);
+        const listRef = useRef<HTMLUListElement | null>(null);
 	
 	//Keep track of remote updates
 	const [remoteUpdate, remoteUpdateCache, setRemoteUpdate] = useNonNullableCacheState<ServerUpdateData | undefined>(
@@ -75,11 +81,11 @@ export default function Sidebar(props: {
 	const isFaceTimeSupported = useIsFaceTimeSupported();
 	
 	const [isFaceTimeLinkLoading, setFaceTimeLinkLoading] = useState(false);
-	const createFaceTimeLink = useCallback(async () => {
-		setFaceTimeLinkLoading(true);
-		
-		try {
-			const link = await ConnectionManager.requestFaceTimeLink();
+        const createFaceTimeLink = useCallback(async () => {
+                setFaceTimeLinkLoading(true);
+
+                try {
+                        const link = await ConnectionManager.requestFaceTimeLink();
 			
 			//Prefer web share, fall back to displaying a dialog
 			if(navigator.share) {
@@ -95,8 +101,48 @@ export default function Sidebar(props: {
 			}
 		} finally {
 			setFaceTimeLinkLoading(false);
-		}
-	}, [setFaceTimeLinkLoading, displaySnackbar]);
+                }
+        }, [setFaceTimeLinkLoading, displaySnackbar]);
+
+        const triggerLoadMore = useCallback((target: HTMLElement) => {
+                if(!props.hasMoreConversations) return;
+                if(isLoadingMoreRef.current) return;
+                const distanceToBottom = target.scrollHeight - target.scrollTop - target.clientHeight;
+                if(distanceToBottom > 200) return;
+                isLoadingMoreRef.current = true;
+                setIsLoadingMore(true);
+                props.onLoadMoreConversations()
+                        .catch(() => undefined)
+                        .finally(() => {
+                                isLoadingMoreRef.current = false;
+                                setIsLoadingMore(false);
+                        });
+        }, [props.hasMoreConversations, props.onLoadMoreConversations]);
+
+        const clearScrollThrottle = useCallback(() => {
+                if(scrollThrottleRef.current !== undefined) {
+                        window.clearTimeout(scrollThrottleRef.current);
+                        scrollThrottleRef.current = undefined;
+                }
+        }, []);
+
+        const handleScroll = useCallback((event: React.UIEvent<HTMLUListElement>) => {
+                const target = event.currentTarget;
+                if(scrollThrottleRef.current !== undefined) return;
+                scrollThrottleRef.current = window.setTimeout(() => {
+                        scrollThrottleRef.current = undefined;
+                        triggerLoadMore(target);
+                }, 150);
+        }, [triggerLoadMore]);
+
+        useEffect(() => () => clearScrollThrottle(), [clearScrollThrottle]);
+
+        useEffect(() => {
+                if(!props.hasMoreConversations) {
+                        isLoadingMoreRef.current = false;
+                        setIsLoadingMore(false);
+                }
+        }, [props.hasMoreConversations]);
 	
 	return (
 		<Stack height="100%">
@@ -178,23 +224,34 @@ export default function Sidebar(props: {
 			)}
 			
                         {props.conversations !== undefined ? (
-				<List className={styles.sidebarList}>
-					<TransitionGroup>
-						{props.conversations.map((conversation) => (
-							<Collapse key={conversation.localID}>
-								<ListConversation
-									conversation={conversation}
+                                <List className={styles.sidebarList} onScroll={handleScroll} ref={listRef}>
+                                        <TransitionGroup>
+                                                {props.conversations.map((conversation) => (
+                                                        <Collapse key={conversation.localID}>
+                                                                <ListConversation
+                                                                        conversation={conversation}
 									selected={conversation.localID === props.selectedConversation}
 									highlighted={conversation.unreadMessages}
 									onSelected={() => props.onConversationSelected(conversation.localID)} />
 							</Collapse>
-						))}
-					</TransitionGroup>
-				</List>
-			) : (
-				<Box className={styles.sidebarListLoading}>
-					{[...Array(16)].map((element, index) => <ConversationSkeleton key={`skeleton-${index}`} />)}
-				</Box>
+                                                ))}
+                                        </TransitionGroup>
+                                        {props.hasMoreConversations && (
+                                                <Box display="flex" justifyContent="center" py={1}>
+                                                        {isLoadingMore ? (
+                                                                <CircularProgress size={20} />
+                                                        ) : (
+                                                                <Typography variant="caption" color="textSecondary">
+                                                                        Scroll to load more conversations
+                                                                </Typography>
+                                                        )}
+                                                </Box>
+                                        )}
+                                </List>
+                        ) : (
+                                <Box className={styles.sidebarListLoading}>
+                                        {[...Array(16)].map((element, index) => <ConversationSkeleton key={`skeleton-${index}`} />)}
+                                </Box>
 			)}
 		</Stack>
 	);
