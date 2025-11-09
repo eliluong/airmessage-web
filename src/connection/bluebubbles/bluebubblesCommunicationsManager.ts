@@ -434,6 +434,10 @@ this.listener?.onMessageConversations(conversations);
                 const direction = normalizedOptions?.direction
                         ?? (anchorMessageID !== undefined ? "before" : "latest");
 
+                if(direction === "after") {
+                        payload.sort = "ASC";
+                }
+
                 if(anchorMessageID !== undefined) {
                         if(direction === "after") {
                                 payload.where = [
