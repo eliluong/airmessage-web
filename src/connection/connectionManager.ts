@@ -4,16 +4,17 @@ import ClientComm5 from "./comm5/clientComm5";
 import DataProxy from "./dataProxy";
 import BlueBubblesCommunicationsManager from "./bluebubbles/bluebubblesCommunicationsManager";
 import BlueBubblesDataProxy from "./bluebubbles/bluebubblesDataProxy";
-import {Conversation, ConversationItem, LinkedConversation, MessageModifier} from "../data/blocks";
+import {Conversation, ConversationItem, LinkedConversation, MessageItem, MessageModifier, MessageSearchHit} from "../data/blocks";
 import {
-	AttachmentRequestErrorCode,
-	ConnectionErrorCode,
-	CreateChatErrorCode,
-	FaceTimeInitiateCode,
-	FaceTimeLinkErrorCode,
-	MessageError,
-	MessageErrorCode,
-	RemoteUpdateErrorCode
+        AttachmentRequestErrorCode,
+        ConnectionErrorCode,
+        CreateChatErrorCode,
+        ConversationItemType,
+        FaceTimeInitiateCode,
+        FaceTimeLinkErrorCode,
+        MessageError,
+        MessageErrorCode,
+        RemoteUpdateErrorCode
 } from "../data/stateCodes";
 import EventEmitter, {CachedEventEmitter} from "../util/eventEmitter";
 import promiseTimeout from "../util/promiseTimeout";
@@ -26,6 +27,7 @@ import ResolveablePromiseTimeout from "shared/util/resolveablePromiseTimeout";
 import CallEvent from "shared/data/callEvent";
 import ConversationTarget from "shared/data/conversationTarget";
 import EmitterPromiseTuple from "shared/util/emitterPromiseTuple";
+import {MessageSearchOptions, MessageSearchResult} from "./messageSearch";
 
 export const targetCommVer: number[] = [5, 5];
 export const targetCommVerString = targetCommVer.join(".");
@@ -627,18 +629,45 @@ export function fetchConversationInfo(chatGUIDs: string[]): Promise<[string, Lin
 }
 
 export function fetchThread(chatGUID: string, firstMessageID?: number): Promise<ConversationItem[]> {
-	//Failing immediately if there is no network connection
-	if(!isConnected()) return Promise.reject(messageErrorNetwork);
-	
-	//Starting a new promise
-	const key = JSON.stringify({chatGUID: chatGUID, firstMessageID: firstMessageID} as ThreadKey);
-	return requestTimeoutMap(key, threadPromiseMap, undefined, new Promise<ConversationItem[]>((resolve, reject) => {
-		//Sending the request
-		communicationsManager!.requestLiteThread(chatGUID, firstMessageID);
-		
-		//Recording the promise
-		pushKeyedArray(threadPromiseMap, key, {resolve: resolve, reject: reject});
-	}));
+        //Failing immediately if there is no network connection
+        if(!isConnected()) return Promise.reject(messageErrorNetwork);
+
+        //Starting a new promise
+        const key = JSON.stringify({chatGUID: chatGUID, firstMessageID: firstMessageID} as ThreadKey);
+        return requestTimeoutMap(key, threadPromiseMap, undefined, new Promise<ConversationItem[]>((resolve, reject) => {
+                //Sending the request
+                communicationsManager!.requestLiteThread(chatGUID, firstMessageID);
+
+                //Recording the promise
+                pushKeyedArray(threadPromiseMap, key, {resolve: resolve, reject: reject});
+        }));
+}
+
+export async function searchMessages(options: MessageSearchOptions): Promise<MessageSearchResult> {
+        if(!isConnected()) return Promise.reject(messageErrorNetwork);
+
+        if(dataProxy.proxyType !== "BlueBubbles") {
+                return Promise.reject(new Error("Message search is currently only supported when connected via BlueBubbles."));
+        }
+
+        if(!communicationsManager?.searchMessages) {
+                return Promise.reject(new Error("The active connection does not support message search."));
+        }
+
+        const rawResult = await communicationsManager.searchMessages(options);
+        const hits: MessageSearchHit[] = rawResult.items.reduce<MessageSearchHit[]>((accumulator, item) => {
+                if(item.itemType !== ConversationItemType.Message) return accumulator;
+                const messageItem = item as MessageItem;
+                if(messageItem.serverID === undefined) return accumulator;
+                accumulator.push({
+                        conversationGuid: messageItem.chatGuid,
+                        message: messageItem,
+                        originalROWID: messageItem.serverID
+                });
+                return accumulator;
+        }, []);
+
+        return {items: hits, metadata: rawResult.metadata};
 }
 
 export function fetchAttachment(attachmentGUID: string): EmitterPromiseTuple<FileDownloadProgress, FileDownloadResult> {

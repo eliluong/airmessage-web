@@ -72,6 +72,12 @@ export interface MessageItem extends ConversationItemBase {
 	progress?: number; //Undefined for hide, -1 for indeterminate, 0-100 for determinate
 }
 
+export interface MessageSearchHit {
+	readonly conversationGuid: RemoteConversationID | undefined;
+	readonly message: MessageItem;
+	readonly originalROWID: number;
+}
+
 export interface AttachmentItem {
 	readonly localID?: number;
 	readonly guid?: string;
