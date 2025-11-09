@@ -539,8 +539,10 @@ this.listener?.onMessageConversations(conversations);
                 const chatGuid = message.chats?.[0]?.guid;
                 if(!chatGuid) return undefined;
 
-                const normalizedTarget = normalizeTapbackTargetText(tapback.targetText);
-                if(normalizedTarget.length === 0) return undefined;
+                const normalizedTargets = tapback.normalizedTargets.filter((value) => value.length > 0);
+                if(normalizedTargets.length === 0) return undefined;
+
+                const normalizedTargetSet = new Set(normalizedTargets);
 
                 let bestGuid: string | undefined;
                 let bestDate = -Infinity;
@@ -552,7 +554,8 @@ this.listener?.onMessageConversations(conversations);
                         if(!candidateGuid) continue;
                         if(!candidate.text) continue;
                         const candidateNormalizedText = normalizeTapbackTargetText(candidate.text);
-                        if(candidateNormalizedText !== normalizedTarget) continue;
+                        if(candidateNormalizedText.length === 0) continue;
+                        if(!normalizedTargetSet.has(candidateNormalizedText)) continue;
 
                         const candidateDate = candidate.dateCreated ?? 0;
                         if(candidateDate >= bestDate) {
@@ -562,7 +565,11 @@ this.listener?.onMessageConversations(conversations);
                 }
 
                 if(bestGuid) return bestGuid;
-                return this.lookupSmsTapbackTarget(chatGuid, normalizedTarget);
+                for(const normalized of normalizedTargets) {
+                        const cached = this.lookupSmsTapbackTarget(chatGuid, normalized);
+                        if(cached) return cached;
+                }
+                return undefined;
         }
 
         private lookupSmsTapbackTarget(chatGuid: string, normalizedText: string): string | undefined {
@@ -697,6 +704,7 @@ interface ParsedSmsTapback {
         tapbackType: TapbackType;
         isAddition: boolean;
         targetText: string;
+        normalizedTargets: string[];
 }
 
 const TAPBACK_STRING_CODE_MAP: Record<string, number> = {
@@ -719,6 +727,7 @@ const ZERO_WIDTH_REGEX = /[\u200B-\u200D\u2060\uFEFF]/g;
 const VARIATION_SELECTOR_REGEX = /[\uFE0E\uFE0F]/g;
 const EMOJI_MODIFIER_REGEX = /[\u{1F3FB}-\u{1F3FF}]/gu;
 const SMS_TAPBACK_QUOTE_REGEX = /^(.*?)[“"”'’]([\s\S]*)[”"'’]$/;
+const NON_ALPHANUMERIC_WITH_OPTIONAL_SUFFIX_REGEX = /^[^a-z0-9]+(?:\s+(?:to|at))?$/u;
 
 const SMS_TAPBACK_PREFIX_MAP: Record<string, {tapbackType: TapbackType; isAddition: boolean}> = {
         loved: {tapbackType: TapbackType.Love, isAddition: true},
@@ -775,6 +784,15 @@ const SMS_TAPBACK_PREFIX_MAP: Record<string, {tapbackType: TapbackType; isAdditi
         "removed ❓ from": {tapbackType: TapbackType.Question, isAddition: false}
 };
 
+const SMS_TAPBACK_TARGET_WRAPPERS: Partial<Record<TapbackType, string[]>> = {
+        [TapbackType.Love]: ["❤", "♥"],
+        [TapbackType.Like]: ["👍"],
+        [TapbackType.Dislike]: ["👎"],
+        [TapbackType.Laugh]: ["😂", "🤣"],
+        [TapbackType.Emphasis]: ["‼", "❗", "!"],
+        [TapbackType.Question]: ["?", "❓", "❔"]
+};
+
 function parseSmsTapback(message: MessageResponse): ParsedSmsTapback | undefined {
         const text = message.text;
         if(!text) return undefined;
@@ -796,10 +814,17 @@ function parseSmsTapback(message: MessageResponse): ParsedSmsTapback | undefined
         const targetText = stripInvisibleSelectors(rawTarget).trim();
         if(targetText.length === 0) return undefined;
 
+        const normalizedBase = normalizeTapbackTargetText(targetText);
+        if(normalizedBase.length === 0) return undefined;
+
+        const normalizedTargets = buildSmsTapbackTargetVariants(normalizedBase, mapping.tapbackType);
+        if(normalizedTargets.length === 0) return undefined;
+
         return {
                 tapbackType: mapping.tapbackType,
                 isAddition: mapping.isAddition,
-                targetText
+                targetText,
+                normalizedTargets
         };
 }
 
@@ -810,7 +835,18 @@ function normalizeTapbackTargetText(text: string): string {
 function normalizeSmsTapbackPrefix(prefix: string): string {
         const stripped = stripInvisibleSelectors(prefix);
         const withoutModifiers = removeEmojiModifiers(stripped);
-        return withoutModifiers.replace(/\s+/g, " ").trim().toLowerCase();
+        let normalized = withoutModifiers.replace(/\s+/g, " ").trim().toLowerCase();
+        if(normalized.length === 0) return normalized;
+
+        if(NON_ALPHANUMERIC_WITH_OPTIONAL_SUFFIX_REGEX.test(normalized)) {
+                normalized = normalized.replace(/\s+(?:to|at)$/u, "");
+        }
+
+        if(/^[^a-z0-9]+$/u.test(normalized)) {
+                normalized = collapseRepeatedSymbols(normalized);
+        }
+
+        return normalized;
 }
 
 function stripInvisibleSelectors(text: string): string {
@@ -819,6 +855,44 @@ function stripInvisibleSelectors(text: string): string {
 
 function removeEmojiModifiers(text: string): string {
         return text.replace(EMOJI_MODIFIER_REGEX, "");
+}
+
+function collapseRepeatedSymbols(text: string): string {
+        const chars = Array.from(text);
+        if(chars.length === 0) return text;
+        const first = chars[0];
+        if(chars.every((char) => char === first)) {
+                return first;
+        }
+        return text;
+}
+
+function buildSmsTapbackTargetVariants(base: string, tapbackType: TapbackType): string[] {
+        const variants = new Set<string>();
+        if(base.length > 0) variants.add(base);
+        const stripped = stripTapbackTargetWrappers(base, tapbackType);
+        if(stripped.length > 0) variants.add(stripped);
+        return Array.from(variants);
+}
+
+function stripTapbackTargetWrappers(text: string, tapbackType: TapbackType): string {
+        const wrappers = SMS_TAPBACK_TARGET_WRAPPERS[tapbackType];
+        if(!wrappers || wrappers.length === 0) return text;
+
+        let result = text;
+        let changed = false;
+        do {
+                changed = false;
+                for(const wrapper of wrappers) {
+                        if(result.length < wrapper.length * 2) continue;
+                        if(result.startsWith(wrapper) && result.endsWith(wrapper)) {
+                                result = result.slice(wrapper.length, result.length - wrapper.length).trim();
+                                changed = true;
+                        }
+                }
+        } while(changed);
+
+        return result;
 }
 
 function getMessageService(message: MessageResponse): string | undefined {
