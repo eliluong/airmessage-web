@@ -551,22 +551,92 @@ function isReactionMessage(message: MessageResponse): boolean {
         return !!message.associatedMessageGuid && !!message.associatedMessageType;
 }
 
+interface NormalizedTapbackIdentifier {
+        code: number;
+        isRemoval: boolean;
+}
+
+const TAPBACK_STRING_CODE_MAP: Record<string, number> = {
+        love: 0,
+        heart: 0,
+        like: 1,
+        thumbsup: 1,
+        dislike: 2,
+        thumbsdown: 2,
+        laugh: 3,
+        haha: 3,
+        emphasize: 4,
+        emphasis: 4,
+        exclamation: 4,
+        question: 5,
+        questionmark: 5
+};
+
 function mapTapback(message: MessageResponse): TapbackItem | undefined {
-        const typeCode = parseInt(message.associatedMessageType ?? "", 10);
-        if(Number.isNaN(typeCode)) return undefined;
-        const isRemoval = typeCode >= TAPBACK_REMOVE_OFFSET;
-        const normalized = isRemoval ? typeCode - TAPBACK_REMOVE_OFFSET : typeCode - TAPBACK_ADD_OFFSET;
-        const tapbackType = mapTapbackType(normalized);
-        if(tapbackType === undefined) return undefined;
+        const rawType = message.associatedMessageType ?? "";
+        const normalized = normalizeTapbackIdentifier(rawType);
+        if(!normalized) {
+                console.warn("[BlueBubbles] Unknown tapback identifier", {
+                        identifier: rawType,
+                        guid: message.guid,
+                        associatedMessageGuid: message.associatedMessageGuid
+                });
+                return undefined;
+        }
+        const tapbackType = mapTapbackType(normalized.code);
+        if(tapbackType === undefined) {
+                console.warn("[BlueBubbles] Unsupported tapback code", {
+                        identifier: rawType,
+                        code: normalized.code,
+                        guid: message.guid,
+                        associatedMessageGuid: message.associatedMessageGuid
+                });
+                return undefined;
+        }
         const sender = message.isFromMe ? "me" : message.handle?.address ?? "unknown";
         return {
                 type: MessageModifierType.Tapback,
                 messageGuid: message.associatedMessageGuid!,
                 messageIndex: 0,
                 sender,
-                isAddition: !isRemoval,
+                isAddition: !normalized.isRemoval,
                 tapbackType
         } as TapbackItem;
+}
+
+function normalizeTapbackIdentifier(rawType: string): NormalizedTapbackIdentifier | undefined {
+        const trimmed = rawType.trim();
+        if(trimmed.length === 0) return undefined;
+
+        const numeric = Number.parseInt(trimmed, 10);
+        if(!Number.isNaN(numeric)) {
+                const isRemoval = numeric >= TAPBACK_REMOVE_OFFSET;
+                const normalized = isRemoval ? numeric - TAPBACK_REMOVE_OFFSET : numeric - TAPBACK_ADD_OFFSET;
+                return {code: normalized, isRemoval};
+        }
+
+        let candidate = trimmed.toLowerCase();
+        candidate = candidate.replace(/^com\.apple\.messages\.tapback\./, "");
+        candidate = candidate.replace(/^tapback[-:_]?/, "");
+
+        let isRemoval = false;
+        if(candidate.startsWith("-")) {
+                isRemoval = true;
+                candidate = candidate.slice(1);
+        }
+        if(candidate.startsWith("remove-")) {
+                isRemoval = true;
+                candidate = candidate.slice("remove-".length);
+        }
+        if(candidate.endsWith("-remove")) {
+                isRemoval = true;
+                candidate = candidate.slice(0, -"-remove".length);
+        }
+
+        const collapsed = candidate.replace(/[^a-z]/g, "");
+        const mapped = TAPBACK_STRING_CODE_MAP[collapsed];
+        if(mapped === undefined) return undefined;
+        return {code: mapped, isRemoval};
 }
 
 function mapTapbackType(code: number) {
@@ -587,6 +657,11 @@ function mapTapbackType(code: number) {
                         return undefined;
         }
 }
+
+export const __testables = {
+        mapTapback,
+        normalizeTapbackIdentifier
+};
 
 function mapParticipantActionType(code: number): ParticipantActionType {
         switch(code) {
