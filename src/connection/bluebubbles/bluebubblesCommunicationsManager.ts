@@ -602,7 +602,9 @@ this.listener?.onMessageConversations(conversations);
                 }
 
                 const canonicalGuid = normalizeMessageGuid(message.guid) ?? message.guid;
-                const attachments = (message.attachments ?? []).map(convertAttachment);
+                const attachments = (message.attachments ?? [])
+                        .filter((attachment) => !attachment.hideAttachment)
+                        .map(convertAttachment);
                 const {status, statusDate} = computeMessageStatus(message, this.supportsDeliveredReceipts, this.supportsReadReceipts);
                 const tapbacks = canonicalGuid ? (this.tapbackCache.get(canonicalGuid) ?? this.tapbackCache.get(message.guid) ?? []) : [];
                 const error = message.error !== 0 ? {code: MessageErrorCode.ServerExternal, detail: String(message.error)} : undefined;
@@ -784,7 +786,9 @@ function convertAttachment(attachment: AttachmentResponse) {
 }
 
 function buildConversationPreview(message: MessageResponse): ConversationPreview {
-        const attachments = (message.attachments ?? []).map((attachment) => attachment.transferName);
+        const attachments = (message.attachments ?? [])
+                .filter((attachment) => !attachment.hideAttachment)
+                .map((attachment) => attachment.transferName);
         return {
                 type: ConversationPreviewType.Message,
                 date: new Date(message.dateCreated),
