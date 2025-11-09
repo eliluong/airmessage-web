@@ -38,6 +38,7 @@ import {encryptData, isCryptoPasswordAvailable} from "shared/util/encryptionUtil
 import ServerUpdateData from "shared/data/serverUpdateData";
 import {generateConversationLocalID} from "shared/util/conversationUtils";
 import ConversationTarget from "shared/data/conversationTarget";
+import {ThreadFetchOptions} from "../communicationsManager";
 import {arrayBufferToHex} from "shared/util/encodingUtils";
 
 const attachmentChunkSize = 2 * 1024 * 1024; //2 MiB
@@ -381,11 +382,14 @@ export default class ClientProtocol5 extends ProtocolManager {
 	
 	private handleMessageLiteThreadRetrieval(unpacker: AirUnpacker) {
 		const chatGUID = unpacker.unpackString();
-		const firstMessageID: number | undefined = unpacker.unpackBoolean() ? unpacker.unpackLong() : undefined;
+                const firstMessageID: number | undefined = unpacker.unpackBoolean() ? unpacker.unpackLong() : undefined;
 		//Unlike Android, the bottom of the chat is index 0
 		const conversationItems = unpackArray(unpacker, unpackConversationItem).reverse();
 		
-		this.communicationsManager.listener?.onMessageThread(chatGUID, firstMessageID, conversationItems);
+                const options: ThreadFetchOptions | undefined = firstMessageID !== undefined
+                        ? {anchorMessageID: firstMessageID, direction: "before"}
+                        : undefined;
+                this.communicationsManager.listener?.onMessageThread(chatGUID, options, conversationItems);
 	}
 	
 	private handleMessageSendResult(unpacker: AirUnpacker) {
@@ -705,24 +709,25 @@ export default class ClientProtocol5 extends ProtocolManager {
 		return true;
 	}
 	
-	requestLiteThread(chatGUID: string, firstMessageID?: number): boolean {
-		const packer = AirPacker.get();
-		try {
-			packer.packInt(nhtLiteThreadRetrieval);
-			packer.packString(chatGUID);
-			if(firstMessageID) {
-				packer.packBoolean(true);
-				packer.packLong(firstMessageID);
-			} else {
-				packer.packBoolean(false);
-			}
-			this.dataProxy.send(packer.toArrayBuffer(), true);
-		} finally {
-			packer.reset();
-		}
-		
-		return true;
-	}
+        requestLiteThread(chatGUID: string, options?: ThreadFetchOptions): boolean {
+                const packer = AirPacker.get();
+                try {
+                        packer.packInt(nhtLiteThreadRetrieval);
+                        packer.packString(chatGUID);
+                        const firstMessageID = options?.anchorMessageID;
+                        if(firstMessageID !== undefined) {
+                                packer.packBoolean(true);
+                                packer.packLong(firstMessageID);
+                        } else {
+                                packer.packBoolean(false);
+                        }
+                        this.dataProxy.send(packer.toArrayBuffer(), true);
+                } finally {
+                        packer.reset();
+                }
+
+                return true;
+        }
 	
 	requestChatCreation(requestID: number, members: string[], service: string): boolean {
 		const packer = AirPacker.get();

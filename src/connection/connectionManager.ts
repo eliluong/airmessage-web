@@ -1,5 +1,10 @@
 import DataProxyConnect from "shared/connection/connect/dataProxyConnect";
-import CommunicationsManager, {CommunicationsManagerListener} from "./communicationsManager";
+import CommunicationsManager, {
+        CommunicationsManagerListener,
+        ThreadFetchOptions,
+        ThreadFetchMetadata,
+        normalizeThreadFetchOptions
+} from "./communicationsManager";
 import ClientComm5 from "./comm5/clientComm5";
 import DataProxy from "./dataProxy";
 import BlueBubblesCommunicationsManager from "./bluebubbles/bluebubblesCommunicationsManager";
@@ -119,13 +124,39 @@ interface PromiseExecutor<T> {
 
 const liteConversationPromiseArray: PromiseExecutor<LinkedConversation[]>[] = []; //Retrieval of all lite conversations
 interface ThreadKey {
-	chatGUID: string;
-	firstMessageID?: number;
+        chatGUID: string;
+        options?: ThreadFetchOptions;
+}
+
+export interface ThreadFetchResult {
+        items: ConversationItem[];
+        metadata?: ThreadFetchMetadata;
+}
+
+function buildThreadPromiseKey(chatGUID: string, options?: ThreadFetchOptions): string {
+        const normalizedOptions = normalizeThreadFetchOptions(options);
+        const key: ThreadKey = {chatGUID, options: normalizedOptions};
+        return JSON.stringify(key);
 }
 const conversationDetailsPromiseMap: Map<string, PromiseExecutor<[string, Conversation | undefined][]>[]> = new Map(); //Retrieval of a specific conversation's details
-const threadPromiseMap: Map<string, PromiseExecutor<ConversationItem[]>[]> = new Map(); //Retrieval of messages from a thread
+const threadPromiseMap: Map<string, PromiseExecutor<ThreadFetchResult>[]> = new Map(); //Retrieval of messages from a thread
 let faceTimeLinkPromise: ResolveablePromiseTimeout<string> | undefined = undefined; //Creating a FaceTime link
 let faceTimeInitiatePromise: ResolveablePromiseTimeout<void> | undefined = undefined; //Initiating a FaceTime call
+
+function computeThreadFetchMetadata(items: ConversationItem[]): ThreadFetchMetadata | undefined {
+        let oldest: number | undefined;
+        let newest: number | undefined;
+        for(const item of items) {
+                if(item.itemType !== ConversationItemType.Message) continue;
+                const serverID = item.serverID;
+                if(serverID === undefined) continue;
+                if(oldest === undefined || serverID < oldest) oldest = serverID;
+                if(newest === undefined || serverID > newest) newest = serverID;
+        }
+
+        if(oldest === undefined && newest === undefined) return undefined;
+        return {oldestServerID: oldest, newestServerID: newest};
+}
 
 class FileDownloadState {
 	private accumulator!: TransferAccumulator;
@@ -341,14 +372,14 @@ const communicationsManagerListener: CommunicationsManagerListener = {
 		
 		//Emptying the array
 		liteConversationPromiseArray.length = 0;
-	}, onMessageThread(chatGUID: string, firstMessageID: number | undefined, data: ConversationItem[]) {
-		//Resolving pending promises
-		const promiseMapKey = JSON.stringify({chatGUID: chatGUID, firstMessageID: firstMessageID} as ThreadKey);
-		const promiseArray = threadPromiseMap.get(promiseMapKey);
-		if(promiseArray) {
-			for(const promise of promiseArray) promise.resolve(data);
-			threadPromiseMap.delete(promiseMapKey);
-		}
+        }, onMessageThread(chatGUID: string, options: ThreadFetchOptions | undefined, data: ConversationItem[], metadata?: ThreadFetchMetadata) {
+                const promiseMapKey = buildThreadPromiseKey(chatGUID, options);
+                const promiseArray = threadPromiseMap.get(promiseMapKey);
+                if(promiseArray) {
+                        const resolvedMetadata = metadata ?? computeThreadFetchMetadata(data);
+                        for(const promise of promiseArray) promise.resolve({items: data, metadata: resolvedMetadata});
+                        threadPromiseMap.delete(promiseMapKey);
+                }
 	}, onSendMessageResponse(requestID: number, error: MessageError | undefined): void {
 		//Resolving pending promises
 		const promise = messageSendPromiseMap.get(requestID);
@@ -628,15 +659,16 @@ export function fetchConversationInfo(chatGUIDs: string[]): Promise<[string, Lin
 	}));
 }
 
-export function fetchThread(chatGUID: string, firstMessageID?: number): Promise<ConversationItem[]> {
+export function fetchThread(chatGUID: string, options?: ThreadFetchOptions): Promise<ThreadFetchResult> {
         //Failing immediately if there is no network connection
         if(!isConnected()) return Promise.reject(messageErrorNetwork);
 
         //Starting a new promise
-        const key = JSON.stringify({chatGUID: chatGUID, firstMessageID: firstMessageID} as ThreadKey);
-        return requestTimeoutMap(key, threadPromiseMap, undefined, new Promise<ConversationItem[]>((resolve, reject) => {
+        const normalizedOptions = normalizeThreadFetchOptions(options);
+        const key = buildThreadPromiseKey(chatGUID, normalizedOptions);
+        return requestTimeoutMap(key, threadPromiseMap, undefined, new Promise<ThreadFetchResult>((resolve, reject) => {
                 //Sending the request
-                communicationsManager!.requestLiteThread(chatGUID, firstMessageID);
+                communicationsManager!.requestLiteThread(chatGUID, normalizedOptions);
 
                 //Recording the promise
                 pushKeyedArray(threadPromiseMap, key, {resolve: resolve, reject: reject});

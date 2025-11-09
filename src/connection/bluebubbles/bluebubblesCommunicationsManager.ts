@@ -1,4 +1,8 @@
-import CommunicationsManager from "../communicationsManager";
+import CommunicationsManager, {
+        ThreadFetchMetadata,
+        ThreadFetchOptions,
+        normalizeThreadFetchOptions
+} from "../communicationsManager";
 import DataProxy from "../dataProxy";
 import {Conversation, ConversationItem, ConversationPreview, LinkedConversation, MessageItem, TapbackItem} from "../../data/blocks";
 import {
@@ -161,8 +165,8 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 return true;
         }
 
-        public override requestLiteThread(chatGUID: string, firstMessageID?: number): boolean {
-                this.fetchThread(chatGUID, firstMessageID);
+        public override requestLiteThread(chatGUID: string, options?: ThreadFetchOptions): boolean {
+                this.fetchThread(chatGUID, options);
                 return true;
         }
 
@@ -411,7 +415,8 @@ this.listener?.onMessageConversations(conversations);
                 this.listener?.onConversationUpdate(results);
         }
 
-        private async fetchThread(chatGUID: string, firstMessageID?: number) {
+        private async fetchThread(chatGUID: string, options?: ThreadFetchOptions) {
+                const normalizedOptions = normalizeThreadFetchOptions(options);
                 const payload: Record<string, unknown> = {
                         chatGuid: chatGUID,
                         sort: "DESC",
@@ -419,25 +424,60 @@ this.listener?.onMessageConversations(conversations);
                         with: ["attachments"],
                         offset: 0
                 };
-                if(firstMessageID !== undefined) {
-                        payload.where = [
-                                {
-                                        statement: "message.ROWID < :rowid",
-                                        args: {rowid: firstMessageID}
-                                }
-                        ];
+
+                if(normalizedOptions?.limit !== undefined) {
+                        const clampedLimit = Math.max(1, Math.floor(normalizedOptions.limit));
+                        payload.limit = clampedLimit;
+                }
+
+                const anchorMessageID = normalizedOptions?.anchorMessageID;
+                const direction = normalizedOptions?.direction
+                        ?? (anchorMessageID !== undefined ? "before" : "latest");
+
+                if(anchorMessageID !== undefined) {
+                        if(direction === "after") {
+                                payload.where = [
+                                        {
+                                                statement: "message.ROWID > :rowid",
+                                                args: {rowid: anchorMessageID}
+                                        }
+                                ];
+                        } else {
+                                payload.where = [
+                                        {
+                                                statement: "message.ROWID < :rowid",
+                                                args: {rowid: anchorMessageID}
+                                        }
+                                ];
+                        }
                 }
 
                 const response: MessageQueryResponse = await queryMessages(this.auth, payload);
                 const ordered = response.data.slice().sort((a, b) => b.dateCreated - a.dateCreated);
-                if(firstMessageID === undefined && ordered.length > 0) {
+                if(direction === "latest" && ordered.length > 0) {
                         this.lastMessageTimestamp = ordered[0].dateCreated;
                 }
                 const {items, modifiers} = this.processMessages(ordered);
-                this.listener?.onMessageThread(chatGUID, firstMessageID, items);
+                const metadata = this.buildThreadMetadata(items);
+                this.listener?.onMessageThread(chatGUID, normalizedOptions, items, metadata);
                 if(modifiers.length > 0) {
                         this.listener?.onModifierUpdate(modifiers);
                 }
+        }
+
+        private buildThreadMetadata(items: ConversationItem[]): ThreadFetchMetadata | undefined {
+                let oldest: number | undefined;
+                let newest: number | undefined;
+                for(const item of items) {
+                        if(item.itemType !== ConversationItemType.Message) continue;
+                        const message = item as MessageItem;
+                        if(message.serverID === undefined) continue;
+                        if(oldest === undefined || message.serverID < oldest) oldest = message.serverID;
+                        if(newest === undefined || message.serverID > newest) newest = message.serverID;
+                }
+
+                if(oldest === undefined && newest === undefined) return undefined;
+                return {oldestServerID: oldest, newestServerID: newest};
         }
 
         private async performSendMessage(requestID: number, conversation: ConversationTarget, message: string) {

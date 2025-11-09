@@ -14,6 +14,7 @@ import MessageInput from "shared/components/messaging/thread/MessageInput";
 import {useConversationTitle, useIsFaceTimeSupported, useUnsubscribeContainer} from "shared/util/hookUtils";
 import {mapServiceName} from "shared/util/languageUtils";
 import * as ConnectionManager from "shared/connection/connectionManager";
+import type {ThreadFetchResult} from "shared/connection/connectionManager";
 import {
 	checkMessageConversationOwnership,
 	findMatchingUnconfirmedMessageIndex,
@@ -31,6 +32,84 @@ import EventEmitter from "shared/util/eventEmitter";
 import localMessageCache from "shared/state/localMessageCache";
 import {installCancellablePromise} from "shared/util/cancellablePromise";
 import {ThreadFocusTarget, areFocusTargetsEqual} from "./types";
+
+const DEFAULT_FOCUS_PAGE_LIMIT = 15;
+
+type ThreadPageMetadata = {
+        oldestServerID?: number;
+        newestServerID?: number;
+};
+
+function getConversationItemKey(item: ConversationItem): string {
+        if(item.guid) return item.guid;
+        if(item.itemType === ConversationItemType.Message) {
+                const message = item as MessageItem;
+                if(message.serverID !== undefined) return `server:${message.serverID}`;
+                if(message.localID !== undefined) return `local:${message.localID}`;
+        }
+        if(item.localID !== undefined) return `local:${item.localID}`;
+        return `${item.itemType}:${item.date.getTime()}`;
+}
+
+function dedupeAndSortNewestFirst(arrays: ConversationItem[][]): ConversationItem[] {
+        const map = new Map<string, ConversationItem>();
+        for(const array of arrays) {
+                for(const item of array) {
+                        const key = getConversationItemKey(item);
+                        const existing = map.get(key);
+                        if(!existing || existing.date.getTime() < item.date.getTime()) {
+                                map.set(key, item);
+                        }
+                }
+        }
+        const uniqueItems = Array.from(map.values());
+        uniqueItems.sort((a, b) => b.date.getTime() - a.date.getTime());
+        return uniqueItems;
+}
+
+function metadataFromItems(items: ConversationItem[]): ThreadPageMetadata | undefined {
+        let oldest: number | undefined;
+        let newest: number | undefined;
+        for(const item of items) {
+                if(item.itemType !== ConversationItemType.Message) continue;
+                const message = item as MessageItem;
+                if(message.serverID === undefined) continue;
+                if(oldest === undefined || message.serverID < oldest) oldest = message.serverID;
+                if(newest === undefined || message.serverID > newest) newest = message.serverID;
+        }
+        if(oldest === undefined && newest === undefined) return undefined;
+        return {oldestServerID: oldest, newestServerID: newest};
+}
+
+function mergeMetadata(base: ThreadPageMetadata | undefined, incoming: ThreadPageMetadata | undefined): ThreadPageMetadata | undefined {
+        if(!incoming) return base;
+        let oldest = base?.oldestServerID;
+        let newest = base?.newestServerID;
+        let changed = false;
+        if(incoming.oldestServerID !== undefined && (oldest === undefined || incoming.oldestServerID < oldest)) {
+                oldest = incoming.oldestServerID;
+                changed = true;
+        }
+        if(incoming.newestServerID !== undefined && (newest === undefined || incoming.newestServerID > newest)) {
+                newest = incoming.newestServerID;
+                changed = true;
+        }
+        if(!changed) return base;
+        return {oldestServerID: oldest, newestServerID: newest};
+}
+
+function computeMetadataFromItems(items: ConversationItem[], seed?: ThreadPageMetadata): ThreadPageMetadata | undefined {
+        const fromItems = metadataFromItems(items);
+        return mergeMetadata(seed, fromItems);
+}
+
+function mergeThreadFetchMetadata(results: ThreadFetchResult[], items: ConversationItem[]): ThreadPageMetadata | undefined {
+        let metadata: ThreadPageMetadata | undefined;
+        for(const result of results) {
+                metadata = mergeMetadata(metadata, result.metadata);
+        }
+        return computeMetadataFromItems(items, metadata);
+}
 
 export default function DetailThread({conversation, focusTarget}: {
         conversation: Conversation;
@@ -61,21 +140,43 @@ export default function DetailThread({conversation, focusTarget}: {
 	 */
         const requestMessages = useCallback((focus?: ThreadFocusTarget) => {
                 if(conversation.localOnly) {
-                        //Fetch messages from the cache
-                        setDisplayState({type: DisplayType.Messages, messages: localMessageCache.get(conversation.localID) ?? []});
+                        const messages = localMessageCache.get(conversation.localID) ?? [];
+                        const metadata = metadataFromItems(messages);
+                        setDisplayState({type: DisplayType.Messages, messages, metadata});
                         setFocusMetadata(focus);
 
                         return;
                 }
 
-                //Set the state to loading
                 setDisplayState({type: DisplayType.Loading});
                 setFocusMetadata(focus);
 
-                //Fetch messages from the server
-                const firstMessageID = focus?.serverID !== undefined ? focus.serverID + 1 : undefined;
-                ConnectionManager.fetchThread(conversation.guid, firstMessageID).then((messages) => {
-                        setDisplayState({type: DisplayType.Messages, messages: messages});
+                const anchorServerID = focus?.serverID;
+                if(anchorServerID === undefined) {
+                        ConnectionManager.fetchThread(conversation.guid).then((result) => {
+                                const metadata = mergeThreadFetchMetadata([result], result.items);
+                                setDisplayState({type: DisplayType.Messages, messages: result.items, metadata});
+                        }).catch(() => {
+                                setDisplayState({type: DisplayType.Error});
+                        });
+                        return;
+                }
+
+                const beforePromise = ConnectionManager.fetchThread(conversation.guid, {
+                        anchorMessageID: anchorServerID + 1,
+                        direction: "before",
+                        limit: DEFAULT_FOCUS_PAGE_LIMIT
+                });
+                const afterPromise = ConnectionManager.fetchThread(conversation.guid, {
+                        anchorMessageID: anchorServerID,
+                        direction: "after",
+                        limit: DEFAULT_FOCUS_PAGE_LIMIT
+                });
+
+                Promise.all([beforePromise, afterPromise]).then(([beforeResult, afterResult]) => {
+                        const combinedItems = dedupeAndSortNewestFirst([beforeResult.items, afterResult.items]);
+                        const metadata = mergeThreadFetchMetadata([beforeResult, afterResult], combinedItems);
+                        setDisplayState({type: DisplayType.Messages, messages: combinedItems, metadata});
                 }).catch(() => {
                         setDisplayState({type: DisplayType.Error});
                 });
@@ -95,33 +196,43 @@ export default function DetailThread({conversation, focusTarget}: {
                 //Set the state to loading
                 setHistoryLoadState(HistoryLoadState.Loading);
 
-                //Fetch history
+                const currentMetadata = currentDisplayState.metadata;
                 const displayStateMessages = currentDisplayState.messages;
+                const fallbackAnchor = displayStateMessages[displayStateMessages.length - 1]?.serverID;
+                const anchorServerID = currentMetadata?.oldestServerID ?? fallbackAnchor;
 
-                //Make sure we cancel if the conversation changes while we're loading
+                if(anchorServerID === undefined) {
+                        setHistoryLoadState(HistoryLoadState.Complete);
+                        return;
+                }
+
                 installCancellablePromise(
-                        ConnectionManager.fetchThread(conversation.guid, displayStateMessages[displayStateMessages.length - 1].serverID),
+                        ConnectionManager.fetchThread(conversation.guid, {
+                                anchorMessageID: anchorServerID,
+                                direction: "before"
+                        }),
                         requestHistoryUnsubscribeContainer
                 )
-                        .then((messages) => {
-                                if(messages.length > 0) {
-                                        //Return to idle, and add new messages
+                        .then((result) => {
+                                if(result.items.length > 0) {
                                         setHistoryLoadState(HistoryLoadState.Idle);
 
                                         setDisplayState((displayState) => {
                                                 if(displayState.type !== DisplayType.Messages) return displayState;
 
+                                                const combinedItems = dedupeAndSortNewestFirst([displayState.messages, result.items]);
+                                                const metadata = mergeThreadFetchMetadata([result], combinedItems);
+
                                                 return {
                                                         type: DisplayType.Messages,
-                                                        messages: displayState.messages.concat(messages)
+                                                        messages: combinedItems,
+                                                        metadata
                                                 };
                                         });
                                 } else {
-                                        //No more history, we're done
                                         setHistoryLoadState(HistoryLoadState.Complete);
                                 }
                         }).catch(() => {
-                        //Ignore, and wait for the user to retry
                         setHistoryLoadState(HistoryLoadState.Idle);
                 });
         }, [conversation, setDisplayState, setHistoryLoadState, requestHistoryUnsubscribeContainer, displayStateRef, historyLoadStateRef]);
@@ -223,7 +334,8 @@ export default function DetailThread({conversation, focusTarget}: {
                         }
 
                         if(!messagesMutated) return displayState;
-                        return {type: DisplayType.Messages, messages: pendingMessages};
+                        const metadata = computeMetadataFromItems(pendingMessages, displayState.metadata);
+                        return {type: DisplayType.Messages, messages: pendingMessages, metadata};
                 });
         }, [setDisplayState, conversation]);
 	
@@ -291,7 +403,8 @@ export default function DetailThread({conversation, focusTarget}: {
                         }
 
                         if(!itemsMutated) return displayState;
-                        return {type: DisplayType.Messages, messages: pendingItemArray};
+                        const metadata = computeMetadataFromItems(pendingItemArray, displayState.metadata);
+                        return {type: DisplayType.Messages, messages: pendingItemArray, metadata};
                 });
         }, [setDisplayState]);
 	
@@ -340,7 +453,7 @@ export default function DetailThread({conversation, focusTarget}: {
                                 error: error
                         };
 
-                        return {type: DisplayType.Messages, messages: pendingItems};
+                        return {type: DisplayType.Messages, messages: pendingItems, metadata: displayState.metadata};
                 });
         }, [setDisplayState]);
 	
@@ -372,9 +485,9 @@ export default function DetailThread({conversation, focusTarget}: {
 				//Update the item
 				pendingItems[itemIndex] = {...message, ...updater(message)};
 				
-				return {type: DisplayType.Messages, messages: pendingItems};
-			});
-		};
+                                return {type: DisplayType.Messages, messages: pendingItems, metadata: displayState.metadata};
+                        });
+                };
 		
 		//Sync the progress meter
 		uploadProgress.emitter.subscribe((progressData) => {
@@ -617,12 +730,13 @@ enum DisplayType {
 }
 
 type DisplayStateMessages = {
-	type: DisplayType.Messages;
-	messages: ConversationItem[];
+        type: DisplayType.Messages;
+        messages: ConversationItem[];
+        metadata: ThreadPageMetadata | undefined;
 };
 
 type DisplayState = {
-	type: DisplayType.Loading | DisplayType.Error
+        type: DisplayType.Loading | DisplayType.Error
 } | DisplayStateMessages;
 
 enum HistoryLoadState {
