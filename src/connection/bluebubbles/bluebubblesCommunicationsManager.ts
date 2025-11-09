@@ -51,6 +51,14 @@ const SMS_TAPBACK_CACHE_LIMIT = 50;
 const SQLITE_LIKE_SPECIAL_CHARS = /[%_\[]/g;
 
 /**
+ * Converts a JavaScript date into the timestamp format expected by the BlueBubbles
+ * REST API. The service expects seconds since the Unix epoch.
+ */
+function toBlueBubblesTimestamp(date: Date): number {
+        return Math.floor(date.getTime() / 1000);
+}
+
+/**
  * Escapes user-provided text for a SQLite LIKE query that looks for substring matches.
  *
  * SQLite doesn't reliably honor `ESCAPE` when queries are parameterized, so we translate the
@@ -182,16 +190,10 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 });
 
                 if(options.startDate) {
-                        where.push({
-                                statement: "message.dateCreated >= :startDate",
-                                args: {startDate: options.startDate.getTime()}
-                        });
+                        payload.after = toBlueBubblesTimestamp(options.startDate);
                 }
                 if(options.endDate) {
-                        where.push({
-                                statement: "message.dateCreated <= :endDate",
-                                args: {endDate: options.endDate.getTime()}
-                        });
+                        payload.before = toBlueBubblesTimestamp(options.endDate);
                 }
 
                 if(options.chatGuids && options.chatGuids.length > 0) {
