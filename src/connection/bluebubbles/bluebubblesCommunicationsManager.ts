@@ -15,6 +15,7 @@ import {
         TapbackType
 } from "../../data/stateCodes";
 import {TransferAccumulator, BasicAccumulator} from "../transferAccumulator";
+import {MessageSearchHydratedResult, MessageSearchOptions} from "../messageSearch";
 import ConversationTarget from "../../data/conversationTarget";
 import {BlueBubblesAuthState} from "./session";
 import {
@@ -128,6 +129,78 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
         public override requestLiteThread(chatGUID: string, firstMessageID?: number): boolean {
                 this.fetchThread(chatGUID, firstMessageID);
                 return true;
+        }
+
+        public async searchMessages(options: MessageSearchOptions): Promise<MessageSearchHydratedResult> {
+                const term = options.term.trim();
+                if(term.length === 0) {
+                        return {items: [], metadata: undefined};
+                }
+
+                const payload: Record<string, unknown> = {
+                        sort: "DESC",
+                        with: ["chat", "handle", "attachments"]
+                };
+                if(options.limit !== undefined) {
+                        payload.limit = Math.max(1, Math.floor(options.limit));
+                }
+                if(options.offset !== undefined) {
+                        payload.offset = Math.max(0, Math.floor(options.offset));
+                }
+
+                const where: {statement: string; args?: Record<string, unknown>}[] = [];
+                const escapedTerm = term.replace(/([%_\\])/g, "\\$1");
+                where.push({
+                        statement: "message.text LIKE :term ESCAPE '\\\\'",
+                        args: {term: `%${escapedTerm}%`}
+                });
+
+                if(options.startDate) {
+                        where.push({
+                                statement: "message.dateCreated >= :startDate",
+                                args: {startDate: options.startDate.getTime()}
+                        });
+                }
+                if(options.endDate) {
+                        where.push({
+                                statement: "message.dateCreated <= :endDate",
+                                args: {endDate: options.endDate.getTime()}
+                        });
+                }
+
+                if(options.chatGuids && options.chatGuids.length > 0) {
+                        const args: Record<string, string> = {};
+                        const placeholders = options.chatGuids.map((guid, index) => {
+                                const key = `chat${index}`;
+                                args[key] = guid;
+                                return `:${key}`;
+                        });
+                        where.push({
+                                statement: `chat.guid IN (${placeholders.join(", ")})`,
+                                args
+                        });
+                }
+
+                if(options.handleGuids && options.handleGuids.length > 0) {
+                        const args: Record<string, string> = {};
+                        const placeholders = options.handleGuids.map((guid, index) => {
+                                const key = `handle${index}`;
+                                args[key] = guid;
+                                return `:${key}`;
+                        });
+                        where.push({
+                                statement: `handle.guid IN (${placeholders.join(", ")})`,
+                                args
+                        });
+                }
+
+                if(where.length > 0) {
+                        payload.where = where;
+                }
+
+                const response = await queryMessages(this.auth, payload);
+                const {items} = this.processMessages(response.data ?? []);
+                return {items, metadata: response.metadata};
         }
 
         public override sendMessage(requestID: number, conversation: ConversationTarget, message: string): boolean {

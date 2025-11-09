@@ -8,6 +8,7 @@ import {
 } from "../data/stateCodes";
 import {Conversation, ConversationItem, LinkedConversation, MessageModifier} from "../data/blocks";
 import {TransferAccumulator} from "./transferAccumulator";
+import {MessageSearchHydratedResult, MessageSearchOptions} from "./messageSearch";
 import ServerUpdateData from "shared/data/serverUpdateData";
 import ConversationTarget from "shared/data/conversationTarget";
 
@@ -193,11 +194,16 @@ public abstract requestLiteConversations(limit?: number): boolean;
 	 */
 	public abstract requestInstallRemoteUpdate(updateID: number): boolean;
 	
-	/**
-	 * Requests a new FaceTime link
-	 * @return Whether the request was successfully sent
-	 */
-	public abstract requestFaceTimeLink(): boolean;
+        /**
+         * Requests a new FaceTime link
+         * @return Whether the request was successfully sent
+         */
+        public abstract requestFaceTimeLink(): boolean;
+
+        /**
+         * Searches for messages that match the provided filters.
+         */
+        public searchMessages?(options: MessageSearchOptions): Promise<MessageSearchHydratedResult>;
 	
 	/**
 	 * Initiates a new outgoing FaceTime call with the specified addresses
