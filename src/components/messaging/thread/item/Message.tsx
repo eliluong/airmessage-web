@@ -30,6 +30,7 @@ import MessageBubbleImage from "shared/components/messaging/thread/item/bubble/M
 import MessageBubbleDownloadable from "shared/components/messaging/thread/item/bubble/MessageBubbleDownloadable";
 import {messageErrorToDisplay} from "shared/util/languageUtils";
 import {groupArray} from "shared/util/arrayUtils";
+import {isAttachmentPreviewable} from "shared/util/conversationUtils";
 
 enum MessageDialog {
 	Error,
@@ -347,19 +348,11 @@ export default function Message(props: {
  * or undefined if no status string should be displayed
  */
 function getStatusString(message: MessageItem): string | undefined {
-	if(message.status === MessageStatusCode.Delivered) {
-		return "Delivered";
-	} else if(message.status === MessageStatusCode.Read) {
-		return message.statusDate ? "Read • " + getDeliveryStatusTime(message.statusDate) : "Read";
-	} else {
-		return undefined;
-	}
-}
-
-/**
- * Gets whether the attachment of the specified MIME type
- * can be previewed in this app
- */
-function isAttachmentPreviewable(mimeType: string): boolean {
-	return mimeType.startsWith("image/");
+        if(message.status === MessageStatusCode.Delivered) {
+                return "Delivered";
+        } else if(message.status === MessageStatusCode.Read) {
+                return message.statusDate ? "Read • " + getDeliveryStatusTime(message.statusDate) : "Read";
+        } else {
+                return undefined;
+        }
 }

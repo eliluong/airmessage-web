@@ -49,10 +49,14 @@ export function mimeTypeToDisplay(type: string): string {
 }
 
 export function mimeTypeToPreview(type: string): string {
-	if(type.startsWith("image/")) return "Image file";
-	else if(type.startsWith("video/")) return "Video file";
-	else if(type.startsWith("audio/")) return "Audio message";
-	else return "Attachment file";
+        if(type.startsWith("image/")) return "Image file";
+        else if(type.startsWith("video/")) return "Video file";
+        else if(type.startsWith("audio/")) return "Audio message";
+        else return "Attachment file";
+}
+
+export function isAttachmentPreviewable(type: string): boolean {
+        return type.startsWith("image/");
 }
 
 export function isConversationItemMessage(item: ConversationItem): item is MessageItem {

@@ -32,6 +32,7 @@ import EventEmitter from "shared/util/eventEmitter";
 import localMessageCache from "shared/state/localMessageCache";
 import {installCancellablePromise} from "shared/util/cancellablePromise";
 import {ThreadFocusTarget, areFocusTargetsEqual} from "./types";
+import ConversationMediaDrawer from "./ConversationMediaDrawer";
 
 const DEFAULT_FOCUS_PAGE_LIMIT = 15;
 
@@ -133,7 +134,8 @@ export default function DetailThread({conversation, focusTarget}: {
 	const messageSubmitEmitter = useRef(new EventEmitter<void>());
 	
 	const [messageInput, setMessageInput] = useState<string>("");
-	const [attachmentInput, setAttachmentInput] = useState<QueuedFile[]>([]);
+        const [attachmentInput, setAttachmentInput] = useState<QueuedFile[]>([]);
+        const [isMediaDrawerOpen, setIsMediaDrawerOpen] = useState(false);
 	
 	/**
 	 * Requests messages, and updates the display state
@@ -687,14 +689,32 @@ export default function DetailThread({conversation, focusTarget}: {
 		});
 	}, [setAttachmentInput]);
 	
-	return (
-		<DetailFrame
-			title={conversationTitle}
-			showCall={faceTimeSupported}
-			onClickCall={startCall}>
-			<Stack
-				flexGrow={1}
-				minHeight={0}
+        const showMediaDrawer = ConnectionManager.getBlueBubblesAuth() !== undefined;
+
+        useEffect(() => {
+                if(!showMediaDrawer && isMediaDrawerOpen) {
+                        setIsMediaDrawerOpen(false);
+                }
+        }, [showMediaDrawer, isMediaDrawerOpen]);
+
+        const toggleMediaDrawer = useCallback(() => {
+                setIsMediaDrawerOpen((open) => !open);
+        }, []);
+
+        const closeMediaDrawer = useCallback(() => setIsMediaDrawerOpen(false), []);
+
+        return (
+                <>
+                        <DetailFrame
+                        title={conversationTitle}
+                        showCall={faceTimeSupported}
+                        onClickCall={startCall}
+                        showMediaDrawerButton={showMediaDrawer}
+                        onClickMediaDrawer={toggleMediaDrawer}
+                        mediaDrawerOpen={isMediaDrawerOpen}>
+                        <Stack
+                                flexGrow={1}
+                                minHeight={0}
 				
 				onDragEnter={cancelDrag}
 				onDragLeave={cancelDrag}
@@ -717,10 +737,17 @@ export default function DetailThread({conversation, focusTarget}: {
 						onAttachmentAdd={addAttachment}
 						onAttachmentRemove={removeAttachment}
 						onMessageSubmit={submitInput} />
-				</Box>
-			</Stack>
-		</DetailFrame>
-	);
+                                </Box>
+                        </Stack>
+                        </DetailFrame>
+
+                        <ConversationMediaDrawer
+                                conversation={conversation}
+                                open={isMediaDrawerOpen}
+                                onClose={closeMediaDrawer}
+                        />
+                </>
+        );
 }
 
 enum DisplayType {
