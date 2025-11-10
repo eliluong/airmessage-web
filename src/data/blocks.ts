@@ -79,13 +79,14 @@ export interface MessageSearchHit {
 }
 
 export interface AttachmentItem {
-	readonly localID?: number;
-	readonly guid?: string;
-	readonly name: string;
-	readonly type: string;
-	readonly size: number;
-	checksum?: string;
-	data?: File;
+        readonly localID?: number;
+        readonly guid?: string;
+        readonly name: string;
+        readonly type: string;
+        readonly size: number;
+        readonly blurhash?: string;
+        checksum?: string;
+        data?: File;
 }
 
 export interface MessageModifier {

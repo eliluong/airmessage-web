@@ -824,7 +824,8 @@ function convertAttachment(attachment: AttachmentResponse) {
                 guid: attachment.guid,
                 name: attachment.transferName,
                 type: attachment.mimeType,
-                size: attachment.totalBytes
+                size: attachment.totalBytes,
+                blurhash: attachment.blurhash
         };
 }
 
