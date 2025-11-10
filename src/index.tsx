@@ -4,6 +4,7 @@ import * as Sentry from "@sentry/react";
 import SignInGate from "shared/components/SignInGate";
 import AppTheme from "./components/control/AppTheme";
 import {SettingsProvider} from "shared/components/settings/SettingsProvider";
+import {PeopleContextProvider} from "shared/state/peopleState";
 import {setNotificationUtils} from "shared/interface/notification/notificationUtils";
 import BrowserNotificationUtils from "shared/interface/notification/browserNotificationUtils";
 import {setPlatformUtils} from "shared/interface/platform/platformUtils";
@@ -36,9 +37,11 @@ const root = createRoot(document.getElementById("root")!);
 root.render(
         <React.StrictMode>
                 <SettingsProvider>
-                        <AppTheme>
-                                <SignInGate />
-                        </AppTheme>
+                        <PeopleContextProvider>
+                                <AppTheme>
+                                        <SignInGate />
+                                </AppTheme>
+                        </PeopleContextProvider>
                 </SettingsProvider>
         </React.StrictMode>
 );
