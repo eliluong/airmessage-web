@@ -1,10 +1,8 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import * as ConnectionManager from "shared/connection/connectionManager";
-import type {ThreadFetchResult} from "shared/connection/connectionManager";
+import type {ConversationMediaFetchResult} from "shared/connection/connectionManager";
 import type {ThreadFetchMetadata} from "shared/connection/communicationsManager";
-import {ConversationAttachmentEntry, extractConversationAttachments, mergeConversationAttachments} from "shared/data/attachment";
-import {ConversationItem, MessageItem} from "shared/data/blocks";
-import {ConversationItemType} from "shared/data/stateCodes";
+import {ConversationAttachmentEntry, mergeConversationAttachments} from "shared/data/attachment";
 
 const PAGE_SIZE = 30;
 
@@ -68,20 +66,6 @@ function updateCacheEntry(guid: string, partial: Partial<ConversationMediaCacheE
         return next;
 }
 
-function computeMetadataFromItems(items: ConversationItem[]): ThreadFetchMetadata | undefined {
-        let oldest: number | undefined;
-        let newest: number | undefined;
-        for(const item of items) {
-            if(item.itemType !== ConversationItemType.Message) continue;
-            const message = item as MessageItem;
-            if(message.serverID === undefined) continue;
-            if(oldest === undefined || message.serverID < oldest) oldest = message.serverID;
-            if(newest === undefined || message.serverID > newest) newest = message.serverID;
-        }
-        if(oldest === undefined && newest === undefined) return undefined;
-        return {oldestServerID: oldest, newestServerID: newest};
-}
-
 function mergeMetadata(base: ThreadFetchMetadata | undefined, incoming: ThreadFetchMetadata | undefined): ThreadFetchMetadata | undefined {
         if(!incoming) return base;
         if(!base) return {...incoming};
@@ -95,8 +79,21 @@ function mergeMetadata(base: ThreadFetchMetadata | undefined, incoming: ThreadFe
         return merged;
 }
 
-function mergeResultMetadata(previous: ThreadFetchMetadata | undefined, result: ThreadFetchResult): ThreadFetchMetadata | undefined {
-        const combined = mergeMetadata(result.metadata, computeMetadataFromItems(result.items));
+function computeMetadataFromAttachments(items: ConversationAttachmentEntry[]): ThreadFetchMetadata | undefined {
+        let oldest: number | undefined;
+        let newest: number | undefined;
+        for(const item of items) {
+                const serverID = item.messageServerID;
+                if(serverID === undefined) continue;
+                if(oldest === undefined || serverID < oldest) oldest = serverID;
+                if(newest === undefined || serverID > newest) newest = serverID;
+        }
+        if(oldest === undefined && newest === undefined) return undefined;
+        return {oldestServerID: oldest, newestServerID: newest};
+}
+
+function mergeResultMetadata(previous: ThreadFetchMetadata | undefined, result: ConversationMediaFetchResult): ThreadFetchMetadata | undefined {
+        const combined = mergeMetadata(result.metadata, computeMetadataFromAttachments(result.items));
         return mergeMetadata(previous, combined);
 }
 
@@ -175,9 +172,9 @@ export default function useConversationMedia(chatGuid: string | undefined, open:
                 setIsLoading(true);
                 setError(undefined);
                 try {
-                        const result = await ConnectionManager.fetchThread(chatGuid, {limit: PAGE_SIZE});
+                        const result = await ConnectionManager.fetchConversationMedia(chatGuid, {limit: PAGE_SIZE});
                         if(!mountedRef.current) return;
-                        const attachments = extractConversationAttachments(result.items);
+                        const attachments = result.items;
                         const metadata = mergeResultMetadata(undefined, result);
                         metadataRef.current = metadata;
                         const moreAvailable = attachments.length >= PAGE_SIZE && (metadata?.oldestServerID !== undefined);
@@ -229,14 +226,14 @@ export default function useConversationMedia(chatGuid: string | undefined, open:
 
                 setIsLoadingMore(true);
                 try {
-                        const result = await ConnectionManager.fetchThread(chatGuid, {
+                        const result = await ConnectionManager.fetchConversationMedia(chatGuid, {
                                 anchorMessageID: oldest,
                                 direction: "before",
                                 limit: PAGE_SIZE
                         });
                         if(!mountedRef.current) return;
 
-                        const attachments = extractConversationAttachments(result.items);
+                        const attachments = result.items;
                         const previousMetadata = metadataRef.current;
                         const mergedMetadata = mergeResultMetadata(previousMetadata, result);
                         metadataRef.current = mergedMetadata;

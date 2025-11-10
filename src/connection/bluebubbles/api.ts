@@ -12,6 +12,13 @@ import {
 
 const API_ROOT = "/api/v1";
 
+export interface AttachmentDownloadOptions {
+        width?: number;
+        height?: number;
+        quality?: number;
+        signal?: AbortSignal;
+}
+
 function buildEndpoint(auth: BlueBubblesAuthState, path: string): string {
         const normalized = auth.serverUrl.replace(/\/$/, "");
         return `${normalized}${path.startsWith("/") ? "" : "/"}${path}`;
@@ -157,14 +164,32 @@ export async function sendTextMessage(auth: BlueBubblesAuthState, payload: Recor
         });
 }
 
-export async function downloadAttachment(auth: BlueBubblesAuthState, guid: string, signal?: AbortSignal): Promise<Response> {
-        const requestPath = appendLegacyAuthParams(auth, `${API_ROOT}/attachment/${encodeURIComponent(guid)}/download`);
+export async function downloadAttachment(
+        auth: BlueBubblesAuthState,
+        guid: string,
+        options: AttachmentDownloadOptions = {}
+): Promise<Response> {
+        const params = new URLSearchParams();
+        if(options.width !== undefined) {
+                params.set("width", String(Math.max(1, Math.floor(options.width))));
+        }
+        if(options.height !== undefined) {
+                params.set("height", String(Math.max(1, Math.floor(options.height))));
+        }
+        if(options.quality !== undefined) {
+                const clampedQuality = Math.min(100, Math.max(1, Math.floor(options.quality)));
+                params.set("quality", String(clampedQuality));
+        }
+
+        const queryString = params.toString();
+        const basePath = `${API_ROOT}/attachment/${encodeURIComponent(guid)}/download`;
+        const requestPath = appendLegacyAuthParams(auth, queryString.length > 0 ? `${basePath}?${queryString}` : basePath);
         const response = await fetch(buildEndpoint(auth, requestPath), {
                 method: "GET",
                 headers: {
                         "Authorization": `Bearer ${auth.accessToken}`
                 },
-                signal
+                signal: options.signal
         });
 
         if(!response.ok) {
@@ -172,4 +197,18 @@ export async function downloadAttachment(auth: BlueBubblesAuthState, guid: strin
         }
 
         return response;
+}
+
+export async function downloadAttachmentThumbnail(
+        auth: BlueBubblesAuthState,
+        guid: string,
+        options: AttachmentDownloadOptions = {}
+): Promise<Response> {
+        const defaulted: AttachmentDownloadOptions = {
+                width: options.width ?? 512,
+                height: options.height ?? 512,
+                quality: options.quality ?? 70,
+                signal: options.signal
+        };
+        return downloadAttachment(auth, guid, defaulted);
 }

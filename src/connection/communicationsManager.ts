@@ -7,6 +7,7 @@ import {
 	RemoteUpdateErrorCode
 } from "../data/stateCodes";
 import {Conversation, ConversationItem, LinkedConversation, MessageModifier} from "../data/blocks";
+import {ConversationAttachmentEntry} from "../data/attachment";
 import {TransferAccumulator} from "./transferAccumulator";
 import {MessageSearchHydratedResult, MessageSearchOptions} from "./messageSearch";
 import ServerUpdateData from "shared/data/serverUpdateData";
@@ -23,6 +24,11 @@ export interface ThreadFetchOptions {
 export interface ThreadFetchMetadata {
         oldestServerID?: number;
         newestServerID?: number;
+}
+
+export interface ConversationMediaFetchResult {
+        items: ConversationAttachmentEntry[];
+        metadata?: ThreadFetchMetadata;
 }
 
 export function normalizeThreadFetchOptions(options?: ThreadFetchOptions): ThreadFetchOptions | undefined {
@@ -133,12 +139,12 @@ export default abstract class CommunicationsManager {
 	 */
 	public abstract sendPing(): boolean;
 	
-	/**
-	 * Requests a list of conversation information from the server
-	 *
-	 * @return whether or not the request was successfully sent
-	 */
-public abstract requestLiteConversations(limit?: number): boolean;
+        /**
+         * Requests a list of conversation information from the server
+         *
+         * @return whether or not the request was successfully sent
+         */
+        public abstract requestLiteConversations(limit?: number): boolean;
 	
 	/**
 	 * Requests information regarding a certain list of conversations
@@ -148,15 +154,20 @@ public abstract requestLiteConversations(limit?: number): boolean;
 	 */
 	public abstract requestConversationInfo(chatGUIDs: string[]): boolean;
 	
-	/**
-	 * Requests a list of messages from a conversation thread from the server
-	 *
-	 * @param chatGUID the GUID of the target conversation
-	 * @param firstMessageID The ID of the first received message
-	 * @return whether or not the request was successfully sent
-	 */
+        /**
+         * Requests a list of messages from a conversation thread from the server
+         *
+         * @param chatGUID the GUID of the target conversation
+         * @param firstMessageID The ID of the first received message
+         * @return whether or not the request was successfully sent
+         */
         public abstract requestLiteThread(chatGUID: string, options?: ThreadFetchOptions): boolean;
-	
+
+        /**
+         * Requests media metadata from a conversation thread.
+         */
+        public fetchConversationMedia?(chatGUID: string, options?: ThreadFetchOptions): Promise<ConversationMediaFetchResult>;
+
 	/**
 	 * Sends a message to the specified conversation
 	 *
