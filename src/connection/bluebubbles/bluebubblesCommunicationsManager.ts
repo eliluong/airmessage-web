@@ -109,6 +109,7 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
         private readonly auth: BlueBubblesAuthState;
         private metadata: ServerMetadataResponse | undefined;
         private pollTimer: ReturnType<typeof setInterval> | undefined;
+        private hasStartedPolling = false;
         private isClosed = false;
         private lastMessageTimestamp: number | undefined;
         private readonly tapbackCache = new Map<string, TapbackItem[]>();
@@ -367,8 +368,10 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
 
         private async initialize() {
                 this.isClosed = false;
+                this.hasStartedPolling = false;
                 this.conversationGuidCache.clear();
                 this.clearSmsTapbackCache();
+                this.lastMessageTimestamp = undefined;
                 try {
                         this.metadata = await fetchServerMetadata(this.auth);
                         const features = this.metadata.features;
@@ -392,9 +395,6 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                                 this.metadata.server_version,
                                 supportsFaceTime
                         );
-
-                        await this.fetchLiteConversations();
-                        this.startPolling();
                 } catch(error) {
                         this.handleFatalError(error);
                 }
@@ -402,6 +402,7 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
 
         private teardown() {
                 this.isClosed = true;
+                this.hasStartedPolling = false;
                 if(this.pollTimer) {
                         clearInterval(this.pollTimer);
                         this.pollTimer = undefined;
@@ -417,6 +418,7 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
         }
 
         private startPolling() {
+                if(this.pollTimer) return;
                 this.pollTimer = setInterval(() => {
                         this.pollUpdates().catch((error) => console.warn("Failed to poll BlueBubbles updates", error));
                 }, POLL_INTERVAL_MS);
@@ -448,12 +450,19 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 }
         }
 
-private async fetchLiteConversations(limit?: number) {
-const requestLimit = limit !== undefined ? Math.max(1, limit) : undefined;
-const response: ChatQueryResponse = await fetchChats(this.auth, {limit: requestLimit});
-const conversations = response.data.map((chat) => this.convertChat(chat));
-this.listener?.onMessageConversations(conversations);
-}
+        private async fetchLiteConversations(limit?: number) {
+                const requestLimit = limit !== undefined ? Math.max(1, limit) : undefined;
+                const response: ChatQueryResponse = await fetchChats(this.auth, {limit: requestLimit});
+                const conversations = response.data.map((chat) => this.convertChat(chat));
+                this.listener?.onMessageConversations(conversations);
+                this.ensurePollingStarted();
+        }
+
+        private ensurePollingStarted() {
+                if(this.hasStartedPolling) return;
+                this.hasStartedPolling = true;
+                this.startPolling();
+        }
 
         private async fetchConversationInfo(chatGUIDs: string[]) {
                 const results: [string, Conversation | undefined][] = await Promise.all(chatGUIDs.map(async (guid) => {
