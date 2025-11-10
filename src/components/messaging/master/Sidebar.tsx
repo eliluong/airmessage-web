@@ -19,6 +19,7 @@ import {
         Toolbar,
         Typography
 } from "@mui/material";
+import {alpha, useTheme} from "@mui/material/styles";
 import ListConversation from "./ListConversation";
 import {Conversation} from "../../../data/blocks";
 import ConnectionBanner from "./ConnectionBanner";
@@ -510,23 +511,25 @@ function SearchPanel(props: SearchPanelProps) {
 								?? titleKey
 								?? "Unknown conversation";
 							return (
-								<SearchResultItem
-									key={key}
-									hit={hit}
-									title={title}
-									onSelected={onResultSelected} />
-							);
-						})}
-					</List>
-				)}
+                                                                <SearchResultItem
+                                                                        key={key}
+                                                                        hit={hit}
+                                                                        title={title}
+                                                                        query={query}
+                                                                        onSelected={onResultSelected} />
+                                                        );
+                                                })}
+                                        </List>
+                                )}
 			</Box>
 		</Stack>
 	);
 }
 
-function SearchResultItem(props: {hit: MessageSearchHit; title: string; onSelected: (result: MessageSearchHit) => void}) {
-	const {hit, title, onSelected} = props;
-	const senderName = usePersonName(hit.message.sender);
+function SearchResultItem(props: {hit: MessageSearchHit; title: string; query: string; onSelected: (result: MessageSearchHit) => void}) {
+        const {hit, title, query, onSelected} = props;
+        const senderName = usePersonName(hit.message.sender);
+        const theme = useTheme();
 
 	const snippet = useMemo(() => {
 		if(hit.message.text && hit.message.text.trim().length > 0) {
@@ -544,12 +547,68 @@ function SearchResultItem(props: {hit: MessageSearchHit; title: string; onSelect
 		return "(No preview)";
 	}, [hit.message.attachments, hit.message.text]);
 
-	const secondary = senderName ? `${senderName}: ${snippet}` : snippet;
+        const secondary = senderName ? `${senderName}: ${snippet}` : snippet;
+
+        const secondarySegments = useMemo(() => {
+                const normalizedQuery = query.trim().toLowerCase();
+                if(normalizedQuery.length === 0) {
+                        return [secondary];
+                }
+
+                const escapedQuery = query.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+                if(escapedQuery.length === 0) {
+                        return [secondary];
+                }
+
+                const regex = new RegExp(escapedQuery, "gi");
+                const segments: React.ReactNode[] = [];
+                const text = secondary ?? "";
+                let lastIndex = 0;
+                let match: RegExpExecArray | null;
+                let matchIndex = 0;
+
+                while((match = regex.exec(text)) !== null) {
+                        if(match.index > lastIndex) {
+                                segments.push(text.slice(lastIndex, match.index));
+                        }
+
+                        const matchedText = text.slice(match.index, regex.lastIndex);
+                        segments.push(
+                                <Box
+                                        component="mark"
+                                        key={`match-${matchIndex}`}
+                                        sx={{
+                                                backgroundColor: alpha(
+                                                        theme.palette.primary.main,
+                                                        theme.palette.mode === "dark" ? 0.4 : 0.25
+                                                ),
+                                                borderRadius: 0.5,
+                                                px: 0.25,
+                                                color: theme.palette.text.primary,
+                                                fontWeight: 600
+                                        }}>
+                                        {matchedText}
+                                </Box>
+                        );
+                        matchIndex += 1;
+                        lastIndex = regex.lastIndex;
+                }
+
+                if(lastIndex < text.length) {
+                        segments.push(text.slice(lastIndex));
+                }
+
+                if(segments.length === 0) {
+                        return [secondary];
+                }
+
+                return segments;
+        }, [query, secondary, theme]);
 
         const timestamp = useLiveLastUpdateStatusTime(hit.message.date);
 
-	return (
-		<ListItemButton
+        return (
+                <ListItemButton
 			alignItems="flex-start"
 			onClick={() => onSelected(hit)}
 			sx={{
@@ -581,21 +640,21 @@ function SearchResultItem(props: {hit: MessageSearchHit; title: string; onSelect
 					</Stack>
 				)}
 				secondary={(
-					<Typography
-						variant="body2"
-						color="textSecondary"
-							sx={{
-							display: "-webkit-box",
-							WebkitLineClamp: 2,
-							WebkitBoxOrient: "vertical",
-							overflow: "hidden"
-						}}>
-						{secondary}
-					</Typography>
-				)}
-			/>
-		</ListItemButton>
-	);
+                                        <Typography
+                                                variant="body2"
+                                                color="textSecondary"
+                                                        sx={{
+                                                        display: "-webkit-box",
+                                                        WebkitLineClamp: 2,
+                                                        WebkitBoxOrient: "vertical",
+                                                        overflow: "hidden"
+                                                }}>
+                                                {secondarySegments}
+                                        </Typography>
+                                )}
+                        />
+                </ListItemButton>
+        );
 }
 
 function resolveSearchRange(range: SearchTimeRange): {startDate?: Date; endDate?: Date} {
