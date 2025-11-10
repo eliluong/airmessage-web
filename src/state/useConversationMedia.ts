@@ -17,7 +17,7 @@ interface ConversationMediaCacheEntry {
 const mediaCache = new Map<string, ConversationMediaCacheEntry>();
 let cacheScopeKey: string | undefined;
 
-function computeCacheScopeKey(): string {
+export function getConversationMediaCacheScopeKey(): string {
         const proxyType = ConnectionManager.getActiveProxyType();
         if(proxyType === "BlueBubbles") {
                 const auth = ConnectionManager.getBlueBubblesAuth();
@@ -37,7 +37,7 @@ function computeCacheScopeKey(): string {
 }
 
 function ensureCacheScope() {
-        const key = computeCacheScopeKey();
+        const key = getConversationMediaCacheScopeKey();
         if(cacheScopeKey !== key) {
                 mediaCache.clear();
                 cacheScopeKey = key;

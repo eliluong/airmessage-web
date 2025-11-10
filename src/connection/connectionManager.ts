@@ -694,6 +694,14 @@ export async function fetchConversationMedia(chatGUID: string, options?: ThreadF
         return {items: attachments, metadata: threadResult.metadata};
 }
 
+export async function fetchAttachmentThumbnail(attachmentGUID: string, signal?: AbortSignal): Promise<Blob> {
+        if(!isConnected()) return Promise.reject(messageErrorNetwork);
+        if(!communicationsManager?.fetchAttachmentThumbnail) {
+                return Promise.reject(new Error("Thumbnail previews are unavailable for this connection."));
+        }
+        return communicationsManager.fetchAttachmentThumbnail(attachmentGUID, signal);
+}
+
 export async function searchMessages(options: MessageSearchOptions): Promise<MessageSearchResult> {
         if(!isConnected()) return Promise.reject(messageErrorNetwork);
 

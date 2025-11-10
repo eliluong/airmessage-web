@@ -168,11 +168,16 @@ export default abstract class CommunicationsManager {
          */
         public fetchConversationMedia?(chatGUID: string, options?: ThreadFetchOptions): Promise<ConversationMediaFetchResult>;
 
-	/**
-	 * Sends a message to the specified conversation
-	 *
-	 * @param requestID the ID of the request
-	 * @param conversation the target conversation
+        /**
+         * Downloads a thumbnail preview for an attachment.
+         */
+        public fetchAttachmentThumbnail?(attachmentGUID: string, signal?: AbortSignal): Promise<Blob>;
+
+        /**
+         * Sends a message to the specified conversation
+         *
+         * @param requestID the ID of the request
+         * @param conversation the target conversation
 	 * @param message the message to send
 	 * @return whether or not the request was successfully sent
 	 */

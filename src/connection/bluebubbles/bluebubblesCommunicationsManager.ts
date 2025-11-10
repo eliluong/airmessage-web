@@ -39,6 +39,7 @@ import {
         appendLegacyAuthParams,
         createChat as createChatApi,
         downloadAttachment,
+        downloadAttachmentThumbnail,
         fetchChat,
         fetchChats,
         fetchServerMetadata,
@@ -215,6 +216,11 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 const attachments = extractConversationAttachments(items);
                 const metadata = this.buildThreadMetadata(items);
                 return {items: attachments, metadata};
+        }
+
+        public async fetchAttachmentThumbnail(attachmentGUID: string, signal?: AbortSignal): Promise<Blob> {
+                const response = await downloadAttachmentThumbnail(this.auth, attachmentGUID, {signal});
+                return response.blob();
         }
 
         public async searchMessages(options: MessageSearchOptions): Promise<MessageSearchHydratedResult> {
