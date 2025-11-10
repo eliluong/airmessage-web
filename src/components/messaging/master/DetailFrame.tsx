@@ -1,14 +1,18 @@
 import React from "react";
 import {Divider, IconButton, Stack, Toolbar, Typography} from "@mui/material";
-import {VideocamOutlined} from "@mui/icons-material";
+import {CollectionsOutlined, VideocamOutlined} from "@mui/icons-material";
 
 interface Props {
-	title: string;
-	children: React.ReactNode;
-	className?: string;
-	
-	showCall?: boolean;
-	onClickCall?: () => void;
+        title: string;
+        children: React.ReactNode;
+        className?: string;
+
+        showCall?: boolean;
+        onClickCall?: () => void;
+
+        showMediaDrawerButton?: boolean;
+        onClickMediaDrawer?: () => void;
+        mediaDrawerOpen?: boolean;
 }
 
 /**
@@ -27,10 +31,21 @@ export const DetailFrame = React.forwardRef<HTMLDivElement, Props>((props, ref) 
 					{props.title}
 				</Typography>
 				
-				{props.showCall && (
-					<IconButton
-						size="large"
-						onClick={props.onClickCall}>
+                                {props.showMediaDrawerButton && (
+                                        <IconButton
+                                                size="large"
+                                                color={props.mediaDrawerOpen ? "primary" : "default"}
+                                                onClick={props.onClickMediaDrawer}
+                                                aria-pressed={props.mediaDrawerOpen}
+                                                aria-label={props.mediaDrawerOpen ? "Hide media drawer" : "Show media drawer"}>
+                                                <CollectionsOutlined />
+                                        </IconButton>
+                                )}
+
+                                {props.showCall && (
+                                        <IconButton
+                                                size="large"
+                                                onClick={props.onClickCall}>
 						<VideocamOutlined />
 					</IconButton>
 				)}
