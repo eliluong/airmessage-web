@@ -1,4 +1,4 @@
-import React from "react";
+import React, {useContext, useMemo} from "react";
 import {TapbackType} from "shared/data/stateCodes";
 import TapbackLoveIcon from "shared/components/icon/TapbackLoveIcon";
 import TapbackLikeIcon from "shared/components/icon/TapbackLikeIcon";
@@ -8,6 +8,7 @@ import TapbackEmphasisIcon from "shared/components/icon/TapbackEmphasisIcon";
 import TapbackQuestionIcon from "shared/components/icon/TapbackQuestionIcon";
 import {Stack, Tooltip, Typography} from "@mui/material";
 import {Theme} from "@mui/material/styles";
+import {PeopleContext} from "shared/state/peopleState";
 
 /**
  * A single tapback chip
@@ -19,9 +20,10 @@ export default function TapbackChip(props: {
         count: number;
         senders: readonly string[];
 }) {
-	let Icon: React.ElementType;
-	switch(props.type) {
-		case TapbackType.Love:
+        const peopleState = useContext(PeopleContext);
+        let Icon: React.ElementType;
+        switch(props.type) {
+                case TapbackType.Love:
 			Icon = TapbackLoveIcon;
 			break;
 		case TapbackType.Like:
@@ -41,9 +43,19 @@ export default function TapbackChip(props: {
 			break;
 	}
 	
-        const tooltipTitle = props.senders
-                .map((sender) => sender || "Unknown sender")
-                .join(", ");
+        const tooltipTitle = useMemo(() => (
+                props.senders
+                        .map((sender) => {
+                                const trimmedSender = sender.trim();
+                                if(!trimmedSender) {
+                                        return "Unknown sender";
+                                }
+
+                                const name = peopleState.getPerson(sender)?.name?.trim();
+                                return name || trimmedSender;
+                        })
+                        .join(", ")
+        ), [props.senders, peopleState]);
 
         return (
                 <Tooltip title={tooltipTitle} placement="top" disableInteractive>
