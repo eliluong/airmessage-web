@@ -1,10 +1,12 @@
 import CommunicationsManager, {
+        ConversationMediaFetchResult,
         ThreadFetchMetadata,
         ThreadFetchOptions,
         normalizeThreadFetchOptions
 } from "../communicationsManager";
 import DataProxy from "../dataProxy";
 import {Conversation, ConversationItem, ConversationPreview, LinkedConversation, MessageItem, TapbackItem} from "../../data/blocks";
+import {extractConversationAttachments} from "../../data/attachment";
 import {
         AttachmentRequestErrorCode,
         ConnectionErrorCode,
@@ -168,6 +170,51 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
         public override requestLiteThread(chatGUID: string, options?: ThreadFetchOptions): boolean {
                 this.fetchThread(chatGUID, options);
                 return true;
+        }
+
+        public async fetchConversationMedia(chatGUID: string, options?: ThreadFetchOptions): Promise<ConversationMediaFetchResult> {
+                const normalizedOptions = normalizeThreadFetchOptions(options);
+                const payload: Record<string, unknown> = {
+                        chatGuid: chatGUID,
+                        sort: "DESC",
+                        limit: DEFAULT_THREAD_PAGE_SIZE,
+                        with: ["attachments"],
+                        offset: 0
+                };
+
+                const where: {statement: string; args?: Record<string, unknown>}[] = [
+                        {
+                                statement: "attachment.mimeType LIKE :mimeType",
+                                args: {mimeType: "image/%"}
+                        }
+                ];
+
+                if(normalizedOptions?.limit !== undefined) {
+                        payload.limit = Math.max(1, Math.floor(normalizedOptions.limit));
+                }
+
+                const anchorMessageID = normalizedOptions?.anchorMessageID;
+                const direction = normalizedOptions?.direction ?? (anchorMessageID !== undefined ? "before" : "latest");
+
+                if(direction === "after") {
+                        payload.sort = "ASC";
+                }
+
+                if(anchorMessageID !== undefined) {
+                        where.push({
+                                statement: direction === "after" ? "message.ROWID > :rowid" : "message.ROWID < :rowid",
+                                args: {rowid: anchorMessageID}
+                        });
+                }
+
+                payload.where = where;
+
+                const response = await queryMessages(this.auth, payload);
+                const ordered = (response.data ?? []).slice().sort((a, b) => b.dateCreated - a.dateCreated);
+                const {items} = this.processMessages(ordered);
+                const attachments = extractConversationAttachments(items);
+                const metadata = this.buildThreadMetadata(items);
+                return {items: attachments, metadata};
         }
 
         public async searchMessages(options: MessageSearchOptions): Promise<MessageSearchHydratedResult> {

@@ -10,6 +10,7 @@ import DataProxy from "./dataProxy";
 import BlueBubblesCommunicationsManager from "./bluebubbles/bluebubblesCommunicationsManager";
 import BlueBubblesDataProxy from "./bluebubbles/bluebubblesDataProxy";
 import {Conversation, ConversationItem, LinkedConversation, MessageItem, MessageModifier, MessageSearchHit} from "../data/blocks";
+import {ConversationAttachmentEntry, extractConversationAttachments} from "../data/attachment";
 import {
         AttachmentRequestErrorCode,
         ConnectionErrorCode,
@@ -130,6 +131,11 @@ interface ThreadKey {
 
 export interface ThreadFetchResult {
         items: ConversationItem[];
+        metadata?: ThreadFetchMetadata;
+}
+
+export interface ConversationMediaFetchResult {
+        items: ConversationAttachmentEntry[];
         metadata?: ThreadFetchMetadata;
 }
 
@@ -673,6 +679,19 @@ export function fetchThread(chatGUID: string, options?: ThreadFetchOptions): Pro
                 //Recording the promise
                 pushKeyedArray(threadPromiseMap, key, {resolve: resolve, reject: reject});
         }));
+}
+
+export async function fetchConversationMedia(chatGUID: string, options?: ThreadFetchOptions): Promise<ConversationMediaFetchResult> {
+        if(!isConnected()) return Promise.reject(messageErrorNetwork);
+
+        const normalizedOptions = normalizeThreadFetchOptions(options);
+        if(communicationsManager?.fetchConversationMedia) {
+                return communicationsManager.fetchConversationMedia(chatGUID, normalizedOptions);
+        }
+
+        const threadResult = await fetchThread(chatGUID, normalizedOptions);
+        const attachments = extractConversationAttachments(threadResult.items);
+        return {items: attachments, metadata: threadResult.metadata};
 }
 
 export async function searchMessages(options: MessageSearchOptions): Promise<MessageSearchResult> {
