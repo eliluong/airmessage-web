@@ -1,5 +1,6 @@
 import React, {ChangeEvent, useCallback} from "react";
 import {Box, IconButton, InputBase, Stack} from "@mui/material";
+import type {IconButtonProps} from "@mui/material";
 import PushIcon from "../../icon/PushIcon";
 import {QueuedFile} from "../../../data/blocks";
 import {QueuedAttachmentImage} from "./queue/QueuedAttachmentImage";
@@ -7,23 +8,25 @@ import QueuedAttachmentGeneric from "./queue/QueuedAttachmentGeneric";
 import {QueuedAttachmentProps} from "./queue/QueuedAttachment";
 
 interface Props {
-	placeholder: string;
-	message: string;
-	attachments: QueuedFile[];
-	onMessageChange: (value: string) => void;
-	onMessageSubmit: (message: string, attachments: QueuedFile[]) => void;
-	onAttachmentAdd: (files: File[]) => void;
-	onAttachmentRemove: (value: QueuedFile) => void;
+        placeholder: string;
+        message: string;
+        attachments: QueuedFile[];
+        onMessageChange: (value: string) => void;
+        onMessageSubmit: (message: string, attachments: QueuedFile[]) => void;
+        onAttachmentAdd: (files: File[]) => void;
+        onAttachmentRemove: (value: QueuedFile) => void;
+        sendButtonColor?: IconButtonProps["color"];
 }
 
 export default function MessageInput(props: Props) {
-	const {
-		onMessageChange: propsOnMessageChange,
-		onMessageSubmit: propsOnMessageSubmit,
-		message: propsMessage,
-		attachments: propsAttachments,
-		onAttachmentAdd: propsOnAttachmentAdd
-	} = props;
+        const {
+                onMessageChange: propsOnMessageChange,
+                onMessageSubmit: propsOnMessageSubmit,
+                message: propsMessage,
+                attachments: propsAttachments,
+                onAttachmentAdd: propsOnAttachmentAdd,
+                sendButtonColor = "primary"
+        } = props;
 	
 	const handleChange = useCallback((event: ChangeEvent<HTMLTextAreaElement>) => {
 		propsOnMessageChange(event.target.value);
@@ -101,17 +104,17 @@ export default function MessageInput(props: Props) {
 					onChange={handleChange}
 					onKeyDown={handleKeyDown}
 					onPaste={handlePaste} />
-				<IconButton
-					sx={{
-						width: "40px",
-						height: "40px",
-						flexShrink: 0,
-						alignSelf: "flex-end"
-					}}
-					size="small"
-					color="primary"
-					disabled={props.message.trim() === "" && props.attachments.length === 0}
-					onClick={submitInput}>
+                                <IconButton
+                                        sx={{
+                                                width: "40px",
+                                                height: "40px",
+                                                flexShrink: 0,
+                                                alignSelf: "flex-end"
+                                        }}
+                                        size="small"
+                                        color={sendButtonColor}
+                                        disabled={props.message.trim() === "" && props.attachments.length === 0}
+                                        onClick={submitInput}>
 					<PushIcon />
 				</IconButton>
 			</Stack>
