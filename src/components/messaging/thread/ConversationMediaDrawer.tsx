@@ -25,7 +25,9 @@ import {SnackbarContext} from "shared/components/control/SnackbarProvider";
 import FileDownloadResult from "shared/data/fileDownloadResult";
 import AttachmentLightbox from "./item/AttachmentLightbox";
 import useConversationMedia from "shared/state/useConversationMedia";
+import useAttachmentThumbnails from "shared/state/useAttachmentThumbnails";
 import {ConversationAttachmentEntry} from "shared/data/attachment";
+import {blurhashToDataURL} from "shared/util/blurhash";
 
 interface ConversationMediaDrawerProps {
         conversation: Conversation;
@@ -117,10 +119,13 @@ export default function ConversationMediaDrawer({conversation, open, onClose}: C
         const [previewState, setPreviewState] = useState<{guid: string; title: string; url: string; data: FileDownloadResult;} | null>(null);
         const [previewLoadingGuid, setPreviewLoadingGuid] = useState<string | undefined>(undefined);
         const [previewUrls, setPreviewUrls] = useState<Map<string, string>>(new Map());
+        const {thumbnails: thumbnailMap, loadThumbnails, cancelActive: cancelThumbnailDownloads} = useAttachmentThumbnails(open);
+        const [blurhashPlaceholders, setBlurhashPlaceholders] = useState<Map<string, string>>(new Map());
 
         const downloadCache = useRef<Map<string, FileDownloadResult>>(new Map());
         const mountedRef = useRef(true);
         const previewUrlsRef = useRef<Map<string, string>>(new Map());
+        const seenThumbnailFailuresRef = useRef<Set<string>>(new Set());
 
         const clearPreviewUrls = useCallback(() => {
                 previewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
@@ -144,7 +149,10 @@ export default function ConversationMediaDrawer({conversation, open, onClose}: C
                 setPreviewState(null);
                 setPreviewLoadingGuid(undefined);
                 downloadCache.current.clear();
-        }, [conversationKey, clearPreviewUrls]);
+                cancelThumbnailDownloads();
+                setBlurhashPlaceholders(new Map());
+                seenThumbnailFailuresRef.current.clear();
+        }, [conversationKey, cancelThumbnailDownloads, clearPreviewUrls]);
 
         const handleRetry = useCallback(() => {
                 void reload();
@@ -217,6 +225,67 @@ export default function ConversationMediaDrawer({conversation, open, onClose}: C
                 timeStyle: "short"
         }), []);
 
+        const attachmentMap = useMemo(() => {
+                const map = new Map<string, ConversationAttachmentEntry>();
+                for(const item of mediaItems) {
+                        if(item.guid) map.set(item.guid, item);
+                }
+                return map;
+        }, [mediaItems]);
+
+        useEffect(() => {
+                if(!open) {
+                        seenThumbnailFailuresRef.current.clear();
+                        return;
+                }
+
+                const abortController = new AbortController();
+                const guids: string[] = [];
+                for(const item of mediaItems) {
+                        if(item.guid && isAttachmentPreviewable(item.mimeType)) {
+                                guids.push(item.guid);
+                        }
+                }
+                if(guids.length > 0) {
+                        loadThumbnails(guids, abortController.signal);
+                }
+                return () => abortController.abort();
+        }, [mediaItems, loadThumbnails, open]);
+
+        useEffect(() => {
+                if(!open) return;
+                if(typeof window === "undefined") return;
+                setBlurhashPlaceholders((previous) => {
+                        let updated = false;
+                        const next = new Map(previous);
+                        for(const item of mediaItems) {
+                                const guid = item.guid;
+                                if(!guid || !item.blurhash || next.has(guid)) continue;
+                                const dataUrl = blurhashToDataURL(item.blurhash, 64, 64);
+                                if(dataUrl) {
+                                        next.set(guid, dataUrl);
+                                        updated = true;
+                                }
+                        }
+                        return updated ? next : previous;
+                });
+        }, [mediaItems, open]);
+
+        useEffect(() => {
+                if(!open) return;
+                const seen = seenThumbnailFailuresRef.current;
+                thumbnailMap.forEach((entry, guid) => {
+                        if(entry.status === "error" && entry.error && !seen.has(guid)) {
+                                const attachment = attachmentMap.get(guid);
+                                const message = attachment ? `Failed to load preview for ${attachment.name}.` : entry.error;
+                                snackbar?.({message});
+                                seen.add(guid);
+                        } else if(entry.status === "loaded") {
+                                seen.delete(guid);
+                        }
+                });
+        }, [attachmentMap, open, snackbar, thumbnailMap]);
+
         const renderBody = () => {
                 if(isLoading) {
                         return (
@@ -253,20 +322,24 @@ export default function ConversationMediaDrawer({conversation, open, onClose}: C
                                         {mediaItems.map((item) => {
                                                 const guid = item.guid;
                                                 const previewUrl = guid ? previewUrls.get(guid) : undefined;
+                                                const thumbnail = guid ? thumbnailMap.get(guid) : undefined;
+                                                const fallbackUrl = guid ? blurhashPlaceholders.get(guid) : undefined;
+                                                const tileImage = previewUrl ?? thumbnail?.url ?? fallbackUrl;
                                                 const isLoadingPreview = guid !== undefined && previewLoadingGuid === guid;
+                                                const showLoadingOverlay = isLoadingPreview || (!!guid && thumbnail?.status === "loading" && !previewUrl);
                                                 return (
                                                         <MediaTileButton
                                                                 key={item.key}
                                                                 onClick={() => handleTileClick(item)}
                                                                 disabled={isLoadingPreview}>
-                                                                {previewUrl ? (
-                                                                        <MediaTileImage src={previewUrl} alt="" />
+                                                                {tileImage ? (
+                                                                        <MediaTileImage src={tileImage} alt="" />
                                                                 ) : (
                                                                         <MediaTilePlaceholder>
                                                                                 <InsertDriveFileOutlined fontSize="large" />
                                                                         </MediaTilePlaceholder>
                                                                 )}
-                                                               {isLoadingPreview && (
+                                                                {showLoadingOverlay && (
                                                                         <LoadingOverlay>
                                                                                 <CircularProgress size={32} />
                                                                         </LoadingOverlay>
