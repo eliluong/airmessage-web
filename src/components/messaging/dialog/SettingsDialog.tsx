@@ -133,6 +133,18 @@ export default function SettingsDialog(props: {isOpen: boolean; onDismiss: () =>
                 [displaySnackbar, peopleState]
         );
 
+        const handleClearSource = useCallback(
+                (source: AddressBookSourceStatus) => {
+                        if(peopleState.isSyncing || source.isSyncing) {
+                                return;
+                        }
+
+                        peopleState.clearAddressBookCache(source.id);
+                        displaySnackbar({message: `Cleared cached contacts for ${source.label}.`});
+                },
+                [displaySnackbar, peopleState]
+        );
+
         return (
                 <Dialog open={props.isOpen} onClose={props.onDismiss} fullWidth maxWidth="sm">
                         <DialogTitle>Settings</DialogTitle>
@@ -232,6 +244,11 @@ export default function SettingsDialog(props: {isOpen: boolean; onDismiss: () =>
                                                                 }
 
                                                                 const actionsDisabled = peopleState.isSyncing || source.isSyncing;
+                                                                const canClearCache = Boolean(
+                                                                        source.syncedAt ||
+                                                                        source.peopleCount > 0 ||
+                                                                        source.error
+                                                                );
 
                                                                 return (
                                                                         <ListItem
@@ -248,6 +265,15 @@ export default function SettingsDialog(props: {isOpen: boolean; onDismiss: () =>
                                                                                                         disabled={actionsDisabled}
                                                                                                 >
                                                                                                         {source.isSyncing ? "Syncing…" : "Sync now"}
+                                                                                                </Button>
+                                                                                                <Button
+                                                                                                        variant="text"
+                                                                                                        size="small"
+                                                                                                        color="inherit"
+                                                                                                        disabled={actionsDisabled || !canClearCache}
+                                                                                                        onClick={() => handleClearSource(source)}
+                                                                                                >
+                                                                                                        Clear data
                                                                                                 </Button>
                                                                                                 <Switch
                                                                                                         edge="end"

@@ -32,6 +32,7 @@ allPeople: PersonData[] | undefined;
 sources: AddressBookSourceStatus[];
 isSyncing: boolean;
 syncAddressBooks(selectedIds?: string[]): Promise<void>;
+clearAddressBookCache(sourceId: string): void;
 }
 
 interface AddressBookCacheEntry {
@@ -96,6 +97,9 @@ allPeople: undefined,
 sources: [],
 isSyncing: false,
 syncAddressBooks: async () => {
+/* no-op */
+},
+clearAddressBookCache: () => {
 /* no-op */
 }
 });
@@ -353,6 +357,30 @@ throw new AddressBookSyncError(errors);
 }
 }, [isReady, sources]);
 
+const clearAddressBookCache = useCallback((sourceId: string) => {
+setSources((current) => current.map((source) => {
+if(source.id !== sourceId) {
+return source;
+}
+
+return {
+...source,
+people: [],
+syncedAt: undefined,
+needsUpdate: true,
+isSyncing: false,
+error: undefined
+};
+}));
+
+const nextCache: AddressBookCache = {...cacheRef.current};
+if(sourceId in nextCache) {
+delete nextCache[sourceId];
+cacheRef.current = nextCache;
+writeCache(nextCache);
+}
+}, []);
+
 return (
 <PeopleContext.Provider value={{
 needsPermission: false,
@@ -360,7 +388,8 @@ getPerson,
 allPeople,
 sources: sourcesForContext,
 isSyncing,
-syncAddressBooks
+syncAddressBooks,
+clearAddressBookCache
 }}>
 {props.children}
 </PeopleContext.Provider>
