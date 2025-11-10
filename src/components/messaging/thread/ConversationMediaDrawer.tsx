@@ -132,14 +132,27 @@ function sanitizePhoneNumber(address: string): string {
 function deriveInitialsFromName(name: string): string {
         const trimmed = name.trim();
         if(trimmed.length === 0) return "??";
-        const first = trimmed[0];
-        for(let index = trimmed.length - 1; index >= 0; index--) {
-                const char = trimmed[index];
-                if(char !== " ") {
-                        return `${first}${char}`.toUpperCase();
+
+        const parts = trimmed.split(/\s+/).filter(Boolean);
+
+        if(parts.length >= 2) {
+                const firstPart = parts[0];
+                const lastPart = parts[parts.length - 1];
+                const firstInitial = Array.from(firstPart)[0];
+                const lastInitial = Array.from(lastPart)[0];
+                if(firstInitial && lastInitial) {
+                        return `${firstInitial}${lastInitial}`.toUpperCase();
                 }
         }
-        return first.toUpperCase();
+
+        const compactCharacters = Array.from(trimmed).filter((char) => char.trim().length > 0);
+        if(compactCharacters.length >= 2) {
+                return `${compactCharacters[0]}${compactCharacters[compactCharacters.length - 1]}`.toUpperCase();
+        }
+        if(compactCharacters.length === 1) {
+                return `${compactCharacters[0]}${compactCharacters[0]}`.toUpperCase();
+        }
+        return "??";
 }
 
 function deriveInitialsFromAddress(address: string): string {
