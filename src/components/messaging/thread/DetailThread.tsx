@@ -25,6 +25,7 @@ import {
 	isModifierTapback
 } from "shared/util/conversationUtils";
 import ConversationTarget from "shared/data/conversationTarget";
+import {appleServiceAppleMessage, appleServiceTextMessageForwarding} from "shared/data/appleConstants";
 import {ConversationItemType, MessageError, MessageStatusCode} from "shared/data/stateCodes";
 import EmitterPromiseTuple from "shared/util/emitterPromiseTuple";
 import {playSoundMessageOut} from "shared/util/soundUtils";
@@ -35,6 +36,27 @@ import {ThreadFocusTarget, areFocusTargetsEqual} from "./types";
 import ConversationMediaDrawer from "./ConversationMediaDrawer";
 
 const DEFAULT_FOCUS_PAGE_LIMIT = 15;
+
+const SMS_SERVICE_KEYWORDS = new Set<string>([
+        appleServiceTextMessageForwarding.toLowerCase(),
+        "sms",
+        "mms"
+]);
+
+function isSmsService(service?: string): boolean {
+        if(!service) return false;
+
+        const normalizedService = service.toLowerCase();
+        if(normalizedService === appleServiceAppleMessage.toLowerCase()) return false;
+
+        for(const keyword of SMS_SERVICE_KEYWORDS) {
+                if(normalizedService.includes(keyword)) {
+                        return true;
+                }
+        }
+
+        return false;
+}
 
 type ThreadPageMetadata = {
         oldestServerID?: number;
@@ -133,9 +155,13 @@ export default function DetailThread({conversation, focusTarget}: {
 	const faceTimeSupported = useIsFaceTimeSupported();
 	const messageSubmitEmitter = useRef(new EventEmitter<void>());
 	
-	const [messageInput, setMessageInput] = useState<string>("");
+        const [messageInput, setMessageInput] = useState<string>("");
         const [attachmentInput, setAttachmentInput] = useState<QueuedFile[]>([]);
         const [isMediaDrawerOpen, setIsMediaDrawerOpen] = useState(false);
+
+        const sendButtonColor = isSmsService(conversation.service)
+                ? "#2ECC71"
+                : "primary";
 	
 	/**
 	 * Requests messages, and updates the display state
@@ -732,11 +758,12 @@ export default function DetailThread({conversation, focusTarget}: {
 					<MessageInput
 						placeholder={mapServiceName(conversation.service)}
 						message={messageInput}
-						onMessageChange={setMessageInput}
-						attachments={attachmentInput}
-						onAttachmentAdd={addAttachment}
-						onAttachmentRemove={removeAttachment}
-						onMessageSubmit={submitInput} />
+                                                onMessageChange={setMessageInput}
+                                                attachments={attachmentInput}
+                                                onAttachmentAdd={addAttachment}
+                                                onAttachmentRemove={removeAttachment}
+                                                onMessageSubmit={submitInput}
+                                                sendButtonColor={sendButtonColor} />
                                 </Box>
                         </Stack>
                         </DetailFrame>

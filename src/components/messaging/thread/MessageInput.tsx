@@ -1,5 +1,6 @@
 import React, {ChangeEvent, useCallback} from "react";
 import {Box, IconButton, InputBase, Stack} from "@mui/material";
+import type {IconButtonProps} from "@mui/material";
 import PushIcon from "../../icon/PushIcon";
 import {QueuedFile} from "../../../data/blocks";
 import {QueuedAttachmentImage} from "./queue/QueuedAttachmentImage";
@@ -7,23 +8,25 @@ import QueuedAttachmentGeneric from "./queue/QueuedAttachmentGeneric";
 import {QueuedAttachmentProps} from "./queue/QueuedAttachment";
 
 interface Props {
-	placeholder: string;
-	message: string;
-	attachments: QueuedFile[];
-	onMessageChange: (value: string) => void;
-	onMessageSubmit: (message: string, attachments: QueuedFile[]) => void;
-	onAttachmentAdd: (files: File[]) => void;
-	onAttachmentRemove: (value: QueuedFile) => void;
+        placeholder: string;
+        message: string;
+        attachments: QueuedFile[];
+        onMessageChange: (value: string) => void;
+        onMessageSubmit: (message: string, attachments: QueuedFile[]) => void;
+        onAttachmentAdd: (files: File[]) => void;
+        onAttachmentRemove: (value: QueuedFile) => void;
+        sendButtonColor?: IconButtonProps["color"] | string;
 }
 
 export default function MessageInput(props: Props) {
-	const {
-		onMessageChange: propsOnMessageChange,
-		onMessageSubmit: propsOnMessageSubmit,
-		message: propsMessage,
-		attachments: propsAttachments,
-		onAttachmentAdd: propsOnAttachmentAdd
-	} = props;
+        const {
+                onMessageChange: propsOnMessageChange,
+                onMessageSubmit: propsOnMessageSubmit,
+                message: propsMessage,
+                attachments: propsAttachments,
+                onAttachmentAdd: propsOnAttachmentAdd,
+                sendButtonColor = "primary"
+        } = props;
 	
 	const handleChange = useCallback((event: ChangeEvent<HTMLTextAreaElement>) => {
 		propsOnMessageChange(event.target.value);
@@ -40,9 +43,11 @@ export default function MessageInput(props: Props) {
 		}
 	}, [submitInput]);
 	
-	const handlePaste = useCallback((event: React.ClipboardEvent<HTMLElement>) => {
-		propsOnAttachmentAdd(Array.from(event.clipboardData.files));
-	}, [propsOnAttachmentAdd]);
+        const handlePaste = useCallback((event: React.ClipboardEvent<HTMLElement>) => {
+                propsOnAttachmentAdd(Array.from(event.clipboardData.files));
+        }, [propsOnAttachmentAdd]);
+
+        const isCustomSendButtonColor = typeof sendButtonColor === "string" && sendButtonColor.startsWith("#");
 	
 	return (
 		<Box sx={{
@@ -101,17 +106,18 @@ export default function MessageInput(props: Props) {
 					onChange={handleChange}
 					onKeyDown={handleKeyDown}
 					onPaste={handlePaste} />
-				<IconButton
-					sx={{
-						width: "40px",
-						height: "40px",
-						flexShrink: 0,
-						alignSelf: "flex-end"
-					}}
-					size="small"
-					color="primary"
-					disabled={props.message.trim() === "" && props.attachments.length === 0}
-					onClick={submitInput}>
+                                <IconButton
+                                        sx={{
+                                                width: "40px",
+                                                height: "40px",
+                                                flexShrink: 0,
+                                                alignSelf: "flex-end",
+                                                ...(isCustomSendButtonColor ? {color: sendButtonColor} : {})
+                                        }}
+                                        size="small"
+                                        color={isCustomSendButtonColor ? undefined : sendButtonColor as IconButtonProps["color"]}
+                                        disabled={props.message.trim() === "" && props.attachments.length === 0}
+                                        onClick={submitInput}>
 					<PushIcon />
 				</IconButton>
 			</Stack>
