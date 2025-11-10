@@ -155,6 +155,7 @@ if(cancelled || isAbortError(error)) {
 return;
 }
 
+console.error("Failed to load address book manifest", error);
 const fallbackSources = createFallbackSources(cacheRef.current, enabledOverrideSet);
 setSources(fallbackSources);
 setHasLoaded(true);
@@ -606,7 +607,7 @@ function buildPublicUrl(relativePath: string): string {
 const trimmedRelative = relativePath.replace(/^\/+/, "");
 const base = process.env.PUBLIC_URL ?? "";
 if(!base) {
-return trimmedRelative;
+return trimmedRelative.length > 0 ? `/${trimmedRelative}` : "/";
 }
 
 const trimmedBase = base.replace(/\/$/, "");
