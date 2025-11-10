@@ -9,7 +9,9 @@
 /public/address-books/**/*.csv
 !/public/address-books/**/addressbook.demo.personal.csv
 !/public/address-books/**/addressbook.team.work.csv
-/public/address-books/manifest.json
+!/public/address-books/**/addressbook.demo.google.csv
+!/public/address-books/**/addressbook.demo.baikal.csv
+!/public/address-books/manifest.json
 
 # User-specific stuff
 .idea/**/workspace.xml
