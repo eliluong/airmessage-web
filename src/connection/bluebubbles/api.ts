@@ -212,9 +212,9 @@ export async function downloadAttachmentThumbnail(
 ): Promise<Response> {
         const defaulted: AttachmentDownloadOptions = {
                 width: options.width ?? 512,
-                height: options.height ?? 512,
                 quality: options.quality ?? "best",
-                signal: options.signal
+                signal: options.signal,
+                ...(options.height !== undefined ? {height: options.height} : {})
         };
 
         try {
