@@ -12,10 +12,12 @@ import {
 
 const API_ROOT = "/api/v1";
 
+export type AttachmentQualityPreset = "good" | "better" | "best";
+
 export interface AttachmentDownloadOptions {
         width?: number;
         height?: number;
-        quality?: number;
+        quality?: number | AttachmentQualityPreset;
         signal?: AbortSignal;
 }
 
@@ -177,8 +179,12 @@ export async function downloadAttachment(
                 params.set("height", String(Math.max(1, Math.floor(options.height))));
         }
         if(options.quality !== undefined) {
-                const clampedQuality = Math.min(100, Math.max(1, Math.floor(options.quality)));
-                params.set("quality", String(clampedQuality));
+                if(typeof options.quality === "string") {
+                        params.set("quality", options.quality);
+                } else {
+                        const clampedQuality = Math.min(100, Math.max(1, Math.floor(options.quality)));
+                        params.set("quality", String(clampedQuality));
+                }
         }
 
         const queryString = params.toString();
@@ -207,8 +213,24 @@ export async function downloadAttachmentThumbnail(
         const defaulted: AttachmentDownloadOptions = {
                 width: options.width ?? 512,
                 height: options.height ?? 512,
-                quality: options.quality ?? 70,
+                quality: options.quality ?? "best",
                 signal: options.signal
         };
-        return downloadAttachment(auth, guid, defaulted);
+
+        try {
+                return await downloadAttachment(auth, guid, defaulted);
+        } catch(error) {
+                if(
+                        defaulted.quality === "best"
+                        && error instanceof BlueBubblesApiError
+                        && error.status === 400
+                ) {
+                        const fallback: AttachmentDownloadOptions = {
+                                ...defaulted,
+                                quality: 70
+                        };
+                        return downloadAttachment(auth, guid, fallback);
+                }
+                throw error;
+        }
 }
