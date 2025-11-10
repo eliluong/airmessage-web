@@ -26,6 +26,7 @@ import {ConnectionErrorCode, FaceTimeLinkErrorCode} from "../../../data/stateCod
 import {
         AddRounded,
         ArrowBackRounded,
+        ClearRounded,
         Contacts,
         MoreVertRounded,
         SearchRounded,
@@ -401,54 +402,72 @@ interface SearchPanelProps {
 }
 
 function SearchPanel(props: SearchPanelProps) {
-	const {
-		conversationTitleMap,
-		query,
-		onQueryChange,
+        const {
+                conversationTitleMap,
+                query,
+                onQueryChange,
 		timeRange,
 		onTimeRangeChange,
 		loading,
 		results,
 		error,
 		onResultSelected,
-		onCancel
-	} = props;
+                onCancel
+        } = props;
 
-	const handleTimeRangeChange = useCallback((event: React.MouseEvent<HTMLElement>, value: SearchTimeRange | null) => {
-		if(value !== null) {
-			onTimeRangeChange(value);
-		}
-	}, [onTimeRangeChange]);
+        const inputRef = useRef<HTMLInputElement | null>(null);
+
+        const handleTimeRangeChange = useCallback((event: React.MouseEvent<HTMLElement>, value: SearchTimeRange | null) => {
+                if(value !== null) {
+                        onTimeRangeChange(value);
+                }
+        }, [onTimeRangeChange]);
 
 	const handleCancel = useCallback(() => {
 		onQueryChange("");
-		onTimeRangeChange("all");
-		onCancel();
-	}, [onCancel, onQueryChange, onTimeRangeChange]);
+                onTimeRangeChange("all");
+                onCancel();
+        }, [onCancel, onQueryChange, onTimeRangeChange]);
 
-	const hasQuery = query.trim().length > 0;
+        const hasQuery = query.trim().length > 0;
 
-	return (
-		<Stack flex={1} minHeight={0} px={2} pb={2} spacing={2}>
-			<Stack direction="row" spacing={1} alignItems="center">
+        const handleClearQuery = useCallback(() => {
+                onQueryChange("");
+                inputRef.current?.focus();
+        }, [onQueryChange]);
+
+        return (
+                <Stack flex={1} minHeight={0} px={2} pb={2} spacing={2}>
+                        <Stack direction="row" spacing={1} alignItems="center">
                                 <IconButton aria-label="Back to conversations" onClick={handleCancel}>
                                         <ArrowBackRounded />
                                 </IconButton>
-				<TextField
-					value={query}
-					onChange={(event) => onQueryChange(event.target.value)}
-					placeholder="Search messages"
-					fullWidth
-					autoFocus
-					size="small"
-					InputProps={{
-						startAdornment: (
-							<InputAdornment position="start">
-								<SearchRounded fontSize="small" />
-							</InputAdornment>
-						)
-					}}
-				/>
+                                <TextField
+                                        inputRef={inputRef}
+                                        value={query}
+                                        onChange={(event) => onQueryChange(event.target.value)}
+                                        placeholder="Search messages"
+                                        fullWidth
+                                        autoFocus
+                                        size="small"
+                                        InputProps={{
+                                                startAdornment: (
+                                                        <InputAdornment position="start">
+                                                                <SearchRounded fontSize="small" />
+                                                        </InputAdornment>
+                                                ),
+                                                endAdornment: hasQuery ? (
+                                                        <InputAdornment position="end">
+                                                                <IconButton
+                                                                        aria-label="Clear search"
+                                                                        size="small"
+                                                                        onClick={handleClearQuery}>
+                                                                        <ClearRounded fontSize="small" />
+                                                                </IconButton>
+                                                        </InputAdornment>
+                                                ) : undefined
+                                        }}
+                                />
                         </Stack>
 
 			<ToggleButtonGroup
