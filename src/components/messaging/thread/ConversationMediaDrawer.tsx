@@ -13,13 +13,15 @@ import {
         Typography,
         useMediaQuery,
         ButtonBase,
-        styled
+        styled,
+        Avatar,
+        Tooltip
 } from "@mui/material";
 import {Close, InsertDriveFileOutlined} from "@mui/icons-material";
 import {useTheme} from "@mui/material/styles";
 import * as ConnectionManager from "shared/connection/connectionManager";
 import {formatFileSize} from "shared/util/languageUtils";
-import {isAttachmentPreviewable} from "shared/util/conversationUtils";
+import {formatAddress, isAttachmentPreviewable} from "shared/util/conversationUtils";
 import {downloadBlob} from "shared/util/browserUtils";
 import {SnackbarContext} from "shared/components/control/SnackbarProvider";
 import FileDownloadResult from "shared/data/fileDownloadResult";
@@ -28,6 +30,8 @@ import useConversationMedia from "shared/state/useConversationMedia";
 import useAttachmentThumbnails from "shared/state/useAttachmentThumbnails";
 import {ConversationAttachmentEntry} from "shared/data/attachment";
 import {blurhashToDataURL} from "shared/util/blurhash";
+import {PeopleContext} from "shared/state/peopleState";
+import {colorFromContact} from "shared/util/avatarUtils";
 
 interface ConversationMediaDrawerProps {
         conversation: Conversation;
@@ -100,10 +104,81 @@ const LoadingOverlay = styled(Box)(({theme}) => ({
         backgroundColor: theme.palette.action.disabledBackground
 }));
 
+const SenderBadge = styled("div")(({theme}) => ({
+        position: "absolute",
+        top: theme.spacing(1),
+        right: theme.spacing(1),
+        pointerEvents: "none",
+        zIndex: 2,
+        display: "flex",
+        alignItems: "center",
+        [`& > *`]: {
+                pointerEvents: "auto"
+        }
+}));
+
+interface SenderDisplayData {
+        readonly displayName: string;
+        readonly initials: string;
+        readonly color: string;
+        readonly avatarUrl?: string;
+        readonly tooltip: string;
+}
+
+function sanitizePhoneNumber(address: string): string {
+        return address.replace(/\D+/g, "");
+}
+
+function deriveInitialsFromName(name: string): string {
+        const trimmed = name.trim();
+        if(trimmed.length === 0) return "??";
+
+        const parts = trimmed.split(/\s+/).filter(Boolean);
+
+        if(parts.length >= 2) {
+                const firstPart = parts[0];
+                const lastPart = parts[parts.length - 1];
+                const firstInitial = Array.from(firstPart)[0];
+                const lastInitial = Array.from(lastPart)[0];
+                if(firstInitial && lastInitial) {
+                        return `${firstInitial}${lastInitial}`.toUpperCase();
+                }
+        }
+
+        const compactCharacters = Array.from(trimmed).filter((char) => char.trim().length > 0);
+        if(compactCharacters.length >= 2) {
+                return `${compactCharacters[0]}${compactCharacters[compactCharacters.length - 1]}`.toUpperCase();
+        }
+        if(compactCharacters.length === 1) {
+                return `${compactCharacters[0]}${compactCharacters[0]}`.toUpperCase();
+        }
+        return "??";
+}
+
+function deriveInitialsFromAddress(address: string): string {
+        const digits = sanitizePhoneNumber(address);
+        if(digits.length >= 2) {
+                return digits.slice(-2);
+        }
+        if(digits.length === 1) {
+                return digits;
+        }
+        const alphanumeric = address.replace(/[^A-Za-z0-9]+/g, "");
+        if(alphanumeric.length >= 2) {
+                return `${alphanumeric[0]}${alphanumeric[alphanumeric.length - 1]}`.toUpperCase();
+        }
+        if(alphanumeric.length === 1) {
+                return alphanumeric.toUpperCase();
+        }
+        return "??";
+}
+
 export default function ConversationMediaDrawer({conversation, open, onClose}: ConversationMediaDrawerProps) {
         const theme = useTheme();
         const fullScreen = useMediaQuery(theme.breakpoints.down("md"));
         const snackbar = useContext(SnackbarContext);
+        const peopleState = useContext(PeopleContext);
+        const {getPerson} = peopleState;
 
         const conversationGuid = conversation.localOnly ? undefined : conversation.guid;
         const conversationKey = useMemo(() => conversationGuid ?? `local:${conversation.localID}`, [conversationGuid, conversation.localID]);
@@ -116,7 +191,13 @@ export default function ConversationMediaDrawer({conversation, open, onClose}: C
                 loadMore,
                 reload
         } = useConversationMedia(conversationGuid, open);
-        const [previewState, setPreviewState] = useState<{guid: string; title: string; url: string; data: FileDownloadResult;} | null>(null);
+        const [previewState, setPreviewState] = useState<{
+                guid: string;
+                title: string;
+                url: string;
+                data: FileDownloadResult;
+                senderLabel?: string;
+        } | null>(null);
         const [previewLoadingGuid, setPreviewLoadingGuid] = useState<string | undefined>(undefined);
         const [previewUrls, setPreviewUrls] = useState<Map<string, string>>(new Map());
         const {thumbnails: thumbnailMap, loadThumbnails, cancelActive: cancelThumbnailDownloads} = useAttachmentThumbnails(open);
@@ -169,6 +250,32 @@ export default function ConversationMediaDrawer({conversation, open, onClose}: C
                 }
         }, [loadMore, snackbar]);
 
+        const senderDisplayMap = useMemo(() => {
+                const map = new Map<string, SenderDisplayData>();
+                for(const item of mediaItems) {
+                        const sender = item.sender ?? "me";
+                        const isMe = sender === "me";
+                        const person = isMe ? undefined : getPerson(sender);
+                        const personName = person?.name?.trim();
+                        const displayName = isMe ? "Me" : personName && personName.length > 0 ? personName : formatAddress(sender);
+                        const initials = isMe
+                                ? "Me"
+                                : personName && personName.length > 0
+                                        ? deriveInitialsFromName(personName)
+                                        : deriveInitialsFromAddress(sender);
+                        const avatarUrl = person?.avatar;
+                        const color = colorFromContact(sender);
+                        map.set(item.key, {
+                                displayName,
+                                initials,
+                                color,
+                                avatarUrl,
+                                tooltip: displayName
+                        });
+                }
+                return map;
+        }, [getPerson, mediaItems]);
+
         const handleTileClick = useCallback(async (item: ConversationAttachmentEntry) => {
                 const guid = item.guid;
                 if(!guid || !isAttachmentPreviewable(item.mimeType)) {
@@ -180,7 +287,14 @@ export default function ConversationMediaDrawer({conversation, open, onClose}: C
                 if(cached) {
                         const existingUrl = previewUrls.get(guid);
                         if(existingUrl) {
-                                setPreviewState({guid, title: item.name, url: existingUrl, data: cached});
+                                const senderInfo = senderDisplayMap.get(item.key);
+                                setPreviewState({
+                                        guid,
+                                        title: item.name,
+                                        url: existingUrl,
+                                        data: cached,
+                                        senderLabel: senderInfo?.displayName
+                                });
                                 return;
                         }
                 }
@@ -198,7 +312,14 @@ export default function ConversationMediaDrawer({conversation, open, onClose}: C
                                 next.set(guid, url);
                                 return next;
                         });
-                        setPreviewState({guid, title: item.name, url, data: download});
+                        const senderInfo = senderDisplayMap.get(item.key);
+                        setPreviewState({
+                                guid,
+                                title: item.name,
+                                url,
+                                data: download,
+                                senderLabel: senderInfo?.displayName
+                        });
                 } catch(error) {
                         console.warn("Failed to fetch attachment preview", error);
                         if(!mountedRef.current) return;
@@ -208,7 +329,7 @@ export default function ConversationMediaDrawer({conversation, open, onClose}: C
                                 setPreviewLoadingGuid(undefined);
                         }
                 }
-        }, [previewUrls, snackbar]);
+        }, [previewUrls, senderDisplayMap, snackbar]);
 
         const closePreview = useCallback(() => setPreviewState(null), []);
 
@@ -328,11 +449,35 @@ export default function ConversationMediaDrawer({conversation, open, onClose}: C
                                                 const tileImage = previewUrl ?? thumbnail?.url ?? fallbackUrl;
                                                 const isLoadingPreview = guid !== undefined && previewLoadingGuid === guid;
                                                 const showLoadingOverlay = isLoadingPreview || (!!guid && thumbnail?.status === "loading" && !previewUrl);
+                                                const senderInfo = senderDisplayMap.get(item.key);
                                                 return (
                                                         <MediaTileButton
                                                                 key={item.key}
                                                                 onClick={() => handleTileClick(item)}
                                                                 disabled={isLoadingPreview}>
+                                                                {senderInfo && (
+                                                                        <SenderBadge>
+                                                                                <Tooltip
+                                                                                        title={senderInfo.tooltip}
+                                                                                        placement="left"
+                                                                                        componentsProps={{popper: {sx: {pointerEvents: "none"}}}}>
+                                                                                        <Avatar
+                                                                                                src={senderInfo.avatarUrl}
+                                                                                                alt=""
+                                                                                                sx={{
+                                                                                                        width: 32,
+                                                                                                        height: 32,
+                                                                                                        fontSize: senderInfo.initials.length > 2 ? 12 : 14,
+                                                                                                        fontWeight: 600,
+                                                                                                        bgcolor: senderInfo.avatarUrl ? undefined : senderInfo.color,
+                                                                                                        color: senderInfo.avatarUrl ? undefined : theme.palette.getContrastText(senderInfo.color)
+                                                                                                }}
+                                                                                        >
+                                                                                                {!senderInfo.avatarUrl ? senderInfo.initials : null}
+                                                                                        </Avatar>
+                                                                                </Tooltip>
+                                                                        </SenderBadge>
+                                                                )}
                                                                 {tileImage ? (
                                                                         <MediaTileImage src={tileImage} alt="" />
                                                                 ) : (

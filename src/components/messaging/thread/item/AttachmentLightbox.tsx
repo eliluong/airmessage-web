@@ -18,6 +18,7 @@ export interface AttachmentLightboxProps {
         imageURL?: string;
         onClose: () => void;
         onDownload?: () => void;
+        subtitle?: string;
 }
 
 export default function AttachmentLightbox(props: AttachmentLightboxProps) {
@@ -38,16 +39,20 @@ export default function AttachmentLightbox(props: AttachmentLightboxProps) {
                                 open={props.open}
                                 onClick={props.onClose}>
                                 <Toolbar sx={{flexShrink: 0}}>
-                                        <IconButton edge="start">
+                                        <IconButton edge="start" onClick={props.onClose}>
                                                 <ArrowBack />
                                         </IconButton>
 
-                                        <Typography
-                                                flexGrow={1}
-                                                variant="h6"
-                                                color="textPrimary">
-                                                {props.title}
-                                        </Typography>
+                                        <Box flexGrow={1} ml={1} display="flex" flexDirection="column" minWidth={0}>
+                                                <Typography variant="h6" color="textPrimary" noWrap>
+                                                        {props.title}
+                                                </Typography>
+                                                {props.subtitle && (
+                                                        <Typography variant="body2" color="textSecondary" noWrap>
+                                                                {props.subtitle}
+                                                        </Typography>
+                                                )}
+                                        </Box>
 
                                         {props.onDownload && (
                                                 <Tooltip title="Save">
