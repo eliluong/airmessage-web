@@ -1,4 +1,4 @@
-import React, {useEffect, useState} from "react";
+import React from "react";
 
 import * as ConversationUtils from "../../../util/conversationUtils";
 import {isConversationPreviewMessage} from "../../../util/conversationUtils";
@@ -7,7 +7,7 @@ import {ListItemAvatar, ListItemButton, ListItemText, Typography, TypographyProp
 
 import {Conversation, ConversationPreview} from "../../../data/blocks";
 import {appleSendStyleBubbleInvisibleInk} from "../../../data/appleConstants";
-import {getLastUpdateStatusTime} from "../../../util/dateUtils";
+import {useLiveLastUpdateStatusTime} from "../../../util/dateUtils";
 import GroupAvatar from "./GroupAvatar";
 import {ConversationPreviewType} from "../../../data/stateCodes";
 import {useConversationTitle} from "shared/util/hookUtils";
@@ -41,7 +41,9 @@ export default function ListConversation(props: {
 		}
 	} : {};
 	
-	return (
+        const lastUpdateStatus = useLiveLastUpdateStatusTime(props.conversation.preview.date);
+
+        return (
 		<ListItemButton
 			key={props.conversation.localID}
 			onClick={props.onSelected}
@@ -83,10 +85,10 @@ export default function ListConversation(props: {
 				}}
 				variant="body2"
 				color="textSecondary">
-				{getLastUpdateStatusTime(props.conversation.preview.date)}
-			</Typography>
-		</ListItemButton>
-	);
+                                {lastUpdateStatus}
+                        </Typography>
+                </ListItemButton>
+        );
 }
 
 function previewString(preview: ConversationPreview): string {

@@ -1,3 +1,4 @@
+import {useEffect, useState} from "react";
 import {DateTime} from "luxon";
 
 const timeMinute = 60 * 1000;
@@ -48,6 +49,42 @@ export function getLastUpdateStatusTime(date: Date): string {
 	//Anytime (Dec 2018)
 	//return dayjs(date).format("MMM YYYY")
 	return DateTime.fromJSDate(date).toFormat("LLL yyyy");
+}
+
+export function useLiveLastUpdateStatusTime(date: Date): string {
+        const [value, setValue] = useState(() => getLastUpdateStatusTime(date));
+
+        useEffect(() => {
+                setValue(getLastUpdateStatusTime(date));
+
+                let timeout: ReturnType<typeof setTimeout> | undefined;
+
+                const scheduleTick = () => {
+                        const elapsed = Math.max(0, Date.now() - date.getTime());
+
+                        if(elapsed >= timeHour) {
+                                return;
+                        }
+
+                        const elapsedIntoMinute = elapsed % timeMinute;
+                        const timeToNextMinute = timeMinute - elapsedIntoMinute;
+
+                        timeout = setTimeout(() => {
+                                setValue(getLastUpdateStatusTime(date));
+                                scheduleTick();
+                        }, timeToNextMinute);
+                };
+
+                scheduleTick();
+
+                return () => {
+                        if(timeout !== undefined) {
+                                clearTimeout(timeout);
+                        }
+                };
+        }, [date]);
+
+        return value;
 }
 
 //Used in time separators between messages

@@ -52,7 +52,7 @@ import useMessageSearch from "shared/state/useMessageSearch";
 import {getMemberTitleSync, mimeTypeToPreview} from "shared/util/conversationUtils";
 import {PeopleContext} from "shared/state/peopleState";
 import {usePersonName} from "shared/util/hookUtils";
-import {getLastUpdateStatusTime} from "../../../util/dateUtils";
+import {useLiveLastUpdateStatusTime} from "../../../util/dateUtils";
 
 export default function Sidebar(props: {
         conversations: Conversation[] | undefined;
@@ -529,7 +529,7 @@ function SearchResultItem(props: {hit: MessageSearchHit; title: string; onSelect
 
 	const secondary = senderName ? `${senderName}: ${snippet}` : snippet;
 
-	const timestamp = useMemo(() => getLastUpdateStatusTime(hit.message.date), [hit.message.date]);
+        const timestamp = useLiveLastUpdateStatusTime(hit.message.date);
 
 	return (
 		<ListItemButton
