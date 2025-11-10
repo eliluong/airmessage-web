@@ -1,0 +1,17 @@
+{
+  "sources": [
+    {
+      "id": "demo",
+      "label": "Demo contacts",
+      "type": "personal",
+      "path": "addressbook.demo.personal.csv",
+      "version": "1.0.0"
+    },
+    {
+      "id": "team",
+      "label": "Team directory",
+      "type": "work",
+      "path": "addressbook.team.work.csv"
+    }
+  ]
+}
