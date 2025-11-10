@@ -3,7 +3,6 @@ import styles from "./Sidebar.module.css";
 import AirMessageLogo from "../../logo/AirMessageLogo";
 import {
         Box,
-        Button,
         CircularProgress,
         Collapse,
         IconButton,
@@ -432,9 +431,9 @@ function SearchPanel(props: SearchPanelProps) {
 	return (
 		<Stack flex={1} minHeight={0} px={2} pb={2} spacing={2}>
 			<Stack direction="row" spacing={1} alignItems="center">
-				<IconButton aria-label="Back to conversations" onClick={handleCancel}>
-					<ArrowBackRounded />
-				</IconButton>
+                                <IconButton aria-label="Back to conversations" onClick={handleCancel}>
+                                        <ArrowBackRounded />
+                                </IconButton>
 				<TextField
 					value={query}
 					onChange={(event) => onQueryChange(event.target.value)}
@@ -450,8 +449,7 @@ function SearchPanel(props: SearchPanelProps) {
 						)
 					}}
 				/>
-				<Button onClick={handleCancel}>Cancel</Button>
-			</Stack>
+                        </Stack>
 
 			<ToggleButtonGroup
 				value={timeRange}
