@@ -2,6 +2,7 @@ import React, {useCallback, useEffect, useMemo, useState} from "react";
 import * as Sentry from "@sentry/react";
 import Onboarding, {BlueBubblesCredentialValues} from "shared/components/Onboarding";
 import Messaging from "shared/components/messaging/master/Messaging";
+import {PeopleContextProvider} from "shared/state/peopleState";
 import LoginContext from "shared/components/LoginContext";
 import {
         getSecureLS,
@@ -236,14 +237,16 @@ export default function SignInGate() {
                                 main = null;
                         } else {
                                 main = (
-                                        <Messaging
-                                                serverUrl={session.serverUrl}
-                                                accessToken={session.accessToken}
-                                                refreshToken={session.refreshToken}
-                                                legacyPasswordAuth={session.legacyPasswordAuth}
-                                                deviceName={session.deviceName}
-                                                onReset={signOutAccount}
-                                        />
+                                        <PeopleContextProvider>
+                                                <Messaging
+                                                        serverUrl={session.serverUrl}
+                                                        accessToken={session.accessToken}
+                                                        refreshToken={session.refreshToken}
+                                                        legacyPasswordAuth={session.legacyPasswordAuth}
+                                                        deviceName={session.deviceName}
+                                                        onReset={signOutAccount}
+                                                />
+                                        </PeopleContextProvider>
                                 );
                         }
                         break;

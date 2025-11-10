@@ -13,6 +13,9 @@ export interface SettingsState {
         conversations: {
                 initialLoadCount: number;
         };
+        addressBook: {
+                enabledSourceIds?: string[];
+        };
         developer: {
                 blueBubblesDebugLogging: boolean;
         };
@@ -35,6 +38,9 @@ const DEFAULT_SETTINGS: SettingsState = Object.freeze({
         conversations: {
                 initialLoadCount: 50
         },
+        addressBook: {
+                enabledSourceIds: undefined
+        },
         developer: {
                 blueBubblesDebugLogging: DEFAULT_BLUEBUBBLES_DEBUG_LOGGING_ENABLED
         }
@@ -49,6 +55,12 @@ function createDefaultSettings(): SettingsState {
                 },
                 conversations: {
                         initialLoadCount: DEFAULT_SETTINGS.conversations.initialLoadCount
+                },
+                addressBook: {
+                        enabledSourceIds:
+                                DEFAULT_SETTINGS.addressBook.enabledSourceIds === undefined
+                                        ? undefined
+                                        : [...DEFAULT_SETTINGS.addressBook.enabledSourceIds]
                 },
                 developer: {
                         blueBubblesDebugLogging: DEFAULT_SETTINGS.developer.blueBubblesDebugLogging
@@ -66,6 +78,7 @@ function sanitizeSettings(candidate: Partial<SettingsState> | undefined): Settin
 
         const colorScheme = candidate.appearance?.colorScheme;
         const initialLoadCount = candidate.conversations?.initialLoadCount;
+        const enabledSourceIds = candidate.addressBook?.enabledSourceIds;
         const blueBubblesDebugLogging = candidate.developer?.blueBubblesDebugLogging;
 
         return {
@@ -75,6 +88,12 @@ function sanitizeSettings(candidate: Partial<SettingsState> | undefined): Settin
                 conversations: {
                         initialLoadCount: sanitizeInitialLoadCount(initialLoadCount, defaults.conversations.initialLoadCount)
                 },
+                addressBook: {
+                        enabledSourceIds: sanitizeEnabledSourceIds(
+                                enabledSourceIds,
+                                defaults.addressBook.enabledSourceIds
+                        )
+                },
                 developer: {
                         blueBubblesDebugLogging: sanitizeBoolean(
                                 blueBubblesDebugLogging,
@@ -82,6 +101,28 @@ function sanitizeSettings(candidate: Partial<SettingsState> | undefined): Settin
                         )
                 }
         };
+}
+
+function sanitizeEnabledSourceIds(
+        value: unknown,
+        fallback: string[] | undefined
+): string[] | undefined {
+        if(!Array.isArray(value)) {
+                return fallback === undefined ? undefined : [...fallback];
+        }
+
+        const seen = new Set<string>();
+        const sanitized: string[] = [];
+        for(const entry of value) {
+                if(typeof entry !== "string") continue;
+                const trimmed = entry.trim();
+                if(trimmed.length === 0) continue;
+                if(seen.has(trimmed)) continue;
+                seen.add(trimmed);
+                sanitized.push(trimmed);
+        }
+
+        return sanitized.length === 0 && fallback === undefined ? [] : sanitized;
 }
 
 function sanitizeInitialLoadCount(value: unknown, fallback: number): number {
@@ -140,6 +181,12 @@ export function SettingsProvider(props: {children: React.ReactNode}) {
                                 },
                                 conversations: {
                                         initialLoadCount: previous.conversations.initialLoadCount
+                                },
+                                addressBook: {
+                                        enabledSourceIds:
+                                                previous.addressBook.enabledSourceIds === undefined
+                                                        ? undefined
+                                                        : [...previous.addressBook.enabledSourceIds]
                                 },
                                 developer: {
                                         blueBubblesDebugLogging: previous.developer.blueBubblesDebugLogging
