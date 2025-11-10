@@ -9,7 +9,6 @@ import {
 } from "shared/data/blocks";
 import MessageList from "shared/components/messaging/thread/MessageList";
 import {Box, Button, CircularProgress, Stack, Typography} from "@mui/material";
-import type {IconButtonProps} from "@mui/material";
 import {DetailFrame} from "shared/components/messaging/master/DetailFrame";
 import MessageInput from "shared/components/messaging/thread/MessageInput";
 import {useConversationTitle, useIsFaceTimeSupported, useUnsubscribeContainer} from "shared/util/hookUtils";
@@ -160,8 +159,8 @@ export default function DetailThread({conversation, focusTarget}: {
         const [attachmentInput, setAttachmentInput] = useState<QueuedFile[]>([]);
         const [isMediaDrawerOpen, setIsMediaDrawerOpen] = useState(false);
 
-        const sendButtonColor: IconButtonProps["color"] = isSmsService(conversation.service)
-                ? "success"
+        const sendButtonColor = isSmsService(conversation.service)
+                ? "#2ECC71"
                 : "primary";
 	
 	/**

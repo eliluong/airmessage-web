@@ -15,7 +15,7 @@ interface Props {
         onMessageSubmit: (message: string, attachments: QueuedFile[]) => void;
         onAttachmentAdd: (files: File[]) => void;
         onAttachmentRemove: (value: QueuedFile) => void;
-        sendButtonColor?: IconButtonProps["color"];
+        sendButtonColor?: IconButtonProps["color"] | string;
 }
 
 export default function MessageInput(props: Props) {
@@ -43,9 +43,11 @@ export default function MessageInput(props: Props) {
 		}
 	}, [submitInput]);
 	
-	const handlePaste = useCallback((event: React.ClipboardEvent<HTMLElement>) => {
-		propsOnAttachmentAdd(Array.from(event.clipboardData.files));
-	}, [propsOnAttachmentAdd]);
+        const handlePaste = useCallback((event: React.ClipboardEvent<HTMLElement>) => {
+                propsOnAttachmentAdd(Array.from(event.clipboardData.files));
+        }, [propsOnAttachmentAdd]);
+
+        const isCustomSendButtonColor = typeof sendButtonColor === "string" && sendButtonColor.startsWith("#");
 	
 	return (
 		<Box sx={{
@@ -109,10 +111,11 @@ export default function MessageInput(props: Props) {
                                                 width: "40px",
                                                 height: "40px",
                                                 flexShrink: 0,
-                                                alignSelf: "flex-end"
+                                                alignSelf: "flex-end",
+                                                ...(isCustomSendButtonColor ? {color: sendButtonColor} : {})
                                         }}
                                         size="small"
-                                        color={sendButtonColor}
+                                        color={isCustomSendButtonColor ? undefined : sendButtonColor as IconButtonProps["color"]}
                                         disabled={props.message.trim() === "" && props.attachments.length === 0}
                                         onClick={submitInput}>
 					<PushIcon />
