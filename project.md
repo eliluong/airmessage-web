@@ -44,6 +44,12 @@ This roadmap tracks the BlueBubbles transport work that landed after the fork. P
 - **Richer delivery state feedback**: Delivered/read receipt support is detected but not exposed in the UI; surfacing those states would improve confidence. 【F:src/connection/bluebubbles/bluebubblesCommunicationsManager.ts†L320-L370】
 - **Attachment lifecycle polish**: Attachment uploads and downloads still rely on polling, and we could expose better progress/status feedback. 【F:src/connection/bluebubbles/bluebubblesCommunicationsManager.ts†L414-L610】
 - **Advanced message search UX**: Build on the new sidebar search panel by surfacing pagination controls and richer filtering powered by the hook metadata. 【F:src/state/useMessageSearch.ts†L1-L112】【F:src/components/messaging/master/Sidebar.tsx†L287-L372】
+
+## Address book assets
+- Static address-book uploads live under `public/address-books/`. Each CSV must follow the filename pattern `addressbook.<id>.<type>.csv` so the `<id>` aligns with its manifest entry and `<type>` communicates the data category (for example, `personal`, `work`, or `vip`).
+- Update `public/address-books/manifest.example.json` when you adjust the template, then copy it to `public/address-books/manifest.json` locally for live data. The tracked example ensures the repository documents required fields (`id`, human-readable `label`, `type`, relative `path`, and optional `version`) without committing private contact lists.
+- Keep sample CSVs lightweight. Headers should match the downstream importer expectations (e.g., `first_name,last_name,phone,email`) and rows should avoid real customer data.
+- 
 ## Media drawer feature
 - Added a thread-level media drawer that exposes a grid of recent attachments via `ConversationMediaDrawer`, wired into the `DetailFrame` chrome so BlueBubbles-authenticated conversations can browse media without leaving the thread view. 【F:src/components/messaging/thread/DetailThread.tsx†L692-L748】【F:src/components/messaging/thread/ConversationMediaDrawer.tsx†L103-L210】
 - The drawer relies on the BlueBubbles REST transport: `useConversationMedia` rejects other proxies and unsynced conversations, while attachment previews stream through `ConnectionManager.fetchAttachment`. 【F:src/state/useConversationMedia.ts†L110-L214】【F:src/components/messaging/thread/ConversationMediaDrawer.tsx†L172-L205】
