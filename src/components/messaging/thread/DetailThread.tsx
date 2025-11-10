@@ -492,24 +492,25 @@ export default function DetailThread({conversation, focusTarget}: {
                 };
 		
 		//Sync the progress meter
-		uploadProgress.emitter.subscribe((progressData) => {
-			updateMessage((message) => {
-				if(typeof progressData === "number") {
-					//Update the upload progress
-					return {
-						progress: progressData / message.attachments[0].size * 100
-					};
-				} else {
-					//Update the checksum
-					return {
-						attachments: [{
-							...message.attachments[0],
-							checksum: progressData
-						}]
-					};
-				}
-			});
-		}, uploadSubscriptionsContainer);
+                uploadProgress.emitter.subscribe((progressData) => {
+                        updateMessage((message) => {
+                                if(typeof progressData === "number") {
+                                        //Update the upload progress
+                                        return {
+                                                progress: progressData / message.attachments[0].size * 100
+                                        };
+                                } else {
+                                        //Update the checksum
+                                        return {
+                                                guid: progressData,
+                                                attachments: [{
+                                                        ...message.attachments[0],
+                                                        checksum: progressData
+                                                }]
+                                        };
+                                }
+                        });
+                }, uploadSubscriptionsContainer);
 		
 		//Remove the progress when the file is finished uploading
 		installCancellablePromise(uploadProgress.promise, uploadSubscriptionsContainer)
