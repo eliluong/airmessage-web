@@ -118,6 +118,7 @@ export default function useConversationMedia(chatGuid: string | undefined, open:
         const mountedRef = useRef(true);
 
         useEffect(() => {
+                mountedRef.current = true;
                 return () => {
                         mountedRef.current = false;
                 };
