@@ -55,6 +55,17 @@ import {PeopleContext} from "shared/state/peopleState";
 import {usePersonName} from "shared/util/hookUtils";
 import {useLiveLastUpdateStatusTime} from "../../../util/dateUtils";
 
+type SearchTimeRange = "all" | "week" | "month" | "year";
+
+const SEARCH_TIME_RANGES: ReadonlyArray<{value: SearchTimeRange; label: string; offsetMs?: number}> = [
+        {value: "week", label: "7 days", offsetMs: 7 * 24 * 60 * 60 * 1000},
+        {value: "month", label: "30 days", offsetMs: 30 * 24 * 60 * 60 * 1000},
+        {value: "year", label: "365 days", offsetMs: 365 * 24 * 60 * 60 * 1000},
+        {value: "all", label: "All time"},
+];
+
+export const DEFAULT_SEARCH_TIME_RANGE: SearchTimeRange = "month";
+
 export default function Sidebar(props: {
         conversations: Conversation[] | undefined;
         hasMoreConversations: boolean;
@@ -119,7 +130,7 @@ export default function Sidebar(props: {
         const [isSearchMode, setIsSearchMode] = useState(false);
 	const {results: searchResults, loading: searchLoading, error: searchError, search, cancel} = useMessageSearch({debounceMs: 350});
         const [searchQuery, setSearchQuery] = useState("");
-        const [searchTimeRange, setSearchTimeRange] = useState<SearchTimeRange>("all");
+        const [searchTimeRange, setSearchTimeRange] = useState<SearchTimeRange>(DEFAULT_SEARCH_TIME_RANGE);
         const createFaceTimeLink = useCallback(async () => {
                 setFaceTimeLinkLoading(true);
 
@@ -176,7 +187,7 @@ export default function Sidebar(props: {
                         const next = !current;
                         if(!next) {
                                 setSearchQuery("");
-                                setSearchTimeRange("all");
+                                setSearchTimeRange(DEFAULT_SEARCH_TIME_RANGE);
                                 search(undefined);
                                 cancel();
                         }
@@ -187,7 +198,7 @@ export default function Sidebar(props: {
         const handleCloseSearchMode = useCallback(() => {
                 setIsSearchMode(false);
                 setSearchQuery("");
-                setSearchTimeRange("all");
+                setSearchTimeRange(DEFAULT_SEARCH_TIME_RANGE);
                 search(undefined);
                 cancel();
         }, [cancel, search]);
@@ -387,13 +398,11 @@ export default function Sidebar(props: {
 	);
 }
 
-type SearchTimeRange = "all" | "day" | "week" | "month";
-
 interface SearchPanelProps {
-	conversationTitleMap: Map<string, string>;
-	query: string;
-	onQueryChange: (value: string) => void;
-	timeRange: SearchTimeRange;
+        conversationTitleMap: Map<string, string>;
+        query: string;
+        onQueryChange: (value: string) => void;
+        timeRange: SearchTimeRange;
 	onTimeRangeChange: (value: SearchTimeRange) => void;
 	loading: boolean;
 	results: MessageSearchHit[];
@@ -424,9 +433,9 @@ function SearchPanel(props: SearchPanelProps) {
                 }
         }, [onTimeRangeChange]);
 
-	const handleCancel = useCallback(() => {
-		onQueryChange("");
-                onTimeRangeChange("all");
+        const handleCancel = useCallback(() => {
+                onQueryChange("");
+                onTimeRangeChange(DEFAULT_SEARCH_TIME_RANGE);
                 onCancel();
         }, [onCancel, onQueryChange, onTimeRangeChange]);
 
@@ -476,12 +485,13 @@ function SearchPanel(props: SearchPanelProps) {
 				exclusive
 				onChange={handleTimeRangeChange}
 				size="small"
-				fullWidth>
-				<ToggleButton value="all">All time</ToggleButton>
-				<ToggleButton value="day">24 hours</ToggleButton>
-				<ToggleButton value="week">7 days</ToggleButton>
-				<ToggleButton value="month">30 days</ToggleButton>
-			</ToggleButtonGroup>
+                                fullWidth>
+                                {SEARCH_TIME_RANGES.map(({value, label}) => (
+                                        <ToggleButton key={value} value={value}>
+                                                {label}
+                                        </ToggleButton>
+                                ))}
+                        </ToggleButtonGroup>
 
                         <Box flex={1} minHeight={0} display="flex" flexDirection="column">
 				{loading ? (
@@ -658,24 +668,14 @@ function SearchResultItem(props: {hit: MessageSearchHit; title: string; query: s
 }
 
 function resolveSearchRange(range: SearchTimeRange): {startDate?: Date; endDate?: Date} {
-	const now = new Date();
-	switch(range) {
-		case "day": {
-			const start = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-			return {startDate: start, endDate: undefined};
-		}
-		case "week": {
-			const start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-			return {startDate: start, endDate: undefined};
-		}
-		case "month": {
-			const start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-			return {startDate: start, endDate: undefined};
-		}
-		case "all":
-		default:
-			return {startDate: undefined, endDate: undefined};
-	}
+        const now = new Date();
+        const option = SEARCH_TIME_RANGES.find((item) => item.value === range);
+
+        if(option?.offsetMs !== undefined) {
+                return {startDate: new Date(now.getTime() - option.offsetMs)};
+        }
+
+        return {};
 }
 
 
