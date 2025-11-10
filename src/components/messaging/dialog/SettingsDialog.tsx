@@ -304,6 +304,7 @@ export default function SettingsDialog(props: {isOpen: boolean; onDismiss: () =>
                                                                                                         ) : null}
                                                                                                 </Stack>
                                                                                         }
+                                                                                        secondaryTypographyProps={{component: "div"}}
                                                                                 />
                                                                         </ListItem>
                                                                 );
