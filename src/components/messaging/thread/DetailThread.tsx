@@ -166,7 +166,8 @@ export default function DetailThread({conversation, focusTarget}: {
         const [messageInput, setMessageInput] = useState<string>("");
         const [attachmentInput, setAttachmentInput] = useState<QueuedFile[]>([]);
 
-        const canSearchConversation = !conversation.localOnly && conversation.guid !== undefined;
+        const conversationGuid = conversation.localOnly ? undefined : conversation.guid;
+        const canSearchConversation = conversationGuid !== undefined;
         const [isSearchMode, setIsSearchMode] = useState(false);
         const [showSearchResults, setShowSearchResults] = useState(false);
         const {results: searchResults, loading: searchLoading, error: searchError, search, cancel} = useMessageSearch({debounceMs: 350});
@@ -247,7 +248,7 @@ export default function DetailThread({conversation, focusTarget}: {
         useEffect(() => {
                 if(!isSearchMode) return;
 
-                if(!canSearchConversation || !conversation.guid) {
+                if(!canSearchConversation || !conversationGuid) {
                         search(undefined);
                         return;
                 }
@@ -263,9 +264,9 @@ export default function DetailThread({conversation, focusTarget}: {
                         term: trimmed,
                         startDate,
                         endDate,
-                        chatGuids: conversation.guid ? [conversation.guid] : undefined
+                        chatGuids: conversationGuid ? [conversationGuid] : undefined
                 });
-        }, [isSearchMode, searchQuery, searchTimeRange, conversation.guid, canSearchConversation, search]);
+        }, [isSearchMode, searchQuery, searchTimeRange, conversationGuid, canSearchConversation, search]);
 
         useEffect(() => {
                 if(!isSearchMode) return;
