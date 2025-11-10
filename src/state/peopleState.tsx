@@ -1,4 +1,5 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from "react";
+import {useSettings} from "shared/components/settings/SettingsProvider";
 
 import {parseBaikalAddressBook, parseGoogleAddressBook} from "shared/interface/people/addressBookParsers";
 import {AddressType, PersonData} from "shared/interface/people/peopleUtils";
@@ -21,6 +22,7 @@ needsUpdate: boolean;
 isSyncing: boolean;
 error?: string;
 peopleCount: number;
+defaultEnabled: boolean;
 }
 
 export interface PeopleState {
@@ -57,6 +59,7 @@ type?: string;
 path: string;
 format: AddressBookFormat;
 version?: string;
+defaultEnabled: boolean;
 enabled: boolean;
 syncedAt?: string;
 needsUpdate: boolean;
@@ -68,6 +71,22 @@ people: PersonData[];
 interface MergeResult {
 people: PersonData[];
 peopleByAddress: Map<string, PersonData>;
+}
+
+type EnabledOverrideSet = ReadonlySet<string> | undefined;
+
+export class AddressBookSyncError extends Error {
+readonly sources: ReadonlyArray<{id: string; label: string; message: string}>;
+
+constructor(sources: Array<{id: string; label: string; message: string}>) {
+const message = sources.length === 1
+? `Failed to sync ${sources[0].label}: ${sources[0].message}`
+: `Failed to sync ${sources.length} address books`;
+super(message);
+this.name = "AddressBookSyncError";
+this.sources = sources;
+Object.setPrototypeOf(this, AddressBookSyncError.prototype);
+}
 }
 
 export const PeopleContext = React.createContext<PeopleState>({
@@ -90,6 +109,14 @@ const [initialCache] = useState<AddressBookCache>(() => readCache());
 const cacheRef = useRef<AddressBookCache>(initialCache);
 const [sources, setSources] = useState<AddressBookSourceInternal[]>([]);
 const [hasLoaded, setHasLoaded] = useState(false);
+const {settings} = useSettings();
+const enabledOverrideSet = useMemo<EnabledOverrideSet>(() => {
+const ids = settings.addressBook.enabledSourceIds;
+if(ids === undefined) {
+return undefined;
+}
+return new Set(ids);
+}, [settings.addressBook.enabledSourceIds]);
 
 useEffect(() => {
 if(!isReady) {
@@ -120,7 +147,7 @@ version: entry.version
 cacheRef.current = prunedCache;
 writeCache(prunedCache);
 
-const nextSources = manifestSources.map((source) => createSourceState(source, prunedCache[source.id]));
+const nextSources = manifestSources.map((source) => createSourceState(source, prunedCache[source.id], enabledOverrideSet));
 setSources(nextSources);
 setHasLoaded(true);
 } catch(error) {
@@ -128,7 +155,7 @@ if(cancelled || isAbortError(error)) {
 return;
 }
 
-const fallbackSources = createFallbackSources(cacheRef.current);
+const fallbackSources = createFallbackSources(cacheRef.current, enabledOverrideSet);
 setSources(fallbackSources);
 setHasLoaded(true);
 }
@@ -141,6 +168,16 @@ cancelled = true;
 controller.abort();
 };
 }, [isReady]);
+
+useEffect(() => {
+setSources((current) => current.map((source) => {
+const nextEnabled = resolveEnabled(source.defaultEnabled, enabledOverrideSet, source.id);
+if(nextEnabled === source.enabled) {
+return source;
+}
+return {...source, enabled: nextEnabled};
+}));
+}, [enabledOverrideSet]);
 
 const mergeResult = useMemo<MergeResult>(() => mergePeopleFromSources(sources), [sources]);
 const allPeople = hasLoaded ? mergeResult.people : undefined;
@@ -181,7 +218,8 @@ syncedAt: source.syncedAt,
 needsUpdate: source.needsUpdate,
 isSyncing: source.isSyncing,
 error: source.error,
-peopleCount: source.people.length
+peopleCount: source.people.length,
+defaultEnabled: source.defaultEnabled
 })), [sources]);
 
 const syncAddressBooks = useCallback(async (selectedIds?: string[]) => {
@@ -214,6 +252,7 @@ error: undefined
 
 let cacheChanged = false;
 const nextCache: AddressBookCache = {...cacheRef.current};
+const errors: Array<{id: string; label: string; message: string}> = [];
 
 for(const {source, index} of targets) {
 let updatedSource: AddressBookSourceInternal = source;
@@ -256,6 +295,7 @@ updatedSource = {
 error: message,
 isSyncing: false
 };
+errors.push({id: source.id, label: source.label, message});
 }
 
 setSources((current) => {
@@ -272,6 +312,10 @@ return next;
 if(cacheChanged) {
 cacheRef.current = nextCache;
 writeCache(nextCache);
+}
+
+if(errors.length > 0) {
+throw new AddressBookSyncError(errors);
 }
 }, [isReady, sources]);
 
@@ -359,10 +403,15 @@ enabled
 };
 }
 
-function createSourceState(source: AddressBookManifestSource, cacheEntry?: AddressBookCacheEntry): AddressBookSourceInternal {
+function createSourceState(
+source: AddressBookManifestSource,
+cacheEntry: AddressBookCacheEntry | undefined,
+overrides: EnabledOverrideSet
+): AddressBookSourceInternal {
 const cachedPeople = cacheEntry ? normalizePeopleList(cacheEntry.people) : [];
 const hasCache = Boolean(cacheEntry);
 const needsUpdate = !hasCache || (source.version != null && cacheEntry?.version !== source.version);
+const defaultEnabled = source.enabled !== false;
 
 return {
 id: source.id,
@@ -371,7 +420,8 @@ type: source.type,
 path: source.path,
 format: source.format,
 version: source.version,
-enabled: source.enabled !== false,
+defaultEnabled,
+enabled: resolveEnabled(defaultEnabled, overrides, source.id),
 syncedAt: cacheEntry?.syncedAt,
 needsUpdate,
 isSyncing: false,
@@ -380,20 +430,28 @@ people: cachedPeople
 };
 }
 
-function createFallbackSources(cache: AddressBookCache): AddressBookSourceInternal[] {
+function createFallbackSources(cache: AddressBookCache, overrides: EnabledOverrideSet): AddressBookSourceInternal[] {
 return Object.entries(cache).map(([id, entry]) => ({
 id,
 label: id,
 path: "",
 format: "unknown" as AddressBookFormat,
 version: entry.version,
-enabled: true,
+defaultEnabled: true,
+enabled: resolveEnabled(true, overrides, id),
 syncedAt: entry.syncedAt,
 needsUpdate: false,
 isSyncing: false,
 error: "Manifest unavailable",
 people: normalizePeopleList(entry.people)
 }));
+}
+
+function resolveEnabled(defaultEnabled: boolean, overrides: EnabledOverrideSet, id: string): boolean {
+if(!overrides) {
+return defaultEnabled;
+}
+return overrides.has(id);
 }
 
 function mergePeopleFromSources(sources: AddressBookSourceInternal[]): MergeResult {
