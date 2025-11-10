@@ -1,11 +1,12 @@
 import React, {useCallback, useEffect, useRef, useState} from "react";
 import {
-	Conversation,
-	ConversationItem,
-	LocalConversationID,
-	MessageItem,
-	MessageModifier,
-	QueuedFile
+        AttachmentItem,
+        Conversation,
+        ConversationItem,
+        LocalConversationID,
+        MessageItem,
+        MessageModifier,
+        QueuedFile
 } from "shared/data/blocks";
 import MessageList from "shared/components/messaging/thread/MessageList";
 import {Box, Button, CircularProgress, Stack, Typography} from "@mui/material";
@@ -110,6 +111,58 @@ function mergeThreadFetchMetadata(results: ThreadFetchResult[], items: Conversat
                 metadata = mergeMetadata(metadata, result.metadata);
         }
         return computeMetadataFromItems(items, metadata);
+}
+
+function attachmentsMatch(left: AttachmentItem, right: AttachmentItem): boolean {
+        if(left.guid !== undefined && right.guid !== undefined && left.guid === right.guid) return true;
+        if(left.guid !== undefined && right.checksum !== undefined && right.checksum === left.guid) return true;
+        if(right.guid !== undefined && left.checksum !== undefined && left.checksum === right.guid) return true;
+        if(left.checksum !== undefined && right.checksum !== undefined && left.checksum === right.checksum) return true;
+        if(left.localID !== undefined && right.localID !== undefined && left.localID === right.localID) return true;
+        return false;
+}
+
+function mergeAttachmentsWithLocalData(
+        existingAttachments: AttachmentItem[],
+        incomingAttachments: AttachmentItem[]
+): {attachments: AttachmentItem[]; changed: boolean} {
+        if(incomingAttachments.length === 0) {
+                return {attachments: existingAttachments, changed: false};
+        }
+
+        let changed = incomingAttachments.length !== existingAttachments.length;
+        const mergedAttachments = incomingAttachments.map((incomingAttachment) => {
+                const matchingExisting = existingAttachments.find((candidate) => attachmentsMatch(candidate, incomingAttachment));
+
+                if(!matchingExisting) {
+                        changed = true;
+                        return incomingAttachment;
+                }
+
+                const mergedAttachment: AttachmentItem = {
+                        ...incomingAttachment,
+                        checksum: incomingAttachment.checksum ?? matchingExisting.checksum,
+                        data: matchingExisting.data ?? incomingAttachment.data,
+                        localID: incomingAttachment.localID ?? matchingExisting.localID
+                };
+
+                if(!changed) {
+                        changed = (
+                                mergedAttachment.guid !== matchingExisting.guid
+                                || mergedAttachment.name !== matchingExisting.name
+                                || mergedAttachment.type !== matchingExisting.type
+                                || mergedAttachment.size !== matchingExisting.size
+                                || mergedAttachment.blurhash !== matchingExisting.blurhash
+                                || mergedAttachment.checksum !== matchingExisting.checksum
+                                || mergedAttachment.data !== matchingExisting.data
+                                || mergedAttachment.localID !== matchingExisting.localID
+                        );
+                }
+
+                return mergedAttachment;
+        });
+
+        return {attachments: mergedAttachments, changed};
 }
 
 export default function DetailThread({conversation, focusTarget}: {
@@ -281,17 +334,23 @@ export default function DetailThread({conversation, focusTarget}: {
                                         if(matchedIndex !== -1) {
                                                 //Merge the information into the item
                                                 const mergeTargetItem = pendingMessages[matchedIndex] as MessageItem;
+                                                const {attachments, changed: attachmentsChanged} = mergeAttachmentsWithLocalData(
+                                                        mergeTargetItem.attachments,
+                                                        newItem.attachments
+                                                );
                                                 const mergedItem: MessageItem = {
                                                         ...mergeTargetItem,
                                                         serverID: newItem.serverID,
-                                                        guid: newItem.guid,
+                                                        guid: newItem.guid ?? mergeTargetItem.guid,
                                                         date: newItem.date,
                                                         status: newItem.status,
                                                         error: newItem.error,
-                                                        statusDate: newItem.statusDate
+                                                        statusDate: newItem.statusDate,
+                                                        attachments
                                                 };
 
                                                 const hasChanges =
+                                                        attachmentsChanged ||
                                                         mergedItem.serverID !== mergeTargetItem.serverID ||
                                                         mergedItem.guid !== mergeTargetItem.guid ||
                                                         mergedItem.date.getTime() !== mergeTargetItem.date.getTime() ||
@@ -505,6 +564,7 @@ export default function DetailThread({conversation, focusTarget}: {
                                                 guid: progressData,
                                                 attachments: [{
                                                         ...message.attachments[0],
+                                                        guid: progressData,
                                                         checksum: progressData
                                                 }]
                                         };
