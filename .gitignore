@@ -11,7 +11,7 @@
 !/public/address-books/**/addressbook.team.work.csv
 !/public/address-books/**/addressbook.demo.google.csv
 !/public/address-books/**/addressbook.demo.baikal.csv
-!/public/address-books/manifest.json
+/public/address-books/manifest.json
 
 # User-specific stuff
 .idea/**/workspace.xml
@@ -299,6 +299,7 @@ $RECYCLE.BIN/
 /webpack.crt
 /webpack.key
 /windows/AirMessageWindows/AirMessageWindows/webassets
+
 
 
 
