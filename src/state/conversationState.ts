@@ -17,7 +17,7 @@ import {ConversationItemType, ConversationPreviewType, ParticipantActionType} fr
 import {getPlatformUtils} from "shared/interface/platform/platformUtils";
 import {isModifierTapback, messageItemToConversationPreview} from "shared/util/conversationUtils";
 import * as ConnectionManager from "shared/connection/connectionManager";
-import {ConnectionListener, modifierUpdateEmitter} from "shared/connection/connectionManager";
+import {modifierUpdateEmitter} from "shared/connection/connectionManager";
 import {getNotificationUtils} from "shared/interface/notification/notificationUtils";
 import {playSoundMessageIn, playSoundNotification, playSoundTapback} from "shared/util/soundUtils";
 import {normalizeAddress} from "shared/util/addressHelper";
@@ -44,12 +44,6 @@ export default function useConversationState(activeConversationID: LocalConversa
         const [requestedCount, setRequestedCount] = useState<number>(loadChunkSize);
         const [hasMoreServerResults, setHasMoreServerResults] = useState<boolean>(false);
         const pendingConversationDataMap = useRef(new Map<RemoteConversationID, ConversationItem[]>()).current;
-        const manualLoadCountRef = useRef(0);
-        const prefetchInFlightRef = useRef(false);
-        const pendingPrefetchConnectionIDRef = useRef<number | undefined>(undefined);
-        const prefetchConnectionIDRef = useRef<number | undefined>(undefined);
-        const connectionSequenceRef = useRef(0);
-        const activeConnectionIDRef = useRef<number | undefined>(undefined);
 
         const peopleState = useContext(PeopleContext);
 
@@ -57,41 +51,6 @@ export default function useConversationState(activeConversationID: LocalConversa
                 setVisibleCount((current) => Math.max(current, loadChunkSize));
                 setRequestedCount((current) => Math.max(current, loadChunkSize));
         }, [loadChunkSize]);
-
-        useEffect(() => {
-                const listener: ConnectionListener = {
-                        onConnecting(): void {
-                                activeConnectionIDRef.current = undefined;
-                                manualLoadCountRef.current = 0;
-                                prefetchInFlightRef.current = false;
-                                pendingPrefetchConnectionIDRef.current = undefined;
-                                prefetchConnectionIDRef.current = undefined;
-                        },
-                        onOpen(): void {
-                                const newConnectionID = connectionSequenceRef.current + 1;
-                                connectionSequenceRef.current = newConnectionID;
-                                activeConnectionIDRef.current = newConnectionID;
-                                manualLoadCountRef.current = 0;
-                                prefetchInFlightRef.current = false;
-                                pendingPrefetchConnectionIDRef.current = undefined;
-                                prefetchConnectionIDRef.current = undefined;
-                        },
-                        onClose(): void {
-                                activeConnectionIDRef.current = undefined;
-                        }
-                };
-                ConnectionManager.addConnectionListener(listener);
-
-                if(ConnectionManager.isConnected()) {
-                        const newConnectionID = connectionSequenceRef.current + 1;
-                        connectionSequenceRef.current = newConnectionID;
-                        activeConnectionIDRef.current = newConnectionID;
-                        prefetchConnectionIDRef.current = undefined;
-                        pendingPrefetchConnectionIDRef.current = undefined;
-                }
-
-                return () => ConnectionManager.removeConnectionListener(listener);
-        }, []);
 
         const applyUpdateMessages = useCallback(async (newItems: ConversationItem[]) => {
 		//Sort new items into their conversations
@@ -466,76 +425,26 @@ export default function useConversationState(activeConversationID: LocalConversa
                 });
         }, [setConversations, setHasMoreServerResults]);
 
-        const runBootstrapPrefetch = useCallback((connectionID?: number) => {
-                const resolvedConnectionID = connectionID ?? activeConnectionIDRef.current ?? 0;
-                if(prefetchConnectionIDRef.current === resolvedConnectionID) return;
-                if(prefetchInFlightRef.current) return;
-
-                if(manualLoadCountRef.current > 0) {
-                        pendingPrefetchConnectionIDRef.current = resolvedConnectionID;
-                        return;
-                }
-
-                pendingPrefetchConnectionIDRef.current = undefined;
-                prefetchInFlightRef.current = true;
-                fetchAndSetConversations(undefined)
-                        .then(() => {
-                                prefetchConnectionIDRef.current = resolvedConnectionID;
-                        })
-                        .catch((error) => {
-                                console.warn("Failed to prefetch conversations", error);
-                                pendingPrefetchConnectionIDRef.current = resolvedConnectionID;
-                        })
-                        .finally(() => {
-                                prefetchInFlightRef.current = false;
-                        });
-        }, [fetchAndSetConversations]);
-
         const loadConversations = useCallback((): Promise<Conversation[]> => {
-                const connectionID = activeConnectionIDRef.current;
-                return fetchAndSetConversations(requestedCount).then((fetchedConversations) => {
-                        const resolvedConnectionID = connectionID ?? activeConnectionIDRef.current ?? 0;
-                        if(fetchedConversations.length >= requestedCount) {
-                                runBootstrapPrefetch(resolvedConnectionID);
-                        } else {
-                                pendingPrefetchConnectionIDRef.current = undefined;
-                                prefetchConnectionIDRef.current = resolvedConnectionID;
-                        }
-                        return fetchedConversations;
-                });
-        }, [fetchAndSetConversations, requestedCount, runBootstrapPrefetch]);
+                return fetchAndSetConversations(undefined);
+        }, [fetchAndSetConversations]);
 
         const loadMoreConversations = useCallback((): Promise<Conversation[]> => {
                 const target = requestedCount + loadChunkSize;
                 setRequestedCount(target);
                 setVisibleCount((current) => Math.max(current, target));
-                const shouldSkipFetch = conversations !== undefined && conversations.length >= target && !hasMoreServerResults;
+                const hasLocalCoverage = conversations !== undefined && conversations.length >= target;
+                if(hasLocalCoverage || !hasMoreServerResults) {
+                        return Promise.resolve(conversations ?? []);
+                }
 
-                manualLoadCountRef.current++;
-                const fetchPromise = shouldSkipFetch
-                        ? Promise.resolve(conversations!)
-                        : fetchAndSetConversations(target);
-
-                return fetchPromise.finally(() => {
-                        manualLoadCountRef.current = Math.max(0, manualLoadCountRef.current - 1);
-                        if(
-                                manualLoadCountRef.current === 0 &&
-                                pendingPrefetchConnectionIDRef.current !== undefined &&
-                                prefetchConnectionIDRef.current !== pendingPrefetchConnectionIDRef.current &&
-                                !prefetchInFlightRef.current
-                        ) {
-                                const pendingConnectionID = pendingPrefetchConnectionIDRef.current;
-                                pendingPrefetchConnectionIDRef.current = undefined;
-                                runBootstrapPrefetch(pendingConnectionID);
-                        }
-                });
+                return fetchAndSetConversations(target);
         }, [
                 conversations,
                 fetchAndSetConversations,
                 hasMoreServerResults,
                 loadChunkSize,
-                requestedCount,
-                runBootstrapPrefetch
+                requestedCount
         ]);
 	
 	//Adds a new conversation at the top of the list
