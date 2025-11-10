@@ -109,6 +109,7 @@ const [initialCache] = useState<AddressBookCache>(() => readCache());
 const cacheRef = useRef<AddressBookCache>(initialCache);
 const [sources, setSources] = useState<AddressBookSourceInternal[]>([]);
 const [hasLoaded, setHasLoaded] = useState(false);
+const fallbackPeopleRef = useRef<Map<string, PersonData>>(new Map());
 const {settings} = useSettings();
 const enabledOverrideSet = useMemo<EnabledOverrideSet>(() => {
 const ids = settings.addressBook.enabledSourceIds;
@@ -181,6 +182,9 @@ return {...source, enabled: nextEnabled};
 }, [enabledOverrideSet]);
 
 const mergeResult = useMemo<MergeResult>(() => mergePeopleFromSources(sources), [sources]);
+useEffect(() => {
+fallbackPeopleRef.current.clear();
+}, [mergeResult]);
 const allPeople = hasLoaded ? mergeResult.people : undefined;
 const isSyncing = useMemo(() => sources.some((source) => source.isSyncing), [sources]);
 
@@ -199,12 +203,41 @@ if(direct) {
 return direct;
 }
 
+let normalized: string | undefined;
 try {
-const normalized = normalizeAddress(trimmed);
-return mergeResult.peopleByAddress.get(normalized) ?? mergeResult.peopleByAddress.get(trimmed);
+normalized = normalizeAddress(trimmed);
 } catch {
-return mergeResult.peopleByAddress.get(trimmed);
+normalized = undefined;
 }
+
+if(normalized) {
+const normalizedMatch = mergeResult.peopleByAddress.get(normalized);
+if(normalizedMatch) {
+return normalizedMatch;
+}
+}
+
+const fallbackKey = normalized ?? trimmed;
+let fallback = fallbackPeopleRef.current.get(fallbackKey);
+if(!fallback) {
+fallback = createFallbackPerson(trimmed, normalized);
+fallbackPeopleRef.current.set(fallbackKey, fallback);
+} else if(!fallback.addresses.some((entry) => entry.value === trimmed)) {
+fallback = {
+...fallback,
+addresses: [
+...fallback.addresses,
+{
+value: trimmed,
+displayValue: trimmed,
+type: detectAddressType(trimmed)
+}
+]
+};
+fallbackPeopleRef.current.set(fallbackKey, fallback);
+}
+
+return fallback;
 }, [mergeResult]);
 
 const sourcesForContext = useMemo<AddressBookSourceStatus[]>(() => sources.map((source) => ({
@@ -583,6 +616,35 @@ return people.map((person) => ({
 ...person,
 addresses: person.addresses.map((address) => ({...address}))
 }));
+}
+
+function detectAddressType(address: string): AddressType {
+return address.includes("@") ? AddressType.Email : AddressType.Phone;
+}
+
+function createFallbackPerson(rawAddress: string, normalized?: string): PersonData {
+const type = detectAddressType(rawAddress);
+const trimmed = rawAddress.trim();
+const addresses: PersonData["addresses"] = [{
+value: trimmed,
+displayValue: trimmed,
+type
+}];
+
+if(normalized && normalized !== trimmed) {
+addresses.push({
+value: normalized,
+displayValue: normalized,
+type
+});
+}
+
+return {
+id: normalized ?? trimmed,
+name: undefined,
+avatar: undefined,
+addresses
+};
 }
 
 function getParserForFormat(format: AddressBookFormat) {
