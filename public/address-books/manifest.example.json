@@ -1,17 +1,20 @@
 {
   "sources": [
     {
-      "id": "demo",
-      "label": "Demo contacts",
+      "id": "demo-google",
+      "label": "Demo Google contacts",
       "type": "personal",
-      "path": "addressbook.demo.personal.csv",
-      "version": "1.0.0"
+      "format": "google",
+      "path": "addressbook.demo.google.csv",
+      "version": "2024.06.01"
     },
     {
-      "id": "team",
-      "label": "Team directory",
-      "type": "work",
-      "path": "addressbook.team.work.csv"
+      "id": "demo-baikal",
+      "label": "Demo Baikal directory",
+      "type": "team",
+      "format": "baikal",
+      "path": "addressbook.demo.baikal.csv",
+      "version": "2024.06.01"
     }
   ]
 }
