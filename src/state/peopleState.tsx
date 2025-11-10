@@ -605,13 +605,19 @@ return buildPublicUrl(relative);
 
 function buildPublicUrl(relativePath: string): string {
 const trimmedRelative = relativePath.replace(/^\/+/, "");
-const base = process.env.PUBLIC_URL ?? "";
+const base = getConfiguredPublicUrl();
 if(!base) {
 return trimmedRelative.length > 0 ? `/${trimmedRelative}` : "/";
 }
 
 const trimmedBase = base.replace(/\/$/, "");
 return `${trimmedBase}/${trimmedRelative}`;
+}
+
+function getConfiguredPublicUrl(): string {
+const globalScope = typeof globalThis !== "undefined" ? (globalThis as {process?: {env?: Record<string, unknown>}}) : undefined;
+const fromEnv = globalScope?.process?.env?.PUBLIC_URL;
+return typeof fromEnv === "string" ? fromEnv : "";
 }
 
 function sanitizeRelativePath(path: string): string {
