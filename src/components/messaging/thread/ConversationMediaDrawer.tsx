@@ -133,6 +133,7 @@ export default function ConversationMediaDrawer({conversation, open, onClose}: C
                 setPreviewUrls(new Map());
         }, []);
         useEffect(() => {
+                mountedRef.current = true;
                 return () => {
                         mountedRef.current = false;
                         previewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
