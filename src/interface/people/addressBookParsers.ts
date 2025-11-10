@@ -35,7 +35,7 @@ function parseCsv(csv: string): CsvRow[] {
                 return [];
         }
 
-        return result.data.filter((row): row is CsvRow => row != null && typeof row === "object");
+	return result.data.filter((row: unknown): row is CsvRow => row != null && typeof row === "object");
 }
 
 function buildGooglePerson(row: CsvRow): PersonData | null {
