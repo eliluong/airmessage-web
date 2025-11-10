@@ -7,6 +7,8 @@
 
 # Address Books
 /public/address-books/**/*.csv
+!/public/address-books/**/addressbook.demo.personal.csv
+!/public/address-books/**/addressbook.team.work.csv
 /public/address-books/manifest.json
 
 # User-specific stuff
@@ -295,5 +297,6 @@ $RECYCLE.BIN/
 /webpack.crt
 /webpack.key
 /windows/AirMessageWindows/AirMessageWindows/webassets
+
 
 
