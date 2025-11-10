@@ -530,23 +530,76 @@ export default function DetailThread({conversation, focusTarget}: {
 		 * @param updater A function that takes a {@link MessageItem},
 		 * and returns a modified partial
 		 */
-		const updateMessage = (updater: (message: MessageItem) => Partial<MessageItem>) => {
-			setDisplayState((displayState) => {
-				//Ignore if there are no messages
-				if(displayState.type !== DisplayType.Messages) return displayState;
-				
-				//Clone the item array
-				const pendingItems: ConversationItem[] = [...displayState.messages];
-				
-				//Find the item
-				const itemIndex = pendingItems.findIndex((item) => item.localID === messageID);
-				if(itemIndex === -1) return displayState;
-				const message = pendingItems[itemIndex] as MessageItem;
-				
-				//Update the item
-				pendingItems[itemIndex] = {...message, ...updater(message)};
-				
-                                return {type: DisplayType.Messages, messages: pendingItems, metadata: displayState.metadata};
+                const updateMessage = (updater: (message: MessageItem) => Partial<MessageItem>) => {
+                        setDisplayState((displayState) => {
+                                //Ignore if there are no messages
+                                if(displayState.type !== DisplayType.Messages) return displayState;
+
+                                //Clone the item array
+                                const pendingItems: ConversationItem[] = [...displayState.messages];
+
+                                //Find the item
+                                const itemIndex = pendingItems.findIndex((item) => item.localID === messageID);
+                                if(itemIndex === -1) return displayState;
+                                const message = pendingItems[itemIndex] as MessageItem;
+
+                                //Update the item
+                                const updatedMessage: MessageItem = {...message, ...updater(message)};
+                                pendingItems[itemIndex] = updatedMessage;
+
+                                if(updatedMessage.guid) {
+                                        const duplicateIndex = pendingItems.findIndex((item, index) =>
+                                                index !== itemIndex
+                                                && item.itemType === ConversationItemType.Message
+                                                && ((item as MessageItem).guid === updatedMessage.guid
+                                                        || ((item as MessageItem).serverID !== undefined
+                                                                && updatedMessage.serverID !== undefined
+                                                                && (item as MessageItem).serverID === updatedMessage.serverID))
+                                        );
+
+                                        if(duplicateIndex !== -1) {
+                                                const duplicateMessage = pendingItems[duplicateIndex] as MessageItem;
+                                                const duplicateHasServerMetadata = duplicateMessage.status !== MessageStatusCode.Unconfirmed
+                                                        || duplicateMessage.serverID !== undefined;
+
+                                                const preferredMessage = duplicateHasServerMetadata ? duplicateMessage : updatedMessage;
+                                                const secondaryMessage = preferredMessage === duplicateMessage ? updatedMessage : duplicateMessage;
+                                                const preferredIndex = preferredMessage === duplicateMessage ? duplicateIndex : itemIndex;
+                                                const removeIndex = preferredMessage === duplicateMessage ? itemIndex : duplicateIndex;
+
+                                                const {attachments: mergedAttachments} = mergeAttachmentsWithLocalData(
+                                                        secondaryMessage.attachments,
+                                                        preferredMessage.attachments
+                                                );
+
+                                                const mergedProgress = preferredMessage === duplicateMessage
+                                                        ? preferredMessage.progress
+                                                        : preferredMessage.progress ?? secondaryMessage.progress;
+
+                                                const mergedMessage: MessageItem = {
+                                                        ...preferredMessage,
+                                                        localID: preferredMessage.localID ?? secondaryMessage.localID,
+                                                        attachments: mergedAttachments,
+                                                        stickers: preferredMessage.stickers.length > 0
+                                                                ? preferredMessage.stickers
+                                                                : secondaryMessage.stickers,
+                                                        tapbacks: preferredMessage.tapbacks.length > 0
+                                                                ? preferredMessage.tapbacks
+                                                                : secondaryMessage.tapbacks,
+                                                        error: preferredMessage.error ?? secondaryMessage.error,
+                                                        progress: mergedProgress
+                                                };
+
+                                                pendingItems[preferredIndex] = mergedMessage;
+                                                pendingItems.splice(removeIndex, 1);
+
+                                                const metadata = computeMetadataFromItems(pendingItems, displayState.metadata);
+                                                return {type: DisplayType.Messages, messages: pendingItems, metadata};
+                                        }
+                                }
+
+                                const metadata = computeMetadataFromItems(pendingItems, displayState.metadata);
+                                return {type: DisplayType.Messages, messages: pendingItems, metadata};
                         });
                 };
 		
