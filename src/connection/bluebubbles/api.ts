@@ -112,7 +112,7 @@ export async function pingServer(auth: BlueBubblesAuthState): Promise<void> {
 
 export async function fetchChats(auth: BlueBubblesAuthState, options: {limit?: number} = {}): Promise<ChatQueryResponse> {
         const body: Record<string, unknown> = {
-                with: ["participants", "lastmessage"],
+                with: ["participants", "lastmessage", "lastmessage.attachments"],
                 sort: "lastmessage"
         };
         if(options.limit !== undefined) {
@@ -130,6 +130,7 @@ export async function fetchChat(auth: BlueBubblesAuthState, guid: string): Promi
         const params = new URLSearchParams();
         params.append("with", "participants");
         params.append("with", "lastmessage");
+        params.append("with", "lastmessage.attachments");
         return requestJson<SingleChatResponse>(auth, `/chat/${encodeURIComponent(guid)}?${params.toString()}`, {method: "GET"});
 }
 

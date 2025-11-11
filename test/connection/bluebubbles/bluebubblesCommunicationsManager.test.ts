@@ -1,9 +1,77 @@
-import {MessageModifierType, MessageStatusCode, TapbackType} from "../../../src/data/stateCodes";
+import {ConversationPreviewType, MessageModifierType, MessageStatusCode, TapbackType} from "../../../src/data/stateCodes";
 import BlueBubblesCommunicationsManager from "../../../src/connection/bluebubbles/bluebubblesCommunicationsManager";
 import DataProxy from "../../../src/connection/dataProxy";
 import type {BlueBubblesAuthState} from "../../../src/connection/bluebubbles/session";
-import type {ChatResponse, HandleResponse, MessageResponse} from "../../../src/connection/bluebubbles/types";
+import type {AttachmentResponse, ChatResponse, HandleResponse, MessageResponse} from "../../../src/connection/bluebubbles/types";
 import {__testables} from "../../../src/connection/bluebubbles/bluebubblesCommunicationsManager";
+import type {ConversationPreviewMessage} from "../../../src/data/blocks";
+
+describe("buildConversationPreview", () => {
+        const {buildConversationPreview} = __testables;
+
+        const createAttachment = (overrides: Partial<AttachmentResponse> = {}): AttachmentResponse => ({
+                originalROWID: 1,
+                guid: "attachment-guid",
+                uti: "public.data",
+                mimeType: "application/octet-stream",
+                totalBytes: 1,
+                transferName: "file.bin",
+                ...overrides
+        } as AttachmentResponse);
+
+        const createMessage = (overrides: Partial<MessageResponse> = {}): MessageResponse => ({
+                originalROWID: 1,
+                guid: "message-guid",
+                text: "",
+                handleId: 1,
+                otherHandle: 0,
+                subject: "",
+                error: 0,
+                dateCreated: 1_000,
+                dateRead: null,
+                dateDelivered: null,
+                isFromMe: false,
+                isArchived: false,
+                itemType: 0,
+                groupTitle: null,
+                groupActionType: 0,
+                balloonBundleId: null,
+                associatedMessageGuid: null,
+                associatedMessageType: null,
+                expressiveSendStyleId: null,
+                attachments: [],
+                handle: {
+                        originalROWID: 2,
+                        address: "friend@example.com",
+                        service: "iMessage"
+                },
+                ...overrides
+        } as MessageResponse);
+
+        it("uses attachment MIME types when available", () => {
+                const preview = buildConversationPreview(createMessage({
+                        attachments: [
+                                createAttachment({mimeType: "image/png", transferName: "IMG_1234.PNG"}),
+                                createAttachment({mimeType: "audio/aac", transferName: "voice.m4a", guid: "attachment-2"})
+                        ]
+                }));
+
+                expect(preview.type).toBe(ConversationPreviewType.Message);
+                expect((preview as ConversationPreviewMessage).attachments).toEqual(["image/png", "audio/aac"]);
+        });
+
+        it("falls back to the transfer name when MIME type is missing", () => {
+                const preview = buildConversationPreview(createMessage({
+                        attachments: [
+                                createAttachment({mimeType: "", transferName: "unknown.dat"}),
+                                createAttachment({mimeType: "image/jpeg", transferName: "hide.jpg", hideAttachment: true, guid: "attachment-3"})
+                        ]
+                }));
+
+                expect(preview.type).toBe(ConversationPreviewType.Message);
+                expect((preview as ConversationPreviewMessage).attachments).toEqual(["unknown.dat"]);
+        });
+});
 
 describe("mapTapback", () => {
         const {mapTapback, normalizeMessageGuid} = __testables;

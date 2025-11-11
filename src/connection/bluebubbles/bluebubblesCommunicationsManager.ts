@@ -917,7 +917,7 @@ function convertAttachment(attachment: AttachmentResponse) {
 function buildConversationPreview(message: MessageResponse): ConversationPreview {
         const attachments = (message.attachments ?? [])
                 .filter((attachment) => !attachment.hideAttachment)
-                .map((attachment) => attachment.transferName);
+                .map((attachment) => attachment.mimeType || attachment.transferName);
         return {
                 type: ConversationPreviewType.Message,
                 date: new Date(message.dateCreated),
@@ -1283,7 +1283,8 @@ export const __testables = {
         mapTapback,
         normalizeTapbackIdentifier,
         normalizeMessageGuid,
-        computeMessageStatus
+        computeMessageStatus,
+        buildConversationPreview
 };
 
 function normalizeMessageGuid(guid: string | null | undefined): string | undefined {
