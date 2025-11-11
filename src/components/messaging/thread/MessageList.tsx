@@ -9,6 +9,7 @@ import {appleServiceAppleMessage} from "shared/data/appleConstants";
 import ConversationActionParticipant from "./item/ConversationActionParticipant";
 import ConversationActionRename from "./item/ConversationActionRename";
 import {ThreadFocusTarget, areFocusTargetsEqual} from "./types";
+import {logBlueBubblesDebug} from "shared/connection/bluebubbles/debugLogging";
 
 interface Props {
         conversation: Conversation;
@@ -153,6 +154,8 @@ export default class MessageList extends React.Component<Props, State> {
                 } else {
                         this.scrollToBottom(true);
                 }
+
+                this.logConversationPayload(this.props.conversation);
         }
 
         getSnapshotBeforeUpdate() {
@@ -184,6 +187,10 @@ export default class MessageList extends React.Component<Props, State> {
                 }
 
                 this.ensureFocusVisible();
+
+                if(this.props.conversation !== prevProps.conversation) {
+                        this.logConversationPayload(this.props.conversation);
+                }
         }
 
 
@@ -197,6 +204,23 @@ export default class MessageList extends React.Component<Props, State> {
                 if(this.props.focusTarget) return;
                 setTimeout(() => this.scrollToBottom(), 0);
         };
+
+        private logConversationPayload(conversation: Conversation): void {
+                const isReadReceiptEligible = conversation.service === appleServiceAppleMessage
+                        && conversation.members.length === 1;
+
+                logBlueBubblesDebug("Selected conversation payload", {
+                        guid: conversation.localOnly ? undefined : conversation.guid,
+                        localID: conversation.localID,
+                        service: conversation.service,
+                        members: conversation.members,
+                        memberCount: conversation.members.length,
+                        unreadMessages: conversation.unreadMessages,
+                        localOnly: conversation.localOnly,
+                        preview: conversation.preview,
+                        isReadReceiptEligible
+                });
+        }
 
         private scrollToBottom(disableAnimation: boolean = false): void {
                 this.setScroll(this.scrollRef.current!.scrollHeight, disableAnimation);
