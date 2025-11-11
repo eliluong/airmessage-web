@@ -5,6 +5,7 @@ import {getMessageFlow} from "../../../util/conversationUtils";
 import {Conversation, ConversationItem} from "../../../data/blocks";
 import {ConversationItemType, MessageStatusCode} from "../../../data/stateCodes";
 import EventEmitter from "../../../util/eventEmitter";
+import {appleServiceAppleMessage} from "shared/data/appleConstants";
 import ConversationActionParticipant from "./item/ConversationActionParticipant";
 import ConversationActionRename from "./item/ConversationActionRename";
 import {ThreadFocusTarget, areFocusTargetsEqual} from "./types";
@@ -68,19 +69,29 @@ export default class MessageList extends React.Component<Props, State> {
         }
 
         render() {
-                //The latest outgoing item with the "read" status
-                const readTargetIndex = this.props.items.findIndex((item) =>
-			item.itemType === ConversationItemType.Message
-			&& item.sender === undefined
-			&& item.status === MessageStatusCode.Read);
-		
-		//The latest outgoing item with the "delivered" status, no further than the latest item with the "read" status
-		const deliveredTargetIndex = this.props.items
-			.slice(0, readTargetIndex === -1 ? undefined : readTargetIndex)
-			.findIndex((item) =>
-				item.itemType === ConversationItemType.Message
-				&& item.sender === undefined
-				&& item.status === MessageStatusCode.Delivered);
+                const isReadReceiptEligible = this.props.conversation.service === appleServiceAppleMessage
+                        && this.props.conversation.members.length === 1;
+
+                let readTargetIndex = -1;
+                let deliveredTargetIndex = -1;
+                if(isReadReceiptEligible) {
+                        //The latest outgoing item with the "read" status that has a status date
+                        readTargetIndex = this.props.items.findIndex((item) =>
+                                item.itemType === ConversationItemType.Message
+                                && item.sender === undefined
+                                && item.status === MessageStatusCode.Read
+                                && item.statusDate);
+
+                        //The latest outgoing item with the "delivered" status, no further than the latest item with the "read" status
+                        deliveredTargetIndex = this.props.items
+                                .slice(0, readTargetIndex === -1 ? undefined : readTargetIndex)
+                                .findIndex((item) =>
+                                        item.itemType === ConversationItemType.Message
+                                        && item.sender === undefined
+                                        && item.status === MessageStatusCode.Delivered);
+                }
+
+                const statusTargetIndex = readTargetIndex !== -1 ? readTargetIndex : deliveredTargetIndex;
 		
 		return (
 			<Box sx={{
@@ -106,8 +117,8 @@ export default class MessageList extends React.Component<Props, State> {
 									message={item}
 									isGroupChat={this.props.conversation.members.length > 1}
 									service={this.props.conversation.service}
-									flow={getMessageFlow(item, array[i + 1], array[i - 1])}
-									showStatus={i === readTargetIndex || i === deliveredTargetIndex} />
+                                                                        flow={getMessageFlow(item, array[i + 1], array[i - 1])}
+                                                                        showStatus={isReadReceiptEligible && i === statusTargetIndex} />
 							);
 						} else if(item.itemType === ConversationItemType.ParticipantAction) {
 							return (
