@@ -1,22 +1,23 @@
-import React, {useCallback, useMemo, useState} from "react";
+import React, {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {MessageItem} from "shared/data/blocks";
 import {
-	Avatar,
-	Button,
-	CircularProgress,
-	Dialog,
-	DialogActions,
-	DialogContent,
-	DialogContentText,
-	DialogTitle,
+        Avatar,
+        Button,
+        CircularProgress,
+        Fade,
+        Dialog,
+        DialogActions,
+        DialogContent,
+        DialogContentText,
+        DialogTitle,
 	IconButton,
 	Palette,
 	Stack,
 	StackProps,
 	styled,
-	Typography
+        Typography
 } from "@mui/material";
-import {getDeliveryStatusTime, getTimeDivider} from "shared/util/dateUtils";
+import {formatMessageHoverTime, getDeliveryStatusTime, getTimeDivider} from "shared/util/dateUtils";
 import {ErrorRounded} from "@mui/icons-material";
 import {colorFromContact} from "shared/util/avatarUtils";
 import {usePersonData} from "shared/util/hookUtils";
@@ -38,10 +39,11 @@ enum MessageDialog {
 }
 
 const MessageStack = styled(Stack, {
-	shouldForwardProp: (prop) => prop !== "amLinked"
+        shouldForwardProp: (prop) => prop !== "amLinked"
 })<{amLinked: boolean} & StackProps>(({amLinked, theme}) => ({
-	width: "100%",
-	marginTop: theme.spacing(getBubbleSpacing(amLinked))
+        width: "100%",
+        position: "relative",
+        marginTop: theme.spacing(getBubbleSpacing(amLinked))
 }));
 
 export default function Message(props: {
@@ -72,9 +74,38 @@ export default function Message(props: {
 	
 	//Compute the message information
 	const isOutgoing = props.message.sender === undefined;
-	const displayAvatar = !isOutgoing && !props.flow.anchorTop;
-	const displaySender = props.isGroupChat && displayAvatar;
-	const isUnconfirmed = props.message.status === MessageStatusCode.Unconfirmed;
+        const displayAvatar = !isOutgoing && !props.flow.anchorTop;
+        const displaySender = props.isGroupChat && displayAvatar;
+        const isUnconfirmed = props.message.status === MessageStatusCode.Unconfirmed;
+        const [showTimestamp, setShowTimestamp] = useState(false);
+        const hoverTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+        const formattedTimestamp = useMemo(() => formatMessageHoverTime(props.message.date), [props.message.date]);
+
+        const clearHoverTimeout = useCallback(() => {
+                if(hoverTimeout.current !== undefined) {
+                        clearTimeout(hoverTimeout.current);
+                        hoverTimeout.current = undefined;
+                }
+        }, []);
+
+        const handleMouseEnter = useCallback(() => {
+                clearHoverTimeout();
+                hoverTimeout.current = setTimeout(() => {
+                        hoverTimeout.current = undefined;
+                        setShowTimestamp(true);
+                }, 600);
+        }, [clearHoverTimeout]);
+
+        const handleMouseLeave = useCallback(() => {
+                clearHoverTimeout();
+                setShowTimestamp(false);
+        }, [clearHoverTimeout]);
+
+        useEffect(() => {
+                return () => {
+                        clearHoverTimeout();
+                };
+        }, [clearHoverTimeout]);
 	
 	const handleAttachmentData = useCallback((attachmentIndex: number, shouldDownload: boolean, result: FileDownloadResult) => {
 		if(shouldDownload) {
@@ -205,6 +236,8 @@ export default function Message(props: {
                 <MessageStack
                         direction="column"
                         amLinked={props.flow.anchorTop}
+                        onMouseEnter={handleMouseEnter}
+                        onMouseLeave={handleMouseLeave}
                         data-message-guid={props.message.guid}
                         data-message-server-id={props.message.serverID !== undefined ? props.message.serverID.toString() : undefined}>
 			{/* Time divider */}
@@ -232,10 +265,10 @@ export default function Message(props: {
 			)}
 			
 			{/* Horizontal message split */}
-			<Stack
-				direction="row"
-				alignItems="flex-start"
-				flexShrink={0}>
+                        <Stack
+                                direction="row"
+                                alignItems="flex-start"
+                                flexShrink={0}>
 				{/* User avatar */}
 				<Avatar
 					sx={{
@@ -283,11 +316,27 @@ export default function Message(props: {
 						<ErrorRounded />
 					</IconButton>
 				)}
-			</Stack>
-			
-			{/* Message status */}
-			{props.showStatus && (
-				<Typography
+                        </Stack>
+
+                        <Fade in={showTimestamp} timeout={150} unmountOnExit style={{pointerEvents: "none"}}>
+                                <Typography
+                                        variant="caption"
+                                        color="textSecondary"
+                                        sx={(theme) => ({
+                                                position: "absolute",
+                                                top: theme.spacing(0.5),
+                                                right: isOutgoing ? theme.spacing(1) : undefined,
+                                                left: isOutgoing ? undefined : theme.spacing(1),
+                                                opacity: 0.72,
+                                                pointerEvents: "none"
+                                        })}>
+                                        {formattedTimestamp}
+                                </Typography>
+                        </Fade>
+
+                        {/* Message status */}
+                        {props.showStatus && (
+                                <Typography
 					marginTop={0.5}
 					textAlign="end"
 					variant="caption"

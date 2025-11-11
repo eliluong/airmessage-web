@@ -6,6 +6,10 @@ const timeHour = timeMinute * 60;
 
 const bulletSeparator = " • ";
 
+export function formatMessageHoverTime(date: Date): string {
+        return DateTime.fromJSDate(date).toFormat("HH:mm:ss");
+}
+
 //Used in the sidebar
 export function getLastUpdateStatusTime(date: Date): string {
 	const dateNow = new Date();
