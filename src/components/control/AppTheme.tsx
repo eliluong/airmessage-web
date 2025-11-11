@@ -14,10 +14,11 @@ export default function AppTheme(props: {children: React.ReactNode}) {
         const theme = React.useMemo(() => createTheme({
                 typography: {
                         fontFamily: [
-				"-apple-system",
-				"BlinkMacSystemFont",
-				'"Segoe UI"',
-				"Roboto",
+                                '"Noto Color Emoji"',
+                                "-apple-system",
+                                "BlinkMacSystemFont",
+                                '"Segoe UI"',
+                                "Roboto",
 				'"Helvetica Neue"',
 				"Arial",
 				"sans-serif",
