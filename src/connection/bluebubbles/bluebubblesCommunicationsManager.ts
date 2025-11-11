@@ -599,7 +599,9 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                                 associatedMessageType: message.associatedMessageType,
                                 itemType: message.itemType,
                                 isFromMe: message.isFromMe,
-                                service
+                                service,
+                                dateDelivered: message.dateDelivered,
+                                dateRead: message.dateRead
                         });
                         const smsTapback = !message.associatedMessageGuid && isSmsService(service)
                                 ? parseSmsTapback(message)
