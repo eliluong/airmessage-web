@@ -755,8 +755,6 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 const normalizedTargets = tapback.normalizedTargets.filter((value) => value.length > 0);
                 if(normalizedTargets.length === 0) return undefined;
 
-                const normalizedTargetSet = new Set(normalizedTargets);
-
                 let bestGuid: string | undefined;
                 let bestDate = -Infinity;
 
@@ -768,7 +766,15 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                         if(!candidate.text) continue;
                         const candidateNormalizedText = normalizeTapbackTargetText(candidate.text);
                         if(candidateNormalizedText.length === 0) continue;
-                        if(!normalizedTargetSet.has(candidateNormalizedText)) continue;
+
+                        let matches = false;
+                        for(const normalizedTarget of normalizedTargets) {
+                                if(matchesSmsTapbackTarget(candidateNormalizedText, normalizedTarget)) {
+                                        matches = true;
+                                        break;
+                                }
+                        }
+                        if(!matches) continue;
 
                         const candidateDate = candidate.dateCreated ?? 0;
                         if(candidateDate >= bestDate) {
@@ -789,8 +795,19 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 const entry = this.smsTapbackCache.get(chatGuid);
                 if(!entry) return undefined;
                 const guids = entry.map.get(normalizedText);
-                if(!guids || guids.length === 0) return undefined;
-                return guids[guids.length - 1];
+                if(guids && guids.length > 0) return guids[guids.length - 1];
+
+                const prefix = getSmsTapbackEllipsisPrefix(normalizedText);
+                if(prefix === undefined) return undefined;
+
+                for(let index = entry.order.length - 1; index >= 0; index -= 1) {
+                        const record = entry.order[index];
+                        if(matchesSmsTapbackTarget(record.normalizedText, normalizedText)) {
+                                return record.guid;
+                        }
+                }
+
+                return undefined;
         }
 
         private rememberSmsTapbackTarget(chatGuid: string, text: string, messageGuid: string) {
@@ -1084,10 +1101,23 @@ function collapseRepeatedSymbols(text: string): string {
 
 function buildSmsTapbackTargetVariants(base: string, tapbackType: TapbackType): string[] {
         const variants = new Set<string>();
-        if(base.length > 0) variants.add(base);
+        if(base.length > 0) {
+                variants.add(base);
+                addSmsTapbackEllipsisVariants(base, variants);
+        }
         const stripped = stripTapbackTargetWrappers(base, tapbackType);
-        if(stripped.length > 0) variants.add(stripped);
+        if(stripped.length > 0) {
+                variants.add(stripped);
+                addSmsTapbackEllipsisVariants(stripped, variants);
+        }
         return Array.from(variants);
+}
+
+function addSmsTapbackEllipsisVariants(text: string, variants: Set<string>) {
+        const prefix = getSmsTapbackEllipsisPrefix(text);
+        if(prefix && prefix.length > 0) {
+                variants.add(prefix);
+        }
 }
 
 function stripTapbackTargetWrappers(text: string, tapbackType: TapbackType): string {
@@ -1108,6 +1138,26 @@ function stripTapbackTargetWrappers(text: string, tapbackType: TapbackType): str
         } while(changed);
 
         return result;
+}
+
+function matchesSmsTapbackTarget(candidate: string, target: string): boolean {
+        if(candidate === target) return true;
+        const prefix = getSmsTapbackEllipsisPrefix(target);
+        if(!prefix) return false;
+        return candidate.startsWith(prefix);
+}
+
+function getSmsTapbackEllipsisPrefix(text: string): string | undefined {
+        const trimmed = text.trimEnd();
+        if(trimmed.endsWith("…")) {
+                const prefix = trimmed.slice(0, -1).trimEnd();
+                return prefix.length > 0 ? prefix : undefined;
+        }
+        if(trimmed.endsWith("...")) {
+                const prefix = trimmed.slice(0, -3).trimEnd();
+                return prefix.length > 0 ? prefix : undefined;
+        }
+        return undefined;
 }
 
 function getMessageService(message: MessageResponse): string | undefined {

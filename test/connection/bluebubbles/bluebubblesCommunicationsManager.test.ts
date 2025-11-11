@@ -229,6 +229,32 @@ describe("processMessages SMS tapbacks", () => {
                 ...overrides
         } as MessageResponse);
 
+        const createLikeTapback = (target: string, overrides: Partial<MessageResponse> = {}): MessageResponse => ({
+                originalROWID: 3,
+                guid: "6B4C0743-8F68-4CB7-A06A-5BF9447CF88C",
+                text: `Liked “${target}”`,
+                handleId: 2,
+                otherHandle: 0,
+                chats: [createChat()],
+                attachments: [],
+                subject: "",
+                error: 0,
+                dateCreated: 1_100,
+                dateRead: null,
+                dateDelivered: null,
+                isFromMe: true,
+                isArchived: false,
+                itemType: 0,
+                groupTitle: null,
+                groupActionType: 0,
+                balloonBundleId: null,
+                associatedMessageGuid: null,
+                associatedMessageType: null,
+                expressiveSendStyleId: null,
+                handle: createHandle("me"),
+                ...overrides
+        } as MessageResponse);
+
         const createManager = () => new BlueBubblesCommunicationsManager(new DummyProxy(), auth);
 
         it("matches SMS tapbacks with wrapped target text in the same batch", () => {
@@ -262,5 +288,27 @@ describe("processMessages SMS tapbacks", () => {
                 const tapback = modifiers[0] as unknown as {messageGuid: string; tapbackType: TapbackType};
                 expect(tapback.messageGuid).toBe(baseMessageGuid);
                 expect(tapback.tapbackType).toBe(TapbackType.Question);
+        });
+
+        it("matches SMS tapbacks when the target text is truncated with an ellipsis", () => {
+                const manager = createManager();
+                const fullText = "Ooo its stitzlein im p sure he doesn't want hip blocked";
+                const baseMessage = createBaseSmsMessage({
+                        text: fullText,
+                        handle: createHandle("friend@example.com"),
+                        isFromMe: false
+                });
+                const reaction = createLikeTapback("Ooo its stitzlein im p sure he doesn't want hip bl…", {
+                        dateCreated: 1_200,
+                        handle: createHandle("me"),
+                        isFromMe: true
+                });
+
+                const {modifiers} = (manager as unknown as {processMessages(messages: MessageResponse[]): {items: unknown[]; modifiers: unknown[]}}).processMessages([baseMessage, reaction]);
+
+                expect(modifiers).toHaveLength(1);
+                const tapback = modifiers[0] as unknown as {messageGuid: string; tapbackType: TapbackType};
+                expect(tapback.messageGuid).toBe(baseMessageGuid);
+                expect(tapback.tapbackType).toBe(TapbackType.Like);
         });
 });
