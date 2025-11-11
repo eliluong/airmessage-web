@@ -25,4 +25,5 @@ declare const WPEnv: {
         BUILD_DATE: number;
         WINRT: boolean;
         SENTRY_DSN?: string;
+        LINK_PREVIEW_API_KEY?: string;
 };
