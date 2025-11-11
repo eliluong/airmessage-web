@@ -19,6 +19,7 @@ import {normalizeAddress} from "shared/util/addressHelper";
 import DetailThread from "shared/components/messaging/thread/DetailThread";
 import {ThreadFocusTarget} from "shared/components/messaging/thread/types";
 import {PeopleContext} from "shared/state/peopleState";
+import {logSelectedConversationPayload} from "shared/connection/bluebubbles/debugLogging";
 
 export default function Messaging(props: {
         serverUrl: string;
@@ -54,6 +55,8 @@ export default function Messaging(props: {
                 };
         }, [serverUrl, accessToken, refreshToken, legacyPasswordAuth, deviceName]);
 	
+        const lastLoggedConversationIDRef = useRef<number | undefined>(undefined);
+
         const navigateConversation = useCallback((conversationID: number | string, focusTarget?: ThreadFocusTarget) => {
                 //Ignore if conversations aren't loaded
                 if(conversations === undefined) return;
@@ -64,17 +67,22 @@ export default function Messaging(props: {
 			conversation = conversations.find((conversation) => conversation.localID == conversationID);
 		} else {
 			conversation = conversations.find((conversation) => !conversation.localOnly && conversation.guid == conversationID);
-		}
-		if(conversation === undefined) return;
-		
-		//Mark the conversation as read
+                }
+                if(conversation === undefined) return;
+
+                if(lastLoggedConversationIDRef.current !== conversation.localID) {
+                        logSelectedConversationPayload(conversation);
+                        lastLoggedConversationIDRef.current = conversation.localID;
+                }
+
+                //Mark the conversation as read
                 if(conversation.unreadMessages) {
                         markConversationRead(conversation.localID);
                 }
 
                 //Select the conversation
                 setDetailPane({type: DetailType.Thread, conversationID: conversation.localID, focusTarget});
-        }, [conversations, markConversationRead, setDetailPane]);
+        }, [conversations, lastLoggedConversationIDRef, logSelectedConversationPayload, markConversationRead, setDetailPane]);
 	
 	const navigateConversationCreate = useCallback(() => {
 		setDetailPane({type: DetailType.Create});
