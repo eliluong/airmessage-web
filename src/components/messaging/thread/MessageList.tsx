@@ -80,8 +80,16 @@ export default class MessageList extends React.Component<Props, State> {
 
                 const latestOutgoingItem = latestOutgoingIndex === -1 ? undefined : this.props.items[latestOutgoingIndex];
 
-                const readTargetIndex = latestOutgoingItem?.status === MessageStatusCode.Read ? latestOutgoingIndex : -1;
-                const deliveredTargetIndex = latestOutgoingItem?.status === MessageStatusCode.Delivered ? latestOutgoingIndex : -1;
+                let readTargetIndex = -1;
+                let deliveredTargetIndex = -1;
+
+                if(supportsReceipts && latestOutgoingItem?.itemType === ConversationItemType.Message) {
+                        if(latestOutgoingItem.status === MessageStatusCode.Read) {
+                                readTargetIndex = latestOutgoingIndex;
+                        } else if(latestOutgoingItem.status === MessageStatusCode.Delivered) {
+                                deliveredTargetIndex = latestOutgoingIndex;
+                        }
+                }
 		
 		return (
 			<Box sx={{
