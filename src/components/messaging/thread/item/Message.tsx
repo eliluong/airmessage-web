@@ -2,7 +2,6 @@ import React, {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {MessageItem} from "shared/data/blocks";
 import {
         Avatar,
-        Box,
         Button,
         CircularProgress,
         Fade,
@@ -284,47 +283,50 @@ export default function Message(props: {
 					src={personData?.avatar} />
 				
 				{/* Message parts */}
-                                <Stack
-                                        sx={(theme) => ({
-                                                marginLeft: theme.spacing(1),
-                                                position: "relative"
-                                        })}
-                                        flexGrow={1}
-                                        direction="column"
-                                        alignItems={isOutgoing ? "end" : "start"}>
-                                        <Box
-                                                sx={(theme) => ({
-                                                        display: "inline-flex",
-                                                        flexDirection: "column",
-                                                        alignItems: isOutgoing ? "flex-end" : "flex-start",
-                                                        gap: theme.spacing(getBubbleSpacing(false)),
-                                                        position: "relative",
-                                                        maxWidth: "100%"
-                                                })}>
-                                                {messagePartsArray}
+        <Stack
+                sx={(theme) => ({
+                        marginLeft: theme.spacing(1)
+                })}
+                flexGrow={1}
+                direction="column"
+                alignItems={isOutgoing ? "end" : "start"}>
+                <Stack
+                        direction="row"
+                        alignItems="center"
+                        justifyContent={isOutgoing ? "flex-end" : "flex-start"}
+                        sx={{width: "100%"}}>
+                        <Stack
+                                direction="column"
+                                spacing={getBubbleSpacing(false)}
+                                alignItems={isOutgoing ? "end" : "start"}
+                                sx={{order: isOutgoing ? 1 : 0}}>
+                                {messagePartsArray}
+                        </Stack>
 
-                                                <Fade in={showTimestamp} timeout={150} unmountOnExit style={{pointerEvents: "none"}}>
-                                                        <Typography
-                                                                variant="caption"
-                                                                color="textSecondary"
-                                                                sx={(theme) => ({
-                                                                        position: "absolute",
-                                                                        top: "50%",
-                                                                        transform: "translateY(-50%)",
-                                                                        right: isOutgoing ? "100%" : undefined,
-                                                                        left: isOutgoing ? undefined : "100%",
-                                                                        marginRight: isOutgoing ? theme.spacing(0.75) : undefined,
-                                                                        marginLeft: isOutgoing ? undefined : theme.spacing(0.75),
-                                                                        opacity: 0.72,
-                                                                        pointerEvents: "none",
-                                                                        whiteSpace: "nowrap",
-                                                                        zIndex: 1
-                                                                })}>
-                                                                {formattedTimestamp}
-                                                        </Typography>
-                                                </Fade>
-                                        </Box>
-                                </Stack>
+                        <Fade
+                                in={showTimestamp}
+                                timeout={150}
+                                unmountOnExit
+                                style={{
+                                        pointerEvents: "none",
+                                        order: isOutgoing ? 0 : 1,
+                                        display: "flex"
+                                }}>
+                                <Typography
+                                        variant="caption"
+                                        color="textSecondary"
+                                        sx={(theme) => ({
+                                                marginRight: isOutgoing ? theme.spacing(0.75) : undefined,
+                                                marginLeft: isOutgoing ? undefined : theme.spacing(0.75),
+                                                opacity: 0.72,
+                                                pointerEvents: "none",
+                                                whiteSpace: "nowrap"
+                                        })}>
+                                        {formattedTimestamp}
+                                </Typography>
+                        </Fade>
+                </Stack>
+        </Stack>
 				
 				{/* Progress spinner */}
 				{props.message.progress !== undefined
