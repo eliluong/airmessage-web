@@ -12,10 +12,9 @@ const PreviewAnchor = styled("a")(({theme}) => ({
         overflow: "hidden",
         backgroundColor: theme.palette.background.paper,
         border: `1px solid ${theme.palette.divider}`,
-        transition: theme.transitions.create(["box-shadow", "transform"], {duration: theme.transitions.duration.shorter}),
+        transition: theme.transitions.create(["box-shadow"], {duration: theme.transitions.duration.shorter}),
         "&:hover": {
-                boxShadow: theme.shadows[4],
-                transform: "translateY(-1px)"
+                boxShadow: theme.shadows[4]
         }
 }));
 

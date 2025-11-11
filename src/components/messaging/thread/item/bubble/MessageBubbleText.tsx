@@ -36,9 +36,9 @@ const MessageBubbleTypography = styled(Typography)(({theme}) => ({
 }));
 
 const PreviewPadding = styled(Box)(({theme}) => ({
-        paddingLeft: theme.spacing(1.5),
-        paddingRight: theme.spacing(1.5),
-        paddingBottom: theme.spacing(1.5),
+        paddingLeft: 0,
+        paddingRight: 0,
+        paddingBottom: 0,
         paddingTop: theme.spacing(0.5),
         display: "flex",
         width: "100%"
