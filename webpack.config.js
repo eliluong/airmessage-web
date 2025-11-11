@@ -2,6 +2,9 @@
 const webpack = require("webpack");
 const path = require("path");
 const fs = require("fs");
+const dotenv = require("dotenv");
+
+dotenv.config();
 const ForkTsCheckerWebpackPlugin = require("fork-ts-checker-webpack-plugin");
 // const ESLintPlugin = require("eslint-webpack-plugin");
 const CopyPlugin = require("copy-webpack-plugin");
@@ -107,7 +110,8 @@ module.exports = (env) => ({
                         "WPEnv.PACKAGE_VERSION": JSON.stringify(process.env.npm_package_version),
                         "WPEnv.RELEASE_HASH": "\"undefined\"",
                         "WPEnv.BUILD_DATE": Date.now(),
-                        "WPEnv.SENTRY_DSN": JSON.stringify(process.env.SENTRY_DSN ?? "")
+                        "WPEnv.SENTRY_DSN": JSON.stringify(process.env.SENTRY_DSN ?? ""),
+                        "WPEnv.LINK_PREVIEW_API_KEY": JSON.stringify(process.env.LINK_PREVIEW_API_KEY ?? "")
                 }),
 	].concat(!env.WEBPACK_SERVE ? new WorkboxPlugin.GenerateSW() : [])
 });
