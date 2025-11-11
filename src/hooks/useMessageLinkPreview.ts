@@ -120,6 +120,8 @@ export default function useMessageLinkPreview(text: string): MessageLinkPreviewS
                 const key = WPEnv.LINK_PREVIEW_API_KEY;
                 const requestUrl = `https://api.linkpreview.net/?key=${encodeURIComponent(key)}&q=${encodeURIComponent(normalizedUrl)}`;
 
+                logBlueBubblesDebug("Fetching link preview", {requestUrl});
+
                 (async () => {
                         try {
                                 const response = await fetch(requestUrl, {signal: controller.signal});
