@@ -14,6 +14,10 @@ export default function AppTheme(props: {children: React.ReactNode}) {
         const theme = React.useMemo(() => createTheme({
                 typography: {
                         fontFamily: [
+				'"Apple Color Emoji"',
+                '"Segoe UI Emoji"',
+                '"Segoe UI Symbol"',
+				'"Noto Emoji COLRv1"',
 				"-apple-system",
 				"BlinkMacSystemFont",
 				'"Segoe UI"',
@@ -21,10 +25,6 @@ export default function AppTheme(props: {children: React.ReactNode}) {
 				'"Helvetica Neue"',
 				"Arial",
 				"sans-serif",
-                                '"Apple Color Emoji"',
-                                '"Segoe UI Emoji"',
-                                '"Segoe UI Symbol"',
-                                '"Noto Emoji COLRv1"',
                         ].join(","),
 		},
                 palette: {
