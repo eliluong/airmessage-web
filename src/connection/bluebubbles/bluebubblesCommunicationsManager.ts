@@ -523,12 +523,12 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 if(direction === "latest" && ordered.length > 0) {
                         this.lastMessageTimestamp = ordered[0].dateCreated;
                 }
-                const {items, modifiers} = this.processMessages(ordered);
-                const metadata = this.buildThreadMetadata(items);
-                this.listener?.onMessageThread(chatGUID, normalizedOptions, items, metadata);
-                if(modifiers.length > 0) {
-                        this.listener?.onModifierUpdate(modifiers);
-                }
+                const processed = this.processMessages(ordered);
+                const metadata = this.buildThreadMetadata(processed.items);
+                this.listener?.onMessageThread(chatGUID, normalizedOptions, processed.items, metadata);
+                // Historical thread fetches already include tapbacks on each message item, so do not forward
+                // the modifier events (`processed.modifiers`) for this batch. Emitting them would cause the UI
+                // to treat historical reactions as newly-arrived ones (triggering tapback sounds, etc.).
         }
 
         private buildThreadMetadata(items: ConversationItem[]): ThreadFetchMetadata | undefined {
