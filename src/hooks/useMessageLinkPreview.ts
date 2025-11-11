@@ -1,5 +1,6 @@
 import {useEffect, useMemo, useState} from "react";
 import {find} from "linkifyjs";
+import {logBlueBubblesDebug} from "shared/connection/bluebubbles/debugLogging";
 import {
         CachedLinkPreview,
         getCachedLinkPreview,
@@ -127,6 +128,7 @@ export default function useMessageLinkPreview(text: string): MessageLinkPreviewS
                                 }
 
                                 const payload = (await response.json()) as LinkPreviewResponse;
+                                logBlueBubblesDebug("LinkPreview response", {requestUrl, payload});
                                 const preview = sanitizeResponse(normalizedUrl, payload);
                                 if (!preview) {
                                         throw new Error("Link preview response did not include displayable data");
@@ -143,6 +145,7 @@ export default function useMessageLinkPreview(text: string): MessageLinkPreviewS
                                         return;
                                 }
 
+                                logBlueBubblesDebug("LinkPreview request failed", {requestUrl, error});
                                 const message = error instanceof Error ? error.message : "Failed to load link preview";
                                 setCachedLinkPreview(normalizedUrl, {
                                         data: null,
