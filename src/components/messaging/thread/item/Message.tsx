@@ -2,6 +2,7 @@ import React, {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {MessageItem} from "shared/data/blocks";
 import {
         Avatar,
+        Box,
         Button,
         CircularProgress,
         Fade,
@@ -288,30 +289,41 @@ export default function Message(props: {
                                                 marginLeft: theme.spacing(1),
                                                 position: "relative"
                                         })}
-                                        gap={getBubbleSpacing(false)}
                                         flexGrow={1}
                                         direction="column"
                                         alignItems={isOutgoing ? "end" : "start"}>
-                                        {messagePartsArray}
+                                        <Box
+                                                sx={(theme) => ({
+                                                        display: "inline-flex",
+                                                        flexDirection: "column",
+                                                        alignItems: isOutgoing ? "flex-end" : "flex-start",
+                                                        gap: theme.spacing(getBubbleSpacing(false)),
+                                                        position: "relative",
+                                                        maxWidth: "100%"
+                                                })}>
+                                                {messagePartsArray}
 
-                                        <Fade in={showTimestamp} timeout={150} unmountOnExit style={{pointerEvents: "none"}}>
-                                                <Typography
-                                                        variant="caption"
-                                                        color="textSecondary"
-                                                        sx={(theme) => ({
-                                                                position: "absolute",
-                                                                top: "50%",
-                                                                transform: "translateY(-50%)",
-                                                                right: isOutgoing ? `calc(100% + ${theme.spacing(1)})` : undefined,
-                                                                left: isOutgoing ? undefined : `calc(100% + ${theme.spacing(1)})`,
-                                                                opacity: 0.72,
-                                                                pointerEvents: "none",
-                                                                whiteSpace: "nowrap",
-                                                                zIndex: 1
-                                                        })}>
-                                                        {formattedTimestamp}
-                                                </Typography>
-                                        </Fade>
+                                                <Fade in={showTimestamp} timeout={150} unmountOnExit style={{pointerEvents: "none"}}>
+                                                        <Typography
+                                                                variant="caption"
+                                                                color="textSecondary"
+                                                                sx={(theme) => ({
+                                                                        position: "absolute",
+                                                                        top: "50%",
+                                                                        transform: "translateY(-50%)",
+                                                                        right: isOutgoing ? "100%" : undefined,
+                                                                        left: isOutgoing ? undefined : "100%",
+                                                                        marginRight: isOutgoing ? theme.spacing(0.75) : undefined,
+                                                                        marginLeft: isOutgoing ? undefined : theme.spacing(0.75),
+                                                                        opacity: 0.72,
+                                                                        pointerEvents: "none",
+                                                                        whiteSpace: "nowrap",
+                                                                        zIndex: 1
+                                                                })}>
+                                                                {formattedTimestamp}
+                                                        </Typography>
+                                                </Fade>
+                                        </Box>
                                 </Stack>
 				
 				{/* Progress spinner */}
