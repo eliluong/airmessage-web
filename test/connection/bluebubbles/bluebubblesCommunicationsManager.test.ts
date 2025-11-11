@@ -1,4 +1,4 @@
-import {MessageModifierType, TapbackType} from "../../../src/data/stateCodes";
+import {MessageModifierType, MessageStatusCode, TapbackType} from "../../../src/data/stateCodes";
 import BlueBubblesCommunicationsManager from "../../../src/connection/bluebubbles/bluebubblesCommunicationsManager";
 import DataProxy from "../../../src/connection/dataProxy";
 import type {BlueBubblesAuthState} from "../../../src/connection/bluebubbles/session";
@@ -97,6 +97,54 @@ describe("mapTapback", () => {
                 {input: "no-prefix", expected: "no-prefix"}
         ])("normalizeMessageGuid(%o) returns %o", ({input, expected}) => {
                 expect(normalizeMessageGuid(input)).toBe(expected);
+        });
+});
+
+describe("computeMessageStatus", () => {
+        const {computeMessageStatus} = __testables;
+
+        const createOutgoingMessage = (overrides: Partial<MessageResponse> = {}): MessageResponse => ({
+                originalROWID: 1,
+                guid: "outgoing-guid",
+                text: "hello",
+                handleId: 1,
+                otherHandle: 0,
+                chats: [],
+                attachments: [],
+                subject: "",
+                error: 0,
+                dateCreated: 1_000,
+                dateRead: null,
+                dateDelivered: null,
+                isFromMe: true,
+                isArchived: false,
+                itemType: 0,
+                groupTitle: null,
+                groupActionType: 0,
+                balloonBundleId: null,
+                associatedMessageGuid: null,
+                associatedMessageType: null,
+                expressiveSendStyleId: null,
+                handle: {originalROWID: 3, address: "me", service: "iMessage"},
+                ...overrides
+        } as MessageResponse);
+
+        it("treats outgoing messages with a read timestamp as read even when receipts are disabled", () => {
+                const result = computeMessageStatus(createOutgoingMessage({dateRead: 5_000}), false, false);
+                expect(result.status).toBe(MessageStatusCode.Read);
+                expect(result.statusDate?.getTime()).toBe(5_000);
+        });
+
+        it("treats outgoing messages with a delivered timestamp as delivered even when receipts are disabled", () => {
+                const result = computeMessageStatus(createOutgoingMessage({dateDelivered: 4_000}), false, false);
+                expect(result.status).toBe(MessageStatusCode.Delivered);
+                expect(result.statusDate?.getTime()).toBe(4_000);
+        });
+
+        it("falls back to sent when no timestamps or receipt support exist", () => {
+                const result = computeMessageStatus(createOutgoingMessage(), false, false);
+                expect(result.status).toBe(MessageStatusCode.Sent);
+                expect(result.statusDate).toBeUndefined();
         });
 });
 

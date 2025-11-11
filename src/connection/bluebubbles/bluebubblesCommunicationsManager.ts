@@ -1228,7 +1228,8 @@ function mapTapbackType(code: number) {
 export const __testables = {
         mapTapback,
         normalizeTapbackIdentifier,
-        normalizeMessageGuid
+        normalizeMessageGuid,
+        computeMessageStatus
 };
 
 function normalizeMessageGuid(guid: string | null | undefined): string | undefined {
@@ -1270,19 +1271,26 @@ function computeMessageStatus(message: MessageResponse, supportsDeliveredReceipt
         if(!message.isFromMe) {
                 return {status: MessageStatusCode.Read, statusDate: new Date(message.dateRead ?? message.dateCreated)};
         }
+
+        const readDate = message.dateRead ? new Date(message.dateRead) : undefined;
+        if(readDate) {
+                return {status: MessageStatusCode.Read, statusDate: readDate};
+        }
+
+        const deliveredDate = message.dateDelivered ? new Date(message.dateDelivered) : undefined;
+        if(deliveredDate) {
+                return {status: MessageStatusCode.Delivered, statusDate: deliveredDate};
+        }
+
         if(!(supportsDeliveredReceipts || supportsReadReceipts)) {
                 return {status: MessageStatusCode.Sent};
         }
-        if(supportsReadReceipts && message.dateRead) {
-                return {status: MessageStatusCode.Read, statusDate: new Date(message.dateRead)};
-        }
-        if(supportsDeliveredReceipts && message.dateDelivered) {
-                return {status: MessageStatusCode.Delivered, statusDate: new Date(message.dateDelivered)};
-        }
+
         if(supportsDeliveredReceipts && message.isDelivered) {
                 return {status: MessageStatusCode.Delivered};
         }
-        return supportsDeliveredReceipts ? {status: MessageStatusCode.Delivered} : {status: MessageStatusCode.Sent};
+
+        return {status: MessageStatusCode.Delivered};
 }
 
 function inferService(chat: ChatResponse): string {

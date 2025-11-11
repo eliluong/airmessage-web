@@ -4,6 +4,7 @@ import Message from "./item/Message";
 import {getMessageFlow} from "../../../util/conversationUtils";
 import {Conversation, ConversationItem} from "../../../data/blocks";
 import {ConversationItemType, MessageStatusCode} from "../../../data/stateCodes";
+import {appleServiceAppleMessage} from "../../../data/appleConstants";
 import EventEmitter from "../../../util/eventEmitter";
 import ConversationActionParticipant from "./item/ConversationActionParticipant";
 import ConversationActionRename from "./item/ConversationActionRename";
@@ -68,19 +69,27 @@ export default class MessageList extends React.Component<Props, State> {
         }
 
         render() {
-                //The latest outgoing item with the "read" status
-                const readTargetIndex = this.props.items.findIndex((item) =>
-			item.itemType === ConversationItemType.Message
-			&& item.sender === undefined
-			&& item.status === MessageStatusCode.Read);
-		
-		//The latest outgoing item with the "delivered" status, no further than the latest item with the "read" status
-		const deliveredTargetIndex = this.props.items
-			.slice(0, readTargetIndex === -1 ? undefined : readTargetIndex)
-			.findIndex((item) =>
-				item.itemType === ConversationItemType.Message
-				&& item.sender === undefined
-				&& item.status === MessageStatusCode.Delivered);
+                const normalizedService = this.props.conversation.service.toLowerCase();
+                const supportsReceipts = normalizedService === appleServiceAppleMessage.toLowerCase()
+                        && this.props.conversation.members.length === 1;
+
+                const latestOutgoingIndex = supportsReceipts ? this.props.items.findIndex((item) =>
+                        item.itemType === ConversationItemType.Message
+                        && item.sender === undefined
+                ) : -1;
+
+                const latestOutgoingItem = latestOutgoingIndex === -1 ? undefined : this.props.items[latestOutgoingIndex];
+
+                let readTargetIndex = -1;
+                let deliveredTargetIndex = -1;
+
+                if(supportsReceipts && latestOutgoingItem?.itemType === ConversationItemType.Message) {
+                        if(latestOutgoingItem.status === MessageStatusCode.Read) {
+                                readTargetIndex = latestOutgoingIndex;
+                        } else if(latestOutgoingItem.status === MessageStatusCode.Delivered) {
+                                deliveredTargetIndex = latestOutgoingIndex;
+                        }
+                }
 		
 		return (
 			<Box sx={{
