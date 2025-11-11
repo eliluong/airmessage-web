@@ -7,7 +7,8 @@ import {
         MessageSendResponse,
         ServerFeaturesResponse,
         ServerMetadataResponse,
-        SingleChatResponse
+        SingleChatResponse,
+        SingleMessageResponse
 } from "./types";
 
 const API_ROOT = "/api/v1";
@@ -132,6 +133,19 @@ export async function fetchChat(auth: BlueBubblesAuthState, guid: string): Promi
         params.append("with", "lastmessage");
         params.append("with", "lastmessage.attachments");
         return requestJson<SingleChatResponse>(auth, `/chat/${encodeURIComponent(guid)}?${params.toString()}`, {method: "GET"});
+}
+
+export async function fetchMessage(auth: BlueBubblesAuthState, guid: string, options: {includeMetadata?: boolean} = {}): Promise<SingleMessageResponse> {
+        const params = new URLSearchParams();
+        params.append("with", "attachments");
+        if(options.includeMetadata) {
+                params.append("with", "attachment.metadata");
+        }
+        return requestJson<SingleMessageResponse>(
+                auth,
+                `/message/${encodeURIComponent(guid)}?${params.toString()}`,
+                {method: "GET"}
+        );
 }
 
 export async function createChat(auth: BlueBubblesAuthState, body: Record<string, unknown>): Promise<ChatCreateResponse> {
