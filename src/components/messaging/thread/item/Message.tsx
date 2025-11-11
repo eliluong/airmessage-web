@@ -81,7 +81,7 @@ export default function Message(props: {
         const [timestampPosition, setTimestampPosition] = useState<TimestampPosition | undefined>(undefined);
         const hoverTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
         const messageStackRef = useRef<HTMLDivElement | null>(null);
-        const messagePartsRef = useRef<HTMLDivElement | null>(null);
+        const messageBubbleRef = useRef<HTMLDivElement | null>(null);
         const formattedTimestamp = useMemo(() => formatMessageHoverTime(props.message.date), [props.message.date]);
 	
 	//Compute the message information
@@ -156,7 +156,7 @@ export default function Message(props: {
 
         const updateTimestampPosition = useCallback(() => {
                 const container = messageStackRef.current;
-                const bubble = messagePartsRef.current;
+                const bubble = messageBubbleRef.current;
 
                 if(container === null || bubble === null) {
                         return;
@@ -341,15 +341,23 @@ export default function Message(props: {
 				
 				{/* Message parts */}
                                 <Stack
-                                        ref={messagePartsRef}
-                                        onMouseEnter={handleMouseEnter}
-                                        onMouseLeave={handleMouseLeave}
                                         sx={{marginLeft: 1}}
-                                        gap={getBubbleSpacing(false)}
                                         flexGrow={1}
                                         direction="column"
                                         alignItems={isOutgoing ? "end" : "start"}>
-                                        {messagePartsArray}
+                                        <Stack
+                                                ref={messageBubbleRef}
+                                                onMouseEnter={handleMouseEnter}
+                                                onMouseLeave={handleMouseLeave}
+                                                gap={getBubbleSpacing(false)}
+                                                direction="column"
+                                                alignItems={isOutgoing ? "end" : "start"}
+                                                sx={{
+                                                        display: "inline-flex",
+                                                        maxWidth: "100%"
+                                                }}>
+                                                {messagePartsArray}
+                                        </Stack>
                                 </Stack>
 				
 				{/* Progress spinner */}
