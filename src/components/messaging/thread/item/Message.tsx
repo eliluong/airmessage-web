@@ -1,20 +1,20 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {MessageItem} from "shared/data/blocks";
 import {
-        Avatar,
+	Avatar,
         Button,
         CircularProgress,
-        Fade,
         Dialog,
         DialogActions,
         DialogContent,
         DialogContentText,
         DialogTitle,
-	IconButton,
-	Palette,
-	Stack,
-	StackProps,
-	styled,
+        Fade,
+        IconButton,
+        Palette,
+        Stack,
+        StackProps,
+        styled,
         Typography
 } from "@mui/material";
 import {formatMessageHoverTime, getDeliveryStatusTime, getTimeDivider} from "shared/util/dateUtils";
@@ -39,12 +39,18 @@ enum MessageDialog {
 }
 
 const MessageStack = styled(Stack, {
-        shouldForwardProp: (prop) => prop !== "amLinked"
+	shouldForwardProp: (prop) => prop !== "amLinked"
 })<{amLinked: boolean} & StackProps>(({amLinked, theme}) => ({
         width: "100%",
         position: "relative",
         marginTop: theme.spacing(getBubbleSpacing(amLinked))
 }));
+
+type TimestampPosition = {
+        top: number;
+        left: number;
+        anchor: "left" | "right";
+};
 
 export default function Message(props: {
 	message: MessageItem;
@@ -70,45 +76,22 @@ export default function Message(props: {
 		closeDialog();
 	}, [props.message, closeDialog]);
 	
-	const [attachmentDataMap, setAttachmentDataMap] = useState<Map<number, FileDownloadResult>>(new Map());
+        const [attachmentDataMap, setAttachmentDataMap] = useState<Map<number, FileDownloadResult>>(new Map());
+        const [showTimestamp, setShowTimestamp] = useState(false);
+        const [timestampPosition, setTimestampPosition] = useState<TimestampPosition | undefined>(undefined);
+        const hoverTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+        const messageStackRef = useRef<HTMLDivElement | null>(null);
+        const messagePartsRef = useRef<HTMLDivElement | null>(null);
+        const formattedTimestamp = useMemo(() => formatMessageHoverTime(props.message.date), [props.message.date]);
 	
 	//Compute the message information
 	const isOutgoing = props.message.sender === undefined;
-        const displayAvatar = !isOutgoing && !props.flow.anchorTop;
-        const displaySender = props.isGroupChat && displayAvatar;
-        const isUnconfirmed = props.message.status === MessageStatusCode.Unconfirmed;
-        const [showTimestamp, setShowTimestamp] = useState(false);
-        const hoverTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-        const formattedTimestamp = useMemo(() => formatMessageHoverTime(props.message.date), [props.message.date]);
-
-        const clearHoverTimeout = useCallback(() => {
-                if(hoverTimeout.current !== undefined) {
-                        clearTimeout(hoverTimeout.current);
-                        hoverTimeout.current = undefined;
-                }
-        }, []);
-
-        const handleMouseEnter = useCallback(() => {
-                clearHoverTimeout();
-                hoverTimeout.current = setTimeout(() => {
-                        hoverTimeout.current = undefined;
-                        setShowTimestamp(true);
-                }, 600);
-        }, [clearHoverTimeout]);
-
-        const handleMouseLeave = useCallback(() => {
-                clearHoverTimeout();
-                setShowTimestamp(false);
-        }, [clearHoverTimeout]);
-
-        useEffect(() => {
-                return () => {
-                        clearHoverTimeout();
-                };
-        }, [clearHoverTimeout]);
+	const displayAvatar = !isOutgoing && !props.flow.anchorTop;
+	const displaySender = props.isGroupChat && displayAvatar;
+	const isUnconfirmed = props.message.status === MessageStatusCode.Unconfirmed;
 	
-	const handleAttachmentData = useCallback((attachmentIndex: number, shouldDownload: boolean, result: FileDownloadResult) => {
-		if(shouldDownload) {
+        const handleAttachmentData = useCallback((attachmentIndex: number, shouldDownload: boolean, result: FileDownloadResult) => {
+                if(shouldDownload) {
 			//Download the file
 			const attachment = props.message.attachments[attachmentIndex];
 			downloadBlob(
@@ -133,12 +116,12 @@ export default function Message(props: {
 	/**
 	 * Computes the file data to display to the user
 	 */
-	const getComputedFileData = useCallback((attachmentIndex: number): FileDisplayResult => {
-		const attachment = props.message.attachments[attachmentIndex];
-		const downloadData = attachmentDataMap.get(attachmentIndex);
-		
-		return {
-			data: downloadData?.data ?? attachment.data,
+        const getComputedFileData = useCallback((attachmentIndex: number): FileDisplayResult => {
+                const attachment = props.message.attachments[attachmentIndex];
+                const downloadData = attachmentDataMap.get(attachmentIndex);
+
+                return {
+                        data: downloadData?.data ?? attachment.data,
 			name: downloadData?.downloadName ?? attachment.name,
 			type: downloadData?.downloadType ?? attachment.type
 		};
@@ -160,9 +143,84 @@ export default function Message(props: {
 	const stickerGroups = useMemo(() =>
 			groupArray(props.message.stickers, (sticker) => sticker.messageIndex),
 		[props.message.stickers]);
-	const tapbackGroups = useMemo(() =>
-			groupArray(props.message.tapbacks, (tapback) => tapback.messageIndex),
-		[props.message.tapbacks]);
+        const tapbackGroups = useMemo(() =>
+                        groupArray(props.message.tapbacks, (tapback) => tapback.messageIndex),
+                [props.message.tapbacks]);
+
+        const clearHoverTimeout = useCallback(() => {
+                if(hoverTimeout.current !== undefined) {
+                        clearTimeout(hoverTimeout.current);
+                        hoverTimeout.current = undefined;
+                }
+        }, []);
+
+        const updateTimestampPosition = useCallback(() => {
+                const container = messageStackRef.current;
+                const bubble = messagePartsRef.current;
+
+                if(container === null || bubble === null) {
+                        return;
+                }
+
+                const containerRect = container.getBoundingClientRect();
+                const bubbleRect = bubble.getBoundingClientRect();
+                const verticalCenter = bubbleRect.top - containerRect.top + bubbleRect.height / 2;
+                const offset = 8;
+
+                if(isOutgoing) {
+                        const left = bubbleRect.left - containerRect.left - offset;
+                        setTimestampPosition({
+                                top: verticalCenter,
+                                left,
+                                anchor: "left"
+                        });
+                } else {
+                        const left = bubbleRect.right - containerRect.left + offset;
+                        setTimestampPosition({
+                                top: verticalCenter,
+                                left,
+                                anchor: "right"
+                        });
+                }
+        }, [isOutgoing]);
+
+        const handleMouseEnter = useCallback(() => {
+                clearHoverTimeout();
+                setTimestampPosition(undefined);
+                hoverTimeout.current = setTimeout(() => {
+                        hoverTimeout.current = undefined;
+                        updateTimestampPosition();
+                        setShowTimestamp(true);
+                }, 600);
+        }, [clearHoverTimeout, updateTimestampPosition]);
+
+        const handleMouseLeave = useCallback(() => {
+                clearHoverTimeout();
+                setShowTimestamp(false);
+        }, [clearHoverTimeout]);
+
+        useEffect(() => {
+                if(!showTimestamp) {
+                        return;
+                }
+
+                const handleResize = () => {
+                        updateTimestampPosition();
+                };
+
+                updateTimestampPosition();
+                window.addEventListener("resize", handleResize);
+
+                return () => {
+                        window.removeEventListener("resize", handleResize);
+                };
+        }, [showTimestamp, updateTimestampPosition]);
+
+        useEffect(() => {
+                return () => {
+                        clearHoverTimeout();
+                };
+        }, [clearHoverTimeout]);
 	
 	//Build message parts
 	const messagePartsArray: React.ReactNode[] = [];
@@ -236,8 +294,7 @@ export default function Message(props: {
                 <MessageStack
                         direction="column"
                         amLinked={props.flow.anchorTop}
-                        onMouseEnter={handleMouseEnter}
-                        onMouseLeave={handleMouseLeave}
+                        ref={messageStackRef}
                         data-message-guid={props.message.guid}
                         data-message-server-id={props.message.serverID !== undefined ? props.message.serverID.toString() : undefined}>
 			{/* Time divider */}
@@ -265,10 +322,10 @@ export default function Message(props: {
 			)}
 			
 			{/* Horizontal message split */}
-                        <Stack
-                                direction="row"
-                                alignItems="flex-start"
-                                flexShrink={0}>
+			<Stack
+				direction="row"
+				alignItems="flex-start"
+				flexShrink={0}>
 				{/* User avatar */}
 				<Avatar
 					sx={{
@@ -283,50 +340,17 @@ export default function Message(props: {
 					src={personData?.avatar} />
 				
 				{/* Message parts */}
-        <Stack
-                sx={(theme) => ({
-                        marginLeft: theme.spacing(1)
-                })}
-                flexGrow={1}
-                direction="column"
-                alignItems={isOutgoing ? "end" : "start"}>
-                <Stack
-                        direction="row"
-                        alignItems="center"
-                        justifyContent={isOutgoing ? "flex-end" : "flex-start"}
-                        sx={{width: "100%"}}>
-                        <Stack
-                                direction="column"
-                                spacing={getBubbleSpacing(false)}
-                                alignItems={isOutgoing ? "end" : "start"}
-                                sx={{order: isOutgoing ? 1 : 0}}>
-                                {messagePartsArray}
-                        </Stack>
-
-                        <Fade
-                                in={showTimestamp}
-                                timeout={150}
-                                unmountOnExit
-                                style={{
-                                        pointerEvents: "none",
-                                        order: isOutgoing ? 0 : 1,
-                                        display: "flex"
-                                }}>
-                                <Typography
-                                        variant="caption"
-                                        color="textSecondary"
-                                        sx={(theme) => ({
-                                                marginRight: isOutgoing ? theme.spacing(0.75) : undefined,
-                                                marginLeft: isOutgoing ? undefined : theme.spacing(0.75),
-                                                opacity: 0.72,
-                                                pointerEvents: "none",
-                                                whiteSpace: "nowrap"
-                                        })}>
-                                        {formattedTimestamp}
-                                </Typography>
-                        </Fade>
-                </Stack>
-        </Stack>
+                                <Stack
+                                        ref={messagePartsRef}
+                                        onMouseEnter={handleMouseEnter}
+                                        onMouseLeave={handleMouseLeave}
+                                        sx={{marginLeft: 1}}
+                                        gap={getBubbleSpacing(false)}
+                                        flexGrow={1}
+                                        direction="column"
+                                        alignItems={isOutgoing ? "end" : "start"}>
+                                        {messagePartsArray}
+                                </Stack>
 				
 				{/* Progress spinner */}
 				{props.message.progress !== undefined
@@ -352,11 +376,11 @@ export default function Message(props: {
 						<ErrorRounded />
 					</IconButton>
 				)}
-                        </Stack>
-
-                        {/* Message status */}
-                        {props.showStatus && (
-                                <Typography
+			</Stack>
+			
+			{/* Message status */}
+			{props.showStatus && (
+				<Typography
 					marginTop={0.5}
 					textAlign="end"
 					variant="caption"
@@ -364,7 +388,29 @@ export default function Message(props: {
 					{getStatusString(props.message)}
 				</Typography>
 			)}
-		</MessageStack>
+                        {timestampPosition !== undefined && (
+                                <Fade in={showTimestamp} timeout={{enter: 150, exit: 100}} mountOnEnter unmountOnExit>
+                                        <Typography
+                                                variant="caption"
+                                                color="textSecondary"
+                                                sx={{
+                                                        position: "absolute",
+                                                        pointerEvents: "none",
+                                                        opacity: 0.72,
+                                                        zIndex: 1,
+                                                        top: timestampPosition.top,
+                                                        left: timestampPosition.left,
+                                                        transform: timestampPosition.anchor === "left"
+                                                                ? "translate(-100%, -50%)"
+                                                                : "translate(0, -50%)",
+                                                        whiteSpace: "nowrap"
+                                                }}
+                                        >
+                                                {formattedTimestamp}
+                                        </Typography>
+                                </Fade>
+                        )}
+                </MessageStack>
 		
 		{/* Message error dialog */}
 		<Dialog open={dialogState === MessageDialog.Error} onClose={closeDialog}>
