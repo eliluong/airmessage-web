@@ -283,14 +283,36 @@ export default function Message(props: {
 					src={personData?.avatar} />
 				
 				{/* Message parts */}
-				<Stack
-					sx={{marginLeft: 1}}
-					gap={getBubbleSpacing(false)}
-					flexGrow={1}
-					direction="column"
-					alignItems={isOutgoing ? "end" : "start"}>
-					{messagePartsArray}
-				</Stack>
+                                <Stack
+                                        sx={(theme) => ({
+                                                marginLeft: theme.spacing(1),
+                                                position: "relative"
+                                        })}
+                                        gap={getBubbleSpacing(false)}
+                                        flexGrow={1}
+                                        direction="column"
+                                        alignItems={isOutgoing ? "end" : "start"}>
+                                        {messagePartsArray}
+
+                                        <Fade in={showTimestamp} timeout={150} unmountOnExit style={{pointerEvents: "none"}}>
+                                                <Typography
+                                                        variant="caption"
+                                                        color="textSecondary"
+                                                        sx={(theme) => ({
+                                                                position: "absolute",
+                                                                top: "50%",
+                                                                transform: "translateY(-50%)",
+                                                                right: isOutgoing ? `calc(100% + ${theme.spacing(1)})` : undefined,
+                                                                left: isOutgoing ? undefined : `calc(100% + ${theme.spacing(1)})`,
+                                                                opacity: 0.72,
+                                                                pointerEvents: "none",
+                                                                whiteSpace: "nowrap",
+                                                                zIndex: 1
+                                                        })}>
+                                                        {formattedTimestamp}
+                                                </Typography>
+                                        </Fade>
+                                </Stack>
 				
 				{/* Progress spinner */}
 				{props.message.progress !== undefined
@@ -317,22 +339,6 @@ export default function Message(props: {
 					</IconButton>
 				)}
                         </Stack>
-
-                        <Fade in={showTimestamp} timeout={150} unmountOnExit style={{pointerEvents: "none"}}>
-                                <Typography
-                                        variant="caption"
-                                        color="textSecondary"
-                                        sx={(theme) => ({
-                                                position: "absolute",
-                                                top: theme.spacing(0.5),
-                                                right: isOutgoing ? theme.spacing(1) : undefined,
-                                                left: isOutgoing ? undefined : theme.spacing(1),
-                                                opacity: 0.72,
-                                                pointerEvents: "none"
-                                        })}>
-                                        {formattedTimestamp}
-                                </Typography>
-                        </Fade>
 
                         {/* Message status */}
                         {props.showStatus && (
