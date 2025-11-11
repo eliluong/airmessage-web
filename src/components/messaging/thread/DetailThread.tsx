@@ -411,16 +411,34 @@ export default function DetailThread({conversation, focusTarget}: {
                                         } as MessageItem;
                                 } else if(isModifierTapback(modifier)) {
                                         const pendingTapbacks = [...matchedItem.tapbacks];
-                                        const matchingTapbackIndex = pendingTapbacks.findIndex((tapback) => tapback.sender === modifier.sender);
-                                        if(matchingTapbackIndex !== -1) {
-                                                const existingTapback = pendingTapbacks[matchingTapbackIndex];
-                                                const tapbackChanged = existingTapback.isAddition !== modifier.isAddition || existingTapback.tapbackType !== modifier.tapbackType;
-                                                if(!tapbackChanged) continue;
+                                        const matchingTapbackIndex = pendingTapbacks.findIndex((tapback) =>
+                                                tapback.sender === modifier.sender
+                                                && tapback.tapbackType === modifier.tapbackType
+                                                && tapback.messageIndex === modifier.messageIndex
+                                        );
 
-                                                pendingTapbacks[matchingTapbackIndex] = modifier;
-                                        } else {
-                                                pendingTapbacks.push(modifier);
+                                        let tapbacksMutated = false;
+                                        if(modifier.isAddition) {
+                                                if(matchingTapbackIndex !== -1) {
+                                                        const existingTapback = pendingTapbacks[matchingTapbackIndex];
+                                                        const tapbackChanged = existingTapback.isAddition !== modifier.isAddition
+                                                                || existingTapback.tapbackType !== modifier.tapbackType
+                                                                || existingTapback.messageIndex !== modifier.messageIndex
+                                                                || existingTapback.sender !== modifier.sender;
+                                                        if(tapbackChanged) {
+                                                                pendingTapbacks[matchingTapbackIndex] = modifier;
+                                                                tapbacksMutated = true;
+                                                        }
+                                                } else {
+                                                        pendingTapbacks.push(modifier);
+                                                        tapbacksMutated = true;
+                                                }
+                                        } else if(matchingTapbackIndex !== -1) {
+                                                pendingTapbacks.splice(matchingTapbackIndex, 1);
+                                                tapbacksMutated = true;
                                         }
+
+                                        if(!tapbacksMutated) continue;
 
                                         ensurePendingItems();
                                         pendingItemArray[matchingIndex] = {
