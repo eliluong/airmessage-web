@@ -1,18 +1,45 @@
 @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@100;300;400;500;700;900&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@700&display=swap');
 
+/* Emoji webfont: COLRv1 (Chrome 98+).
+   Use a unique family name so we don't collide with any OS-installed "Noto Color Emoji".
+   Restrict coverage to emoji ranges to prevent wide spaces (U+0020) and other non-emoji glyphs. */
+@font-face {
+  font-family: "Noto Emoji COLRv1";
+  src:
+	url("/fonts/noto-glyf_colr_1.woff2") format("woff2"),
+    url("/fonts/noto-glyf_colr_1.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  /* Emoji-only coverage (critically: do NOT include U+0020 or digits). */
+  unicode-range:
+    U+200D, U+FE0F,                 /* ZWJ + VS16 for emoji presentation */
+    U+1F1E6-1F1FF,                  /* flags */
+    U+1F300-1F5FF, U+1F600-1F64F,   /* symbols & emoticons */
+    U+1F680-1F6FF, U+1F700-1F77F,
+    U+1F780-1F7FF, U+1F800-1F8FF,
+    U+1F900-1F9FF, U+1FA70-1FAFF,
+    U+2600-26FF, U+2700-27BF;
+}
+
 html, body, #root {
 	width: 100%;
 	height: 100%;
 }
 
 body {
-	margin: 0;
-	/* font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-	'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-	sans-serif; */
-	-webkit-font-smoothing: antialiased;
-	-moz-osx-font-smoothing: grayscale;
+        margin: 0;
+        /* font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+        'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+        sans-serif; */
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        /* Keep text fonts first; emoji font last (limited via unicode-range) */
+        font-family:
+          "Noto Emoji COLRv1", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+		  Arial, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol",
+          sans-serif;
 }
 
 code {

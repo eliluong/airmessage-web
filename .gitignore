@@ -300,6 +300,10 @@ $RECYCLE.BIN/
 /webpack.key
 /windows/AirMessageWindows/AirMessageWindows/webassets
 
+# Local emoji font assets (user-supplied)
+public/fonts/*
+!public/fonts/.gitkeep
+
 
 
 
