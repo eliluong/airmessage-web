@@ -431,7 +431,7 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                         with: ["attachments", "chat"],
                         offset: 0
                 };
-                if(this.lastMessageTimestamp) {
+                if(this.lastMessageTimestamp !== undefined) {
                         payload.after = this.lastMessageTimestamp;
                 }
 
@@ -439,7 +439,8 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 if(!response.data || response.data.length === 0) return;
 
                 const sorted = response.data.sort((a, b) => a.dateCreated - b.dateCreated);
-                this.lastMessageTimestamp = sorted[sorted.length - 1].dateCreated;
+                const latestTimestamp = sorted[sorted.length - 1].dateCreated;
+                this.lastMessageTimestamp = Math.max(this.lastMessageTimestamp ?? latestTimestamp, latestTimestamp);
                 const {items, modifiers} = this.processMessages(sorted);
                 if(items.length > 0) {
                         const newestFirstItems = items.slice().reverse();
@@ -521,7 +522,10 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 const response: MessageQueryResponse = await queryMessages(this.auth, payload);
                 const ordered = response.data.slice().sort((a, b) => b.dateCreated - a.dateCreated);
                 if(direction === "latest" && ordered.length > 0) {
-                        this.lastMessageTimestamp = ordered[0].dateCreated;
+                        const newestTimestamp = ordered[0].dateCreated;
+                        if(this.lastMessageTimestamp === undefined || newestTimestamp > this.lastMessageTimestamp) {
+                                this.lastMessageTimestamp = newestTimestamp;
+                        }
                 }
                 const processed = this.processMessages(ordered);
                 const metadata = this.buildThreadMetadata(processed.items);
