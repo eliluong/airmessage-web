@@ -156,26 +156,47 @@ export default function Message(props: {
 
         const updateTimestampPosition = useCallback(() => {
                 const container = messageStackRef.current;
-                const bubble = messageBubbleRef.current;
+                const bubbleContainer = messageBubbleRef.current;
 
-                if(container === null || bubble === null) {
+                if(container === null || bubbleContainer === null) {
+                        return;
+                }
+
+                const bubbleChildren = Array.from(bubbleContainer.children) as HTMLElement[];
+                const meaningfulRects = bubbleChildren
+                        .map((element) => element.getBoundingClientRect())
+                        .filter((rect) => rect.width > 0 && rect.height > 0);
+
+                if(meaningfulRects.length === 0) {
                         return;
                 }
 
                 const containerRect = container.getBoundingClientRect();
-                const bubbleRect = bubble.getBoundingClientRect();
-                const verticalCenter = bubbleRect.top - containerRect.top + bubbleRect.height / 2;
+                let minTop = meaningfulRects[0].top;
+                let maxBottom = meaningfulRects[0].bottom;
+                let minLeft = meaningfulRects[0].left;
+                let maxRight = meaningfulRects[0].right;
+
+                for(let i = 1; i < meaningfulRects.length; i += 1) {
+                        const rect = meaningfulRects[i];
+                        minTop = Math.min(minTop, rect.top);
+                        maxBottom = Math.max(maxBottom, rect.bottom);
+                        minLeft = Math.min(minLeft, rect.left);
+                        maxRight = Math.max(maxRight, rect.right);
+                }
+
+                const verticalCenter = (minTop + maxBottom) / 2 - containerRect.top;
                 const offset = 8;
 
                 if(isOutgoing) {
-                        const left = bubbleRect.left - containerRect.left - offset;
+                        const left = minLeft - containerRect.left - offset;
                         setTimestampPosition({
                                 top: verticalCenter,
                                 left,
                                 anchor: "left"
                         });
                 } else {
-                        const left = bubbleRect.right - containerRect.left + offset;
+                        const left = maxRight - containerRect.left + offset;
                         setTimestampPosition({
                                 top: verticalCenter,
                                 left,
@@ -353,8 +374,7 @@ export default function Message(props: {
                                                 direction="column"
                                                 alignItems={isOutgoing ? "end" : "start"}
                                                 sx={{
-                                                        display: "inline-flex",
-                                                        maxWidth: "100%"
+                                                        width: "100%"
                                                 }}>
                                                 {messagePartsArray}
                                         </Stack>
