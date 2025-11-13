@@ -312,3 +312,123 @@ describe("processMessages SMS tapbacks", () => {
                 expect(tapback.tapbackType).toBe(TapbackType.Like);
         });
 });
+
+describe("processMessages tapback deduplication", () => {
+        class InlineProxy extends DataProxy {
+                public override readonly proxyType = "inline";
+                public override start(): void {/* no-op */}
+                public override stop(): void {/* no-op */}
+                public override send(_data: ArrayBuffer, _encrypt: boolean): void {/* no-op */}
+        }
+
+        const auth: BlueBubblesAuthState = {serverUrl: "", accessToken: ""};
+        const chatGuid = "imessage-chat-guid";
+        const baseGuid = "imessage-base-guid";
+        const sender = "friend@example.com";
+
+        const createChat = (): ChatResponse => ({
+                originalROWID: 1,
+                guid: chatGuid,
+                participants: [],
+                style: 0,
+                chatIdentifier: chatGuid,
+                isArchived: false,
+                displayName: ""
+        } as ChatResponse);
+
+        const createHandle = (address: string): HandleResponse => ({
+                originalROWID: 1,
+                address,
+                service: "iMessage"
+        } as HandleResponse);
+
+        const createBaseMessage = (): MessageResponse => ({
+                originalROWID: 1,
+                guid: baseGuid,
+                text: "Hello",
+                handleId: 1,
+                otherHandle: 0,
+                chats: [createChat()],
+                attachments: [],
+                subject: "",
+                error: 0,
+                dateCreated: 1000,
+                dateRead: null,
+                dateDelivered: null,
+                isFromMe: false,
+                isArchived: false,
+                itemType: 0,
+                groupTitle: null,
+                groupActionType: 0,
+                balloonBundleId: null,
+                associatedMessageGuid: null,
+                associatedMessageType: null,
+                expressiveSendStyleId: null,
+                handle: createHandle(sender)
+        } as MessageResponse);
+
+        let tapbackCounter = 0;
+
+        const createTapbackMessage = (identifier: string, overrides: Partial<MessageResponse> = {}): MessageResponse => ({
+                originalROWID: 2,
+                guid: overrides.guid ?? `tapback-${identifier}-${tapbackCounter++}`,
+                text: "",
+                handleId: 2,
+                otherHandle: 0,
+                chats: [createChat()],
+                attachments: [],
+                subject: "",
+                error: 0,
+                dateCreated: 1_500,
+                dateRead: null,
+                dateDelivered: null,
+                isFromMe: false,
+                isArchived: false,
+                itemType: 0,
+                groupTitle: null,
+                groupActionType: 0,
+                balloonBundleId: null,
+                associatedMessageGuid: baseGuid,
+                associatedMessageType: identifier,
+                expressiveSendStyleId: null,
+                handle: createHandle(sender),
+                ...overrides
+        } as MessageResponse);
+
+        const createManager = () => new BlueBubblesCommunicationsManager(new InlineProxy(), auth);
+
+        const invokeProcessMessages = (manager: BlueBubblesCommunicationsManager, messages: MessageResponse[]) =>
+                (manager as unknown as {processMessages(batch: MessageResponse[]): {items: unknown[]; modifiers: unknown[]}})
+                        .processMessages(messages);
+
+        it("only emits additions for the first matching tapback", () => {
+                const manager = createManager();
+                invokeProcessMessages(manager, [createBaseMessage()]);
+
+                const firstAddition = createTapbackMessage("love", {guid: "tapback-love-1"});
+                const secondAddition = createTapbackMessage("love", {guid: "tapback-love-2"});
+
+                const {modifiers: firstModifiers} = invokeProcessMessages(manager, [firstAddition]);
+                const {modifiers: duplicateModifiers} = invokeProcessMessages(manager, [secondAddition]);
+
+                expect(firstModifiers).toHaveLength(1);
+                expect(duplicateModifiers).toHaveLength(0);
+        });
+
+        it("only emits removals when the tapback existed", () => {
+                const manager = createManager();
+                invokeProcessMessages(manager, [createBaseMessage()]);
+
+                const addition = createTapbackMessage("love", {guid: "tapback-love-add"});
+                invokeProcessMessages(manager, [addition]);
+
+                const firstRemoval = createTapbackMessage("-love", {guid: "tapback-love-removal-1"});
+                const duplicateRemoval = createTapbackMessage("-love", {guid: "tapback-love-removal-2"});
+
+                const {modifiers: removalModifiers} = invokeProcessMessages(manager, [firstRemoval]);
+                const {modifiers: duplicateRemovalModifiers} = invokeProcessMessages(manager, [duplicateRemoval]);
+
+                expect(removalModifiers).toHaveLength(1);
+                expect(duplicateRemovalModifiers).toHaveLength(0);
+        });
+});

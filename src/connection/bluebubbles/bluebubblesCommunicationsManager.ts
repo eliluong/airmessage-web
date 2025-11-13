@@ -622,7 +622,6 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                                                 tapbackType: smsTapback.tapbackType
                                         } as TapbackItem;
                                         pendingReactions.push({messageGuid: targetGuid, tapback});
-                                        modifiers.push(tapback);
                                         continue;
                                 }
                                 console.warn("[BlueBubbles] Unable to resolve SMS tapback target", {
@@ -642,7 +641,6 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                                                 sender: tapback.sender
                                         });
                                         pendingReactions.push({messageGuid: tapback.messageGuid, tapback});
-                                        modifiers.push(tapback);
                                 }
                                 continue;
                         }
@@ -657,11 +655,20 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                                 for(const pending of pendingReactions) {
                                         const tapbacks = this.tapbackCache.get(pending.messageGuid) ?? [];
                                         const existingIndex = tapbacks.findIndex((tap) => tap.sender === pending.tapback.sender && tap.tapbackType === pending.tapback.tapbackType);
+                                        let didChange = false;
                                         if(pending.tapback.isAddition) {
-                                                if(existingIndex === -1) tapbacks.push(pending.tapback);
-                                                else tapbacks[existingIndex] = pending.tapback;
+                                                if(existingIndex === -1) {
+                                                        tapbacks.push(pending.tapback);
+                                                        didChange = true;
+                                                } else {
+                                                        tapbacks[existingIndex] = pending.tapback;
+                                                }
                                         } else if(existingIndex !== -1) {
                                                 tapbacks.splice(existingIndex, 1);
+                                                didChange = true;
+                                        }
+                                        if(didChange) {
+                                                modifiers.push(pending.tapback);
                                         }
                                         this.tapbackCache.set(pending.messageGuid, tapbacks);
                                 }
