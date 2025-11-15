@@ -54,6 +54,7 @@ const DEFAULT_THREAD_PAGE_SIZE = 50;
 const TAPBACK_ADD_OFFSET = 2000;
 const TAPBACK_REMOVE_OFFSET = 3000;
 const SMS_TAPBACK_CACHE_LIMIT = 50;
+const REACTION_GUID_CACHE_LIMIT = 5000;
 
 const SQLITE_LIKE_SPECIAL_CHARS = /[%_\[]/g;
 
@@ -116,6 +117,8 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
         private lastMessageTimestamp: number | undefined;
         private readonly tapbackCache = new Map<string, TapbackItem[]>();
         private readonly smsTapbackCache = new Map<string, SmsTapbackCacheEntry>();
+        private readonly reactionGuidQueue: string[] = [];
+        private readonly reactionGuidSet = new Set<string>();
         private supportsDeliveredReceipts = false;
         private supportsReadReceipts = false;
         private readonly conversationGuidCache = new Map<string, string>();
@@ -635,6 +638,9 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                                 ? parseSmsTapback(message)
                                 : undefined;
                         if(smsTapback) {
+                                if(this.hasSeenReaction(message.guid)) {
+                                        continue;
+                                }
                                 const targetGuid = this.resolveSmsTapbackTargetGuid(message, smsTapback, messages);
                                 if(targetGuid) {
                                         const tapback: TapbackItem = {
@@ -645,6 +651,7 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                                                 isAddition: smsTapback.isAddition,
                                                 tapbackType: smsTapback.tapbackType
                                         } as TapbackItem;
+                                        this.markReactionSeen(message.guid);
                                         pendingReactions.push({messageGuid: targetGuid, tapback});
                                         modifiers.push(tapback);
                                         continue;
@@ -656,6 +663,9 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                                 });
                         }
                         if(isReactionMessage(message)) {
+                                if(this.hasSeenReaction(message.guid)) {
+                                        continue;
+                                }
                                 const tapback = mapTapback(message);
                                 if(tapback) {
                                         logBlueBubblesDebug("Tapback", {
@@ -665,6 +675,7 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                                                 isAddition: tapback.isAddition,
                                                 sender: tapback.sender
                                         });
+                                        this.markReactionSeen(message.guid);
                                         pendingReactions.push({messageGuid: tapback.messageGuid, tapback});
                                         modifiers.push(tapback);
                                 }
@@ -706,6 +717,22 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 }
 
                 return {items, modifiers};
+        }
+
+        private hasSeenReaction(guid: string | undefined): boolean {
+                return guid !== undefined && this.reactionGuidSet.has(guid);
+        }
+
+        private markReactionSeen(guid: string | undefined): void {
+                if(!guid || this.reactionGuidSet.has(guid)) return;
+
+                this.reactionGuidSet.add(guid);
+                this.reactionGuidQueue.push(guid);
+
+                if(this.reactionGuidQueue.length > REACTION_GUID_CACHE_LIMIT) {
+                        const oldest = this.reactionGuidQueue.shift();
+                        if(oldest) this.reactionGuidSet.delete(oldest);
+                }
         }
 
         private convertMessage(message: MessageResponse): ConversationItem | undefined {
