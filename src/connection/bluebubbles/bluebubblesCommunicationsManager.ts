@@ -109,8 +109,10 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
         private readonly auth: BlueBubblesAuthState;
         private metadata: ServerMetadataResponse | undefined;
         private pollTimer: ReturnType<typeof setInterval> | undefined;
+        private pollInFlight = false;
         private hasStartedPolling = false;
         private isClosed = false;
+        private lastRowId: number | undefined;
         private lastMessageTimestamp: number | undefined;
         private readonly tapbackCache = new Map<string, TapbackItem[]>();
         private readonly smsTapbackCache = new Map<string, SmsTapbackCacheEntry>();
@@ -371,6 +373,7 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 this.hasStartedPolling = false;
                 this.conversationGuidCache.clear();
                 this.clearSmsTapbackCache();
+                this.lastRowId = undefined;
                 this.lastMessageTimestamp = undefined;
                 try {
                         this.metadata = await fetchServerMetadata(this.auth);
@@ -425,29 +428,50 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
         }
 
         private async pollUpdates() {
+                if(this.pollInFlight) return;
+                this.pollInFlight = true;
                 const payload: Record<string, unknown> = {
                         sort: "DESC",
                         limit: DEFAULT_THREAD_PAGE_SIZE,
                         with: ["attachments", "chat"],
                         offset: 0
                 };
-                if(this.lastMessageTimestamp !== undefined) {
+                if(this.lastRowId !== undefined) {
+                        payload.where = [
+                                {
+                                        statement: "message.ROWID > :rowid",
+                                        args: {rowid: this.lastRowId}
+                                }
+                        ];
+                } else if(this.lastMessageTimestamp !== undefined) {
                         payload.after = this.lastMessageTimestamp;
                 }
 
-                const response = await queryMessages(this.auth, payload);
-                if(!response.data || response.data.length === 0) return;
+                try {
+                        const response = await queryMessages(this.auth, payload);
+                        if(!response.data || response.data.length === 0) return;
 
-                const sorted = response.data.sort((a, b) => a.dateCreated - b.dateCreated);
-                const latestTimestamp = sorted[sorted.length - 1].dateCreated;
-                this.lastMessageTimestamp = Math.max(this.lastMessageTimestamp ?? latestTimestamp, latestTimestamp);
-                const {items, modifiers} = this.processMessages(sorted);
-                if(items.length > 0) {
-                        const newestFirstItems = items.slice().reverse();
-                        this.listener?.onMessageUpdate(newestFirstItems);
-                }
-                if(modifiers.length > 0) {
-                        this.listener?.onModifierUpdate(modifiers);
+                        const sorted = response.data.sort((a, b) => a.dateCreated - b.dateCreated);
+                        const latestTimestamp = sorted[sorted.length - 1].dateCreated;
+                        this.lastMessageTimestamp = Math.max(this.lastMessageTimestamp ?? latestTimestamp, latestTimestamp);
+                        const latestRowId = sorted.reduce(
+                                (max, message) => Math.max(max, message.originalROWID),
+                                this.lastRowId ?? Number.NEGATIVE_INFINITY
+                        );
+                        if(Number.isFinite(latestRowId)) {
+                                this.lastRowId = latestRowId;
+                        }
+
+                        const {items, modifiers} = this.processMessages(sorted);
+                        if(items.length > 0) {
+                                const newestFirstItems = items.slice().reverse();
+                                this.listener?.onMessageUpdate(newestFirstItems);
+                        }
+                        if(modifiers.length > 0) {
+                                this.listener?.onModifierUpdate(modifiers);
+                        }
+                } finally {
+                        this.pollInFlight = false;
                 }
         }
 
