@@ -15,19 +15,24 @@ interface Props {
         items: ConversationItem[];
         messageSubmitEmitter: EventEmitter<void>;
         onRequestHistory: () => void;
+        onRequestFuture: () => void;
         showHistoryLoader?: boolean;
+        showFutureLoader?: boolean;
         focusTarget?: ThreadFocusTarget;
 }
 
 interface State {
-        isInThreshold: boolean;
+        isHistoryInThreshold: boolean;
+        isFutureInThreshold: boolean;
 }
 
 const historyLoadScrollThreshold = 300;
+const futureLoadScrollThreshold = 300;
 
 export default class MessageList extends React.Component<Props, State> {
         state = {
-                isInThreshold: false
+                isHistoryInThreshold: false,
+                isFutureInThreshold: false
         };
 
         //Reference to the message scroll list element
@@ -46,23 +51,33 @@ export default class MessageList extends React.Component<Props, State> {
         private focusHighlightOriginalBoxShadow?: string;
 
         private readonly handleScroll = (event: React.UIEvent<HTMLDivElement, UIEvent>) => {
-                if(event.currentTarget.scrollTop < historyLoadScrollThreshold) {
-                        if(!this.state.isInThreshold) {
-                                this.setState({isInThreshold: true});
-                                this.props.onRequestHistory();
-                        }
-                } else {
-                        if(this.state.isInThreshold) {
-                                this.setState({isInThreshold: false});
-                        }
+                const element = event.currentTarget;
+                const nearTop = element.scrollTop < historyLoadScrollThreshold;
+                const nearBottom = (element.scrollHeight - element.scrollTop - element.clientHeight)
+                        < futureLoadScrollThreshold;
+
+                if(nearTop && !this.state.isHistoryInThreshold) {
+                        this.props.onRequestHistory();
+                }
+                if(nearBottom && !this.state.isFutureInThreshold) {
+                        this.props.onRequestFuture();
+                }
+
+                if(nearTop !== this.state.isHistoryInThreshold || nearBottom !== this.state.isFutureInThreshold) {
+                        this.setState({
+                                isHistoryInThreshold: nearTop,
+                                isFutureInThreshold: nearBottom
+                        });
                 }
         };
 
         shouldComponentUpdate(nextProps: Readonly<Props>, nextState: Readonly<State>): boolean {
                 const focusChanged = !areFocusTargetsEqual(nextProps.focusTarget, this.props.focusTarget);
-                return nextState.isInThreshold !== this.state.isInThreshold
+                return nextState.isHistoryInThreshold !== this.state.isHistoryInThreshold
+                        || nextState.isFutureInThreshold !== this.state.isFutureInThreshold
                         || nextProps.items !== this.props.items
                         || nextProps.showHistoryLoader !== this.props.showHistoryLoader
+                        || nextProps.showFutureLoader !== this.props.showFutureLoader
                         || nextProps.conversation !== this.props.conversation
                         || nextProps.messageSubmitEmitter !== this.props.messageSubmitEmitter
                         || focusChanged;
@@ -102,14 +117,15 @@ export default class MessageList extends React.Component<Props, State> {
 				overflowY: "scroll",
 				scrollBehavior: "smooth"
 			}} ref={this.scrollRef} onScroll={this.handleScroll}>
-				<Stack sx={{
-					width: "100%",
-					maxWidth: "1000px",
-					marginX: "auto"
-				}} direction="column-reverse">
-					{this.props.items.map((item, i, array) => {
-						if(item.itemType === ConversationItemType.Message) {
-							return (
+                                <Stack sx={{
+                                        width: "100%",
+                                        maxWidth: "1000px",
+                                        marginX: "auto"
+                                }} direction="column-reverse">
+                                        {this.props.showFutureLoader && <HistoryLoadingProgress key="static-futureloader" />}
+                                        {this.props.items.map((item, i, array) => {
+                                                if(item.itemType === ConversationItemType.Message) {
+                                                        return (
 								<Message
 									key={(item.localID ?? item.guid)}
 									message={item}
@@ -133,9 +149,9 @@ export default class MessageList extends React.Component<Props, State> {
 						} else {
 							return null;
 						}
-					})}
-					
-					{this.props.showHistoryLoader && <HistoryLoadingProgress key="static-historyloader" />}
+                                        })}
+
+                                        {this.props.showHistoryLoader && <HistoryLoadingProgress key="static-historyloader" />}
 				</Stack>
 			</Box>
 		);
