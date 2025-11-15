@@ -51,10 +51,11 @@ export default class BrowserNotificationUtils extends NotificationUtils {
 		else displayTitle = `${title} • ${finalItemCount} new`;
 		
 		//Creating the notification
-		const notification = new Notification(displayTitle, {
-			body: getMessageDescription(messages[messages.length - 1]),
-			tag: chatGUID
-		});
+                const lastMessage = messages[messages.length - 1];
+                const notification = new Notification(displayTitle, {
+                        body: getMessageDescription(lastMessage),
+                        tag: chatGUID
+                });
 		
 		//Notify listeners when the notification is clicked
 		notification.onclick = () => {
@@ -69,11 +70,18 @@ export default class BrowserNotificationUtils extends NotificationUtils {
 		this.messageNotificationBacklog.set(chatGUID, [notification, finalItemCount]);
 		
 		//Playing a sound (limit to once every second)
-		if(!this.notificationSoundPlayed) {
-			playSoundNotification();
-			this.notificationSoundPlayed = true;
-			setTimeout(() => this.notificationSoundPlayed = false, 1000);
-		}
+                if(!this.notificationSoundPlayed) {
+                        playSoundNotification({
+                                type: "notification",
+                                conversationId: chatGUID,
+                                conversationLocalId: conversation.localID,
+                                conversationTitle: title,
+                                message: lastMessage,
+                                messages
+                        });
+                        this.notificationSoundPlayed = true;
+                        setTimeout(() => this.notificationSoundPlayed = false, 1000);
+                }
 	}
 	
 	dismissMessageNotifications(chatID: string) {

@@ -742,14 +742,19 @@ export default function DetailThread({conversation, focusTarget}: {
 		//Clear attachments
 		setAttachmentInput([]);
 		
-		if(addedItems.length > 0) {
-			//Notify message listeners
-			ConnectionManager.messageUpdateEmitter.notify(addedItems);
-			messageSubmitEmitter.current.notify();
-			
-			//Play a message sound
-			playSoundMessageOut();
-		}
+                if(addedItems.length > 0) {
+                        //Notify message listeners
+                        ConnectionManager.messageUpdateEmitter.notify(addedItems);
+                        messageSubmitEmitter.current.notify();
+
+                        //Play a message sound
+                        playSoundMessageOut({
+                                type: "messageOut",
+                                conversationId: conversation.localOnly ? undefined : conversation.guid,
+                                conversationLocalId: conversation.localID,
+                                messages: addedItems
+                        });
+                }
 	}, [displayState, conversation, registerUploadProgress, setMessageInput, setAttachmentInput, applyMessageError]);
 	
 	const startCall = useCallback(async () => {
