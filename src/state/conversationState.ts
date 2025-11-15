@@ -13,7 +13,7 @@ import {
         MixedConversationID,
         RemoteConversationID
 } from "shared/data/blocks";
-import {ConversationItemType, ConversationPreviewType, ParticipantActionType} from "shared/data/stateCodes";
+import {ConversationItemType, ConversationPreviewType, ParticipantActionType, TapbackType} from "shared/data/stateCodes";
 import {getPlatformUtils} from "shared/interface/platform/platformUtils";
 import {isModifierTapback, messageItemToConversationPreview} from "shared/util/conversationUtils";
 import * as ConnectionManager from "shared/connection/connectionManager";
@@ -44,6 +44,7 @@ export default function useConversationState(activeConversationID: LocalConversa
         const [requestedCount, setRequestedCount] = useState<number>(loadChunkSize);
         const [hasMoreServerResults, setHasMoreServerResults] = useState<boolean>(false);
         const pendingConversationDataMap = useRef(new Map<RemoteConversationID, ConversationItem[]>()).current;
+        const tapbackStateRef = useRef(new Map<string, Map<string, TapbackType>>());
 
         const peopleState = useContext(PeopleContext);
 
@@ -411,8 +412,34 @@ export default function useConversationState(activeConversationID: LocalConversa
                 if(!interactive) return;
 
                 const listener = (modifierArray: MessageModifier[]) => {
+                        const tapbackChanged = modifierArray.some((modifier) => {
+                                if(!isModifierTapback(modifier)) return false;
+
+                                const sender = modifier.sender ?? "";
+                                const messageState = tapbackStateRef.current.get(modifier.messageGuid) ?? new Map<string, TapbackType>();
+                                let shouldPlay = false;
+
+                                if(modifier.isAddition) {
+                                        const existingType = messageState.get(sender);
+                                        if(existingType !== modifier.tapbackType) {
+                                                shouldPlay = true;
+                                        }
+                                        messageState.set(sender, modifier.tapbackType);
+                                } else {
+                                        const existingType = messageState.get(sender);
+                                        if(existingType === modifier.tapbackType) {
+                                                messageState.delete(sender);
+                                        }
+                                }
+
+                                if(messageState.size > 0) tapbackStateRef.current.set(modifier.messageGuid, messageState);
+                                else tapbackStateRef.current.delete(modifier.messageGuid);
+
+                                return shouldPlay;
+                        });
+
                         //Play a tapback sound
-                        if(modifierArray.some((modifier) => isModifierTapback(modifier) && modifier.isAddition)) {
+                        if(tapbackChanged) {
                                 playSoundTapback({
                                         type: "tapback",
                                         modifiers: modifierArray
