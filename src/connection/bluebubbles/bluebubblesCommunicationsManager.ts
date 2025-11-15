@@ -593,6 +593,7 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
         private processMessages(messages: MessageResponse[]): {items: ConversationItem[]; modifiers: TapbackItem[]} {
                 const items: ConversationItem[] = [];
                 const pendingReactions: PendingReaction[] = [];
+                const tapbackStates = new Map<string, {before: TapbackItem[]; after: TapbackItem[]; changed: boolean}>();
                 const modifiers: TapbackItem[] = [];
                 for(const message of messages) {
                         const service = getMessageService(message);
@@ -622,7 +623,6 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                                                 tapbackType: smsTapback.tapbackType
                                         } as TapbackItem;
                                         pendingReactions.push({messageGuid: targetGuid, tapback});
-                                        modifiers.push(tapback);
                                         continue;
                                 }
                                 console.warn("[BlueBubbles] Unable to resolve SMS tapback target", {
@@ -642,7 +642,6 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                                                 sender: tapback.sender
                                         });
                                         pendingReactions.push({messageGuid: tapback.messageGuid, tapback});
-                                        modifiers.push(tapback);
                                 }
                                 continue;
                         }
@@ -655,15 +654,17 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
 
                 if(pendingReactions.length > 0) {
                                 for(const pending of pendingReactions) {
-                                        const tapbacks = this.tapbackCache.get(pending.messageGuid) ?? [];
-                                        const existingIndex = tapbacks.findIndex((tap) => tap.sender === pending.tapback.sender && tap.tapbackType === pending.tapback.tapbackType);
-                                        if(pending.tapback.isAddition) {
-                                                if(existingIndex === -1) tapbacks.push(pending.tapback);
-                                                else tapbacks[existingIndex] = pending.tapback;
-                                        } else if(existingIndex !== -1) {
-                                                tapbacks.splice(existingIndex, 1);
+                                        const state = this.getTapbackStateForMessage(tapbackStates, pending.messageGuid);
+                                        const changed = this.applyTapbackChange(state.after, pending.tapback);
+                                        state.changed = state.changed || changed;
+                                        if(changed) modifiers.push(pending.tapback);
+                                }
+
+                                for(const [messageGuid, state] of tapbackStates.entries()) {
+                                        if(state.changed) {
+                                                const tapbackSnapshot = state.after.slice();
+                                                this.tapbackCache.set(messageGuid, tapbackSnapshot);
                                         }
-                                        this.tapbackCache.set(pending.messageGuid, tapbacks);
                                 }
 
                                 for(let index = 0; index < items.length; index++) {
@@ -682,6 +683,39 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 }
 
                 return {items, modifiers};
+        }
+
+        private getTapbackStateForMessage(
+                tapbackStates: Map<string, {before: TapbackItem[]; after: TapbackItem[]; changed: boolean}>,
+                messageGuid: string
+        ): {before: TapbackItem[]; after: TapbackItem[]; changed: boolean} {
+                const existing = tapbackStates.get(messageGuid);
+                if(existing) return existing;
+
+                const tapbacks = this.tapbackCache.get(messageGuid) ?? [];
+                const state = {before: tapbacks, after: tapbacks.slice(), changed: false};
+                tapbackStates.set(messageGuid, state);
+                return state;
+        }
+
+        private applyTapbackChange(tapbacks: TapbackItem[], modifier: TapbackItem): boolean {
+                const sender = modifier.sender ?? "";
+                const existingIndex = tapbacks.findIndex((tap) => (tap.sender ?? "") === sender);
+                if(modifier.isAddition) {
+                        if(existingIndex !== -1) {
+                                const existing = tapbacks[existingIndex];
+                                if(existing.tapbackType === modifier.tapbackType) return false;
+                                tapbacks[existingIndex] = modifier;
+                        } else {
+                                tapbacks.push(modifier);
+                        }
+                        return true;
+                }
+
+                if(existingIndex === -1) return false;
+                if(tapbacks[existingIndex].tapbackType !== modifier.tapbackType) return false;
+                tapbacks.splice(existingIndex, 1);
+                return true;
         }
 
         private convertMessage(message: MessageResponse): ConversationItem | undefined {
