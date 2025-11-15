@@ -157,6 +157,10 @@ export interface AttachmentSendResponse {
         data: MessageResponse;
 }
 
+export interface SingleMessageResponse {
+        data: MessageResponse;
+}
+
 export interface ChatCreateResponse {
         data: ChatResponse;
 }

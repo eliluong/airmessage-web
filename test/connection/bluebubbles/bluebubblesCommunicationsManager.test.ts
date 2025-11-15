@@ -1,9 +1,162 @@
-import {MessageModifierType, MessageStatusCode, TapbackType} from "../../../src/data/stateCodes";
+jest.mock("../../../src/connection/bluebubbles/api", () => {
+        const actual = jest.requireActual("../../../src/connection/bluebubbles/api");
+        return {
+                ...actual,
+                fetchChats: jest.fn(),
+                fetchChat: jest.fn(),
+                fetchMessage: jest.fn()
+        };
+});
+
+import {ConversationPreviewType, MessageModifierType, MessageStatusCode, TapbackType} from "../../../src/data/stateCodes";
 import BlueBubblesCommunicationsManager from "../../../src/connection/bluebubbles/bluebubblesCommunicationsManager";
 import DataProxy from "../../../src/connection/dataProxy";
 import type {BlueBubblesAuthState} from "../../../src/connection/bluebubbles/session";
-import type {ChatResponse, HandleResponse, MessageResponse} from "../../../src/connection/bluebubbles/types";
+import type {
+        AttachmentResponse,
+        ChatQueryResponse,
+        ChatResponse,
+        HandleResponse,
+        MessageResponse,
+        SingleMessageResponse
+} from "../../../src/connection/bluebubbles/types";
 import {__testables} from "../../../src/connection/bluebubbles/bluebubblesCommunicationsManager";
+import type {ConversationPreviewMessage, LinkedConversation} from "../../../src/data/blocks";
+import * as api from "../../../src/connection/bluebubbles/api";
+import type {CommunicationsManagerListener} from "../../../src/connection/communicationsManager";
+
+class DummyProxy extends DataProxy {
+        public override readonly proxyType = "dummy";
+        public override start(): void {/* no-op */}
+        public override stop(): void {/* no-op */}
+        public override send(_data: ArrayBuffer, _encrypt: boolean): void {/* no-op */}
+}
+
+const auth: BlueBubblesAuthState = {serverUrl: "", accessToken: ""};
+
+const createAttachmentResponse = (overrides: Partial<AttachmentResponse> = {}): AttachmentResponse => ({
+        originalROWID: 1,
+        guid: "attachment-guid",
+        uti: "public.data",
+        mimeType: "application/octet-stream",
+        totalBytes: 1,
+        transferName: "file.bin",
+        ...overrides
+} as AttachmentResponse);
+
+const createMessageResponse = (overrides: Partial<MessageResponse> = {}): MessageResponse => ({
+        originalROWID: 1,
+        guid: "message-guid",
+        text: "",
+        handleId: 1,
+        otherHandle: 0,
+        subject: "",
+        error: 0,
+        dateCreated: 1_000,
+        dateRead: null,
+        dateDelivered: null,
+        isFromMe: false,
+        isArchived: false,
+        itemType: 0,
+        groupTitle: null,
+        groupActionType: 0,
+        balloonBundleId: null,
+        associatedMessageGuid: null,
+        associatedMessageType: null,
+        expressiveSendStyleId: null,
+        attachments: [],
+        handle: {
+                originalROWID: 2,
+                address: "friend@example.com",
+                service: "iMessage"
+        },
+        ...overrides
+} as MessageResponse);
+
+const createChatResponse = (overrides: Partial<ChatResponse> = {}): ChatResponse => ({
+        originalROWID: 1,
+        guid: "chat-guid",
+        participants: [],
+        style: 0,
+        chatIdentifier: "chat-guid",
+        isArchived: false,
+        displayName: "",
+        lastMessage: createMessageResponse(),
+        ...overrides
+} as ChatResponse);
+
+const flushPromises = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+function createListener(overrides: Partial<CommunicationsManagerListener> = {}): CommunicationsManagerListener {
+        return {
+                onOpen: jest.fn(),
+                onClose: jest.fn(),
+                onPacket: jest.fn(),
+                onMessageUpdate: jest.fn(),
+                onConversationUpdate: jest.fn(),
+                onModifierUpdate: jest.fn(),
+                onFileRequestStart: jest.fn(),
+                onFileRequestData: jest.fn(),
+                onFileRequestComplete: jest.fn(),
+                onFileRequestFail: jest.fn(),
+                onIDUpdate: jest.fn(),
+                onMessageConversations: jest.fn(),
+                onMessageThread: jest.fn(),
+                onSendMessageResponse: jest.fn(),
+                onCreateChatResponse: jest.fn(),
+                onSoftwareUpdateListing: jest.fn(),
+                onSoftwareUpdateInstall: jest.fn(),
+                onSoftwareUpdateError: jest.fn(),
+                onFaceTimeNewLink: jest.fn(),
+                onFaceTimeOutgoingCallInitiated: jest.fn(),
+                onFaceTimeOutgoingCallAccepted: jest.fn(),
+                onFaceTimeOutgoingCallRejected: jest.fn(),
+                onFaceTimeOutgoingCallError: jest.fn(),
+                onFaceTimeIncomingCall: jest.fn(),
+                onFaceTimeIncomingCallHandled: jest.fn(),
+                onFaceTimeIncomingCallError: jest.fn(),
+                ...overrides
+        };
+}
+
+describe("buildConversationPreview", () => {
+        const {buildConversationPreview} = __testables;
+
+        it("uses attachment MIME types when available", () => {
+                const preview = buildConversationPreview(createMessageResponse({
+                        attachments: [
+                                createAttachmentResponse({mimeType: "image/png", transferName: "IMG_1234.PNG"}),
+                                createAttachmentResponse({mimeType: "audio/aac", transferName: "voice.m4a", guid: "attachment-2"})
+                        ]
+                }));
+
+                expect(preview.type).toBe(ConversationPreviewType.Message);
+                expect((preview as ConversationPreviewMessage).attachments).toEqual(["image/png", "audio/aac"]);
+        });
+
+        it("infers attachment type from UTI when MIME type is missing", () => {
+                const preview = buildConversationPreview(createMessageResponse({
+                        attachments: [
+                                createAttachmentResponse({mimeType: "", uti: "public.jpeg", transferName: "IMG_0001.HEIC"})
+                        ]
+                }));
+
+                expect(preview.type).toBe(ConversationPreviewType.Message);
+                expect((preview as ConversationPreviewMessage).attachments).toEqual(["image/*"]);
+        });
+
+        it("falls back to the transfer name when MIME type is missing", () => {
+                const preview = buildConversationPreview(createMessageResponse({
+                        attachments: [
+                                createAttachmentResponse({mimeType: "", transferName: "unknown.dat"}),
+                                createAttachmentResponse({mimeType: "image/jpeg", transferName: "hide.jpg", hideAttachment: true, guid: "attachment-3"})
+                        ]
+                }));
+
+                expect(preview.type).toBe(ConversationPreviewType.Message);
+                expect((preview as ConversationPreviewMessage).attachments).toEqual(["unknown.dat"]);
+        });
+});
 
 describe("mapTapback", () => {
         const {mapTapback, normalizeMessageGuid} = __testables;
@@ -148,15 +301,101 @@ describe("computeMessageStatus", () => {
         });
 });
 
-describe("processMessages SMS tapbacks", () => {
-        class DummyProxy extends DataProxy {
-                public override readonly proxyType = "dummy";
-                public override start(): void {/* no-op */}
-                public override stop(): void {/* no-op */}
-                public override send(_data: ArrayBuffer, _encrypt: boolean): void {/* no-op */}
-        }
+describe("conversation preview hydration", () => {
+        const fetchChatsMock = jest.mocked(api.fetchChats);
+        const fetchMessageMock = jest.mocked(api.fetchMessage);
+        const messageGuid = "B19E6B85-08F8-4C51-9E3E-0A5C5D0C7E8F";
+        const chatGuid = "chat-guid";
 
-        const auth: BlueBubblesAuthState = {serverUrl: "", accessToken: ""};
+        const buildChatsResponse = (): ChatQueryResponse => ({
+                data: [createChatResponse({
+                        guid: chatGuid,
+                        lastMessage: createMessageResponse({
+                                guid: messageGuid,
+                                text: "",
+                                attachments: []
+                        })
+                })],
+                metadata: {count: 1, total: 1}
+        });
+
+        beforeEach(() => {
+                fetchChatsMock.mockReset();
+                fetchMessageMock.mockReset();
+        });
+
+        it("hydrates missing attachment previews by fetching message details", async () => {
+                fetchChatsMock.mockImplementation(async () => buildChatsResponse());
+                fetchMessageMock.mockResolvedValue({
+                        data: createMessageResponse({
+                                guid: messageGuid,
+                                text: "",
+                                attachments: [
+                                        createAttachmentResponse({mimeType: "image/jpeg", transferName: "IMG_0001.JPG"})
+                                ]
+                        })
+                } as SingleMessageResponse);
+
+                const manager = new BlueBubblesCommunicationsManager(new DummyProxy(), auth);
+                const onMessageConversations = jest.fn();
+                const onConversationUpdate = jest.fn();
+                manager.listener = createListener({onMessageConversations, onConversationUpdate});
+
+                await (manager as unknown as {fetchLiteConversations: (limit?: number) => Promise<void>}).fetchLiteConversations();
+
+                expect(onMessageConversations).toHaveBeenCalledTimes(1);
+                const initialConversation = onMessageConversations.mock.calls[0][0][0] as LinkedConversation;
+                expect(initialConversation.preview.type).toBe(ConversationPreviewType.Message);
+                expect((initialConversation.preview as ConversationPreviewMessage).attachments).toHaveLength(0);
+                expect(fetchMessageMock).toHaveBeenCalledWith(auth, messageGuid, expect.objectContaining({includeMetadata: true}));
+
+                await flushPromises();
+
+                expect(onConversationUpdate).toHaveBeenCalledTimes(1);
+                const [[, updatedConversation]] = onConversationUpdate.mock.calls[0][0];
+                expect(updatedConversation).toBeDefined();
+                const updatedPreview = (updatedConversation as LinkedConversation).preview;
+                expect(updatedPreview.type).toBe(ConversationPreviewType.Message);
+                expect((updatedPreview as ConversationPreviewMessage).attachments).toEqual(["image/jpeg"]);
+        });
+
+        it("reuses cached attachments on subsequent fetches", async () => {
+                fetchChatsMock.mockImplementation(async () => buildChatsResponse());
+                fetchMessageMock.mockResolvedValue({
+                        data: createMessageResponse({
+                                guid: messageGuid,
+                                text: "",
+                                attachments: [
+                                        createAttachmentResponse({mimeType: "image/jpeg", transferName: "IMG_0002.JPG"})
+                                ]
+                        })
+                } as SingleMessageResponse);
+
+                const manager = new BlueBubblesCommunicationsManager(new DummyProxy(), auth);
+                const onMessageConversations = jest.fn();
+                const onConversationUpdate = jest.fn();
+                manager.listener = createListener({onMessageConversations, onConversationUpdate});
+
+                await (manager as unknown as {fetchLiteConversations: (limit?: number) => Promise<void>}).fetchLiteConversations();
+                await flushPromises();
+
+                fetchMessageMock.mockClear();
+                onMessageConversations.mockClear();
+                onConversationUpdate.mockClear();
+
+                await (manager as unknown as {fetchLiteConversations: (limit?: number) => Promise<void>}).fetchLiteConversations();
+                await flushPromises();
+
+                expect(fetchMessageMock).not.toHaveBeenCalled();
+                expect(onConversationUpdate).not.toHaveBeenCalled();
+                expect(onMessageConversations).toHaveBeenCalledTimes(1);
+                const cachedConversation = onMessageConversations.mock.calls[0][0][0] as LinkedConversation;
+                expect(cachedConversation.preview.type).toBe(ConversationPreviewType.Message);
+                expect((cachedConversation.preview as ConversationPreviewMessage).attachments).toEqual(["image/jpeg"]);
+        });
+});
+
+describe("processMessages SMS tapbacks", () => {
         const chatGuid = "chat-guid";
 
         const createChat = (): ChatResponse => ({
