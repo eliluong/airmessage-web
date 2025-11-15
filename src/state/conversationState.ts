@@ -287,8 +287,9 @@ export default function useConversationState(activeConversationID: LocalConversa
 		if(interactive) {
 			//Map the active conversation ID to a server GUID
 			const activeConversation = conversations?.find((conversation) => conversation.localID === activeConversationID);
-			const activeConversationGUID: RemoteConversationID | undefined =
-				activeConversation !== undefined && !activeConversation.localOnly ? activeConversation.guid : undefined;
+                        const activeConversationGUID: RemoteConversationID | undefined =
+                                activeConversation !== undefined && !activeConversation.localOnly ? activeConversation.guid : undefined;
+                        let activeConversationUpdatedMessage: MessageItem | undefined;
 			
 			//Get if the window is focused
 			const hasFocus = await getPlatformUtils().hasFocus();
@@ -300,6 +301,7 @@ export default function useConversationState(activeConversationID: LocalConversa
                                         return false;
                                 }
 
+                                const messageItem = item as MessageItem;
                                 const conversationMixedID = getConversationItemMixedID(item);
                                 if(conversationMixedID !== undefined) {
                                         const lastPreviewDate = conversationPreviewDateMap.get(conversationMixedID);
@@ -308,7 +310,11 @@ export default function useConversationState(activeConversationID: LocalConversa
                                         }
                                 }
 
-                                return item.chatGuid === activeConversationGUID;
+                                const didUpdate = messageItem.chatGuid === activeConversationGUID;
+                                if(didUpdate) {
+                                        activeConversationUpdatedMessage = messageItem;
+                                }
+                                return didUpdate;
                         });
 			
 			//Collect messages that should cause a notification to be displayed
@@ -357,13 +363,21 @@ export default function useConversationState(activeConversationID: LocalConversa
                                 }).filter((entry): entry is [RemoteConversationID, MessageItem[]] => entry !== undefined)
                         );
 			
-			if(notificationMessages.size > 0) {
-				if(hasFocus) {
-					//If we have focus, play a notification sound
-					playSoundNotification();
-				} else {
-					//Otherwise show notifications
-					for(const [chatGUID, messages] of notificationMessages.entries()) {
+                        if(notificationMessages.size > 0) {
+                                const notificationContextEntries = Array.from(notificationMessages.entries()).map(([conversationId, messages]) => ({
+                                        conversationId,
+                                        messages
+                                }));
+                                if(hasFocus) {
+                                        //If we have focus, play a notification sound
+                                        playSoundNotification({
+                                                type: "notification",
+                                                notificationConversations: notificationContextEntries,
+                                                messages: notificationContextEntries.flatMap((entry) => entry.messages)
+                                        });
+                                } else {
+                                        //Otherwise show notifications
+                                        for(const [chatGUID, messages] of notificationMessages.entries()) {
 						//Finding the conversation
 						const conversation = conversations?.find((conversation): conversation is LinkedConversation => !conversation.localOnly && conversation.guid === chatGUID);
 						if(conversation === undefined) continue;
@@ -372,11 +386,17 @@ export default function useConversationState(activeConversationID: LocalConversa
 						getNotificationUtils().showMessageNotifications(conversation, messages, peopleState);
 					}
 				}
-			} else {
-				if(activeConversationUpdated) {
-					playSoundMessageIn();
-				}
-			}
+                        } else {
+                                if(activeConversationUpdated) {
+                                        playSoundMessageIn({
+                                                type: "messageIn",
+                                                conversationId: activeConversationGUID,
+                                                conversationLocalId: activeConversation?.localID,
+                                                message: activeConversationUpdatedMessage,
+                                                messages: activeConversationUpdatedMessage ? [activeConversationUpdatedMessage] : undefined
+                                        });
+                                }
+                        }
 		}
 	}, [activeConversationID, conversations, setConversations, pendingConversationDataMap, interactive, peopleState]);
 	
@@ -393,7 +413,10 @@ export default function useConversationState(activeConversationID: LocalConversa
                 const listener = (modifierArray: MessageModifier[]) => {
                         //Play a tapback sound
                         if(modifierArray.some((modifier) => isModifierTapback(modifier) && modifier.isAddition)) {
-                                playSoundTapback();
+                                playSoundTapback({
+                                        type: "tapback",
+                                        modifiers: modifierArray
+                                });
                         }
                 };
                 modifierUpdateEmitter.subscribe(listener);

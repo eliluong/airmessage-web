@@ -2,9 +2,14 @@
 const {pathsToModuleNameMapper} = require("ts-jest");
 const {compilerOptions} = require("./tsconfig.json");
 
+const pathModuleNameMapper = pathsToModuleNameMapper(compilerOptions.paths ?? {}, {prefix: "<rootDir>/"});
+
 /** @type {import('ts-jest/dist/types').InitialOptionsTsJest} */
 module.exports = {
   preset: "ts-jest",
   testEnvironment: "jsdom",
-  moduleNameMapper: pathsToModuleNameMapper(compilerOptions.paths ?? {}, {prefix: "<rootDir>/"}),
+  moduleNameMapper: {
+    '\\.(wav|mp3|ogg)$': '<rootDir>/test/__mocks__/fileMock.js',
+    ...pathModuleNameMapper,
+  },
 };
