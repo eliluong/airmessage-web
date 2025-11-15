@@ -746,11 +746,22 @@ export default function DetailThread({conversation, focusTarget}: {
 			//Notify message listeners
 			ConnectionManager.messageUpdateEmitter.notify(addedItems);
 			messageSubmitEmitter.current.notify();
-			
+
 			//Play a message sound
-			playSoundMessageOut();
+			const latestAddedMessage = addedItems[addedItems.length - 1];
+			playSoundMessageOut({
+				source: "DetailThread/sendMessage",
+				message: latestAddedMessage && {
+					guid: latestAddedMessage.guid,
+					chatGuid: latestAddedMessage.chatGuid,
+					text: latestAddedMessage.text,
+					date: latestAddedMessage.date,
+					direction: "outgoing"
+				},
+				messageCount: addedItems.length
+			});
 		}
-	}, [displayState, conversation, registerUploadProgress, setMessageInput, setAttachmentInput, applyMessageError]);
+		}, [displayState, conversation, registerUploadProgress, setMessageInput, setAttachmentInput, applyMessageError]);
 	
 	const startCall = useCallback(async () => {
 		await ConnectionManager.initiateFaceTimeCall(conversation.members);

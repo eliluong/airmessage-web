@@ -1,17 +1,18 @@
 import {useCallback, useContext, useEffect, useMemo, useRef, useState} from "react";
 import {
-        Conversation,
-        ConversationItem,
-        ConversationPreview,
-        getConversationItemMixedID,
-        isLocalConversationID,
-        isRemoteConversationID,
-        LinkedConversation,
-        LocalConversationID,
-        MessageItem,
-        MessageModifier,
-        MixedConversationID,
-        RemoteConversationID
+		Conversation,
+		ConversationItem,
+		ConversationPreview,
+		getConversationItemMixedID,
+		isLocalConversationID,
+		isRemoteConversationID,
+		LinkedConversation,
+		LocalConversationID,
+		MessageItem,
+		MessageModifier,
+		MixedConversationID,
+		RemoteConversationID,
+		TapbackItem
 } from "shared/data/blocks";
 import {ConversationItemType, ConversationPreviewType, ParticipantActionType} from "shared/data/stateCodes";
 import {getPlatformUtils} from "shared/interface/platform/platformUtils";
@@ -294,22 +295,24 @@ export default function useConversationState(activeConversationID: LocalConversa
 			const hasFocus = await getPlatformUtils().hasFocus();
 			
 			//Get whether a message is received in the currently selected conversation
-                        const activeConversationUpdated = hasFocus && newItems.some((item) => {
-                                //If the new item isn't an incoming message, ignore it
-                                if(item.itemType !== ConversationItemType.Message || item.sender === undefined) {
-                                        return false;
-                                }
+			const activeConversationUpdateMessage: MessageItem | undefined = hasFocus
+				? newItems.find((item): item is MessageItem => {
+					//If the new item isn't an incoming message, ignore it
+					if(item.itemType !== ConversationItemType.Message || item.sender === undefined) {
+						return false;
+					}
 
-                                const conversationMixedID = getConversationItemMixedID(item);
-                                if(conversationMixedID !== undefined) {
-                                        const lastPreviewDate = conversationPreviewDateMap.get(conversationMixedID);
-                                        if(lastPreviewDate !== undefined && item.date <= lastPreviewDate) {
-                                                return false;
-                                        }
-                                }
+					const conversationMixedID = getConversationItemMixedID(item);
+					if(conversationMixedID !== undefined) {
+						const lastPreviewDate = conversationPreviewDateMap.get(conversationMixedID);
+						if(lastPreviewDate !== undefined && item.date <= lastPreviewDate) {
+							return false;
+						}
+					}
 
-                                return item.chatGuid === activeConversationGUID;
-                        });
+					return item.chatGuid === activeConversationGUID;
+				})
+				: undefined;
 			
 			//Collect messages that should cause a notification to be displayed
 			const notificationMessages = new Map(
@@ -357,26 +360,57 @@ export default function useConversationState(activeConversationID: LocalConversa
                                 }).filter((entry): entry is [RemoteConversationID, MessageItem[]] => entry !== undefined)
                         );
 			
-			if(notificationMessages.size > 0) {
-				if(hasFocus) {
-					//If we have focus, play a notification sound
-					playSoundNotification();
+				if(notificationMessages.size > 0) {
+					if(hasFocus) {
+						//If we have focus, play a notification sound
+						let totalNotificationCount = 0;
+						let newestNotificationMessage: MessageItem | undefined;
+						for(const messages of notificationMessages.values()) {
+							totalNotificationCount += messages.length;
+							const candidate = messages[messages.length - 1];
+							if(candidate !== undefined && (newestNotificationMessage === undefined || candidate.date > newestNotificationMessage.date)) {
+								newestNotificationMessage = candidate;
+							}
+						}
+
+						playSoundNotification({
+							source: "conversationState/hasFocus",
+							message: newestNotificationMessage && {
+								guid: newestNotificationMessage.guid,
+								chatGuid: newestNotificationMessage.chatGuid,
+								sender: newestNotificationMessage.sender,
+								text: newestNotificationMessage.text,
+								date: newestNotificationMessage.date,
+								direction: "incoming"
+							},
+							messageCount: totalNotificationCount
+						});
+					} else {
+						//Otherwise show notifications
+						for(const [chatGUID, messages] of notificationMessages.entries()) {
+							//Finding the conversation
+							const conversation = conversations?.find((conversation): conversation is LinkedConversation => !conversation.localOnly && conversation.guid === chatGUID);
+							if(conversation === undefined) continue;
+
+							//Sending a notification
+							getNotificationUtils().showMessageNotifications(conversation, messages, peopleState);
+						}
+					}
 				} else {
-					//Otherwise show notifications
-					for(const [chatGUID, messages] of notificationMessages.entries()) {
-						//Finding the conversation
-						const conversation = conversations?.find((conversation): conversation is LinkedConversation => !conversation.localOnly && conversation.guid === chatGUID);
-						if(conversation === undefined) continue;
-						
-						//Sending a notification
-						getNotificationUtils().showMessageNotifications(conversation, messages, peopleState);
+					if(activeConversationUpdateMessage !== undefined) {
+						playSoundMessageIn({
+							source: "conversationState/activeConversation",
+							message: {
+								guid: activeConversationUpdateMessage.guid,
+								chatGuid: activeConversationUpdateMessage.chatGuid,
+								sender: activeConversationUpdateMessage.sender,
+								text: activeConversationUpdateMessage.text,
+								date: activeConversationUpdateMessage.date,
+								direction: "incoming"
+							}
+						});
 					}
 				}
-			} else {
-				if(activeConversationUpdated) {
-					playSoundMessageIn();
-				}
-			}
 		}
 	}, [activeConversationID, conversations, setConversations, pendingConversationDataMap, interactive, peopleState]);
 	
@@ -386,19 +420,30 @@ export default function useConversationState(activeConversationID: LocalConversa
 		return () => ConnectionManager.messageUpdateEmitter.unsubscribe(applyUpdateMessages);
 	}, [applyUpdateMessages]);
 	
-        //Subscribe to modifier updates
-        useEffect(() => {
-                if(!interactive) return;
+		//Subscribe to modifier updates
+		useEffect(() => {
+			if(!interactive) return;
 
-                const listener = (modifierArray: MessageModifier[]) => {
-                        //Play a tapback sound
-                        if(modifierArray.some((modifier) => isModifierTapback(modifier) && modifier.isAddition)) {
-                                playSoundTapback();
-                        }
-                };
-                modifierUpdateEmitter.subscribe(listener);
-                return () => modifierUpdateEmitter.unsubscribe(listener);
-        }, [interactive]);
+			const listener = (modifierArray: MessageModifier[]) => {
+				//Play a tapback sound
+				const tapbackModifier = modifierArray.find((modifier): modifier is TapbackItem => {
+					return isModifierTapback(modifier) && modifier.isAddition;
+				});
+				if(tapbackModifier !== undefined) {
+					playSoundTapback({
+						source: "conversationState/tapback",
+						message: {
+							guid: tapbackModifier.messageGuid,
+							sender: tapbackModifier.sender,
+							direction: "incoming"
+						},
+						reason: `Tapback ${tapbackModifier.tapbackType}`
+					});
+				}
+			};
+			modifierUpdateEmitter.subscribe(listener);
+			return () => modifierUpdateEmitter.unsubscribe(listener);
+		}, [interactive]);
 
         const visibleConversations = useMemo(() => {
                 if(conversations === undefined) return undefined;

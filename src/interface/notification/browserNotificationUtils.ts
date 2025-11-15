@@ -35,6 +35,7 @@ export default class BrowserNotificationUtils extends NotificationUtils {
 		//Getting the notification information
 		const itemCount = messages.length;
 		const chatGUID = conversation.guid;
+		const latestMessage = messages[messages.length - 1];
 		
 		//Getting the count from the backlog
 		let finalItemCount: number;
@@ -52,7 +53,7 @@ export default class BrowserNotificationUtils extends NotificationUtils {
 		
 		//Creating the notification
 		const notification = new Notification(displayTitle, {
-			body: getMessageDescription(messages[messages.length - 1]),
+			body: getMessageDescription(latestMessage),
 			tag: chatGUID
 		});
 		
@@ -70,10 +71,21 @@ export default class BrowserNotificationUtils extends NotificationUtils {
 		
 		//Playing a sound (limit to once every second)
 		if(!this.notificationSoundPlayed) {
-			playSoundNotification();
-			this.notificationSoundPlayed = true;
-			setTimeout(() => this.notificationSoundPlayed = false, 1000);
-		}
+			playSoundNotification({
+						source: "browserNotificationUtils/showMessageNotifications",
+						message: latestMessage && {
+							guid: latestMessage.guid,
+							chatGuid: latestMessage.chatGuid,
+							sender: latestMessage.sender,
+							text: latestMessage.text,
+							date: latestMessage.date,
+							direction: "incoming"
+						},
+						messageCount: finalItemCount
+					});
+					this.notificationSoundPlayed = true;
+					setTimeout(() => this.notificationSoundPlayed = false, 1000);
+				}
 	}
 	
 	dismissMessageNotifications(chatID: string) {
