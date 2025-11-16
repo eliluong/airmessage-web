@@ -141,22 +141,6 @@ function attachmentsMatch(left: AttachmentItem, right: AttachmentItem): boolean 
         if(right.guid !== undefined && left.checksum !== undefined && left.checksum === right.guid) return true;
         if(left.checksum !== undefined && right.checksum !== undefined && left.checksum === right.checksum) return true;
         if(left.localID !== undefined && right.localID !== undefined && left.localID === right.localID) return true;
-
-        const leftType = left.type.toLowerCase();
-        const rightType = right.type.toLowerCase();
-        if(leftType.startsWith("image/") && rightType.startsWith("image/")) {
-                const leftName = left.name.toLowerCase();
-                const rightName = right.name.toLowerCase();
-                const leftBaseName = leftName.substring(0, leftName.lastIndexOf(".")) || leftName;
-                const rightBaseName = rightName.substring(0, rightName.lastIndexOf(".")) || rightName;
-
-                if(leftBaseName === rightBaseName) return true;
-
-                const sizeDelta = Math.abs(left.size - right.size);
-                const percentageDelta = Math.min(left.size, right.size) * 0.05;
-                if(sizeDelta <= Math.max(2048, percentageDelta)) return true;
-        }
-
         return false;
 }
 
@@ -169,20 +153,8 @@ function mergeAttachmentsWithLocalData(
         }
 
         let changed = incomingAttachments.length !== existingAttachments.length;
-        const allowSingleImageFallback = (
-                incomingAttachments.length === 1
-                && existingAttachments.length === 1
-                && incomingAttachments[0].type.toLowerCase().startsWith("image/")
-                && existingAttachments[0].type.toLowerCase().startsWith("image/")
-        );
-        let fallbackUsed = false;
         const mergedAttachments = incomingAttachments.map((incomingAttachment) => {
-                let matchingExisting = existingAttachments.find((candidate) => attachmentsMatch(candidate, incomingAttachment));
-
-                if(!matchingExisting && allowSingleImageFallback && !fallbackUsed) {
-                        matchingExisting = existingAttachments[0];
-                        fallbackUsed = true;
-                }
+                const matchingExisting = existingAttachments.find((candidate) => attachmentsMatch(candidate, incomingAttachment));
 
                 if(!matchingExisting) {
                         changed = true;
