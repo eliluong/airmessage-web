@@ -11,7 +11,8 @@ import {
         MessageItem,
         MessageModifier,
         MixedConversationID,
-        RemoteConversationID
+        RemoteConversationID,
+        TapbackItem
 } from "shared/data/blocks";
 import {ConversationItemType, ConversationPreviewType, ParticipantActionType} from "shared/data/stateCodes";
 import {getPlatformUtils} from "shared/interface/platform/platformUtils";
@@ -413,7 +414,7 @@ export default function useConversationState(activeConversationID: LocalConversa
                 if(!interactive) return;
 
                 const listener = (modifierArray: MessageModifier[]) => {
-                        const tapbackAdditions = modifierArray.filter((modifier) => isModifierTapback(modifier) && modifier.isAddition);
+                        const tapbackAdditions = modifierArray.filter((modifier): modifier is TapbackItem => isModifierTapback(modifier) && modifier.isAddition);
                         if(tapbackAdditions.length === 0) return;
 
                         const newTapbackKeys = tapbackAdditions.reduce<string[]>((keys, modifier) => {
