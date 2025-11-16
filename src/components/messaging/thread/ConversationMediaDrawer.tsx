@@ -501,6 +501,36 @@ export default function ConversationMediaDrawer({
                 });
         }, [attachmentMap, open, snackbar, thumbnailMap]);
 
+        const maybeLoadAdditionalLinks = useCallback(() => {
+                if(!hasMoreLinks || isPaginatingLinks || isScanningLinks) return;
+                void loadMoreLinks();
+        }, [hasMoreLinks, isPaginatingLinks, isScanningLinks, loadMoreLinks]);
+
+        const showNextLinkChunk = useCallback(() => {
+                const totalAvailable = conversationLinks.length;
+                if(linkDisplayCount < totalAvailable) {
+                        const nextCount = Math.min(linkDisplayCount + LINK_RENDER_CHUNK, totalAvailable);
+                        setLinkDisplayCount(nextCount);
+                        if(nextCount >= totalAvailable) {
+                                maybeLoadAdditionalLinks();
+                        }
+                        return;
+                }
+                if(totalAvailable === 0) {
+                        maybeLoadAdditionalLinks();
+                        return;
+                }
+                maybeLoadAdditionalLinks();
+        }, [conversationLinks.length, linkDisplayCount, maybeLoadAdditionalLinks]);
+
+        const handleLinkLoadMore = useCallback(() => {
+                showNextLinkChunk();
+        }, [showNextLinkChunk]);
+
+        const handleRetryLinkScan = useCallback(() => {
+                maybeLoadAdditionalLinks();
+        }, [maybeLoadAdditionalLinks]);
+
         useEffect(() => {
                 if(activeTab !== "links") return;
                 if(isScanningLinks || !canShowAdditionalLinks) return;
@@ -536,36 +566,6 @@ export default function ConversationMediaDrawer({
                 maybeLoadAdditionalLinks,
                 showNextLinkChunk
         ]);
-
-        const maybeLoadAdditionalLinks = useCallback(() => {
-                if(!hasMoreLinks || isPaginatingLinks || isScanningLinks) return;
-                void loadMoreLinks();
-        }, [hasMoreLinks, isPaginatingLinks, isScanningLinks, loadMoreLinks]);
-
-        const showNextLinkChunk = useCallback(() => {
-                const totalAvailable = conversationLinks.length;
-                if(linkDisplayCount < totalAvailable) {
-                        const nextCount = Math.min(linkDisplayCount + LINK_RENDER_CHUNK, totalAvailable);
-                        setLinkDisplayCount(nextCount);
-                        if(nextCount >= totalAvailable) {
-                                maybeLoadAdditionalLinks();
-                        }
-                        return;
-                }
-                if(totalAvailable === 0) {
-                        maybeLoadAdditionalLinks();
-                        return;
-                }
-                maybeLoadAdditionalLinks();
-        }, [conversationLinks.length, linkDisplayCount, maybeLoadAdditionalLinks]);
-
-        const handleLinkLoadMore = useCallback(() => {
-                showNextLinkChunk();
-        }, [showNextLinkChunk]);
-
-        const handleRetryLinkScan = useCallback(() => {
-                maybeLoadAdditionalLinks();
-        }, [maybeLoadAdditionalLinks]);
 
         const previousLinkScanErrorRef = useRef<string | undefined>();
         useEffect(() => {
