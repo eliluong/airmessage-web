@@ -1,5 +1,6 @@
 import React, {useCallback, useContext, useEffect, useMemo, useRef, useState} from "react";
-import {Conversation, ConversationItem, ConversationItemType, MessageItem} from "shared/data/blocks";
+import {Conversation, ConversationItem, MessageItem} from "shared/data/blocks";
+import {ConversationItemType} from "shared/data/stateCodes";
 import {
         Box,
         Button,
