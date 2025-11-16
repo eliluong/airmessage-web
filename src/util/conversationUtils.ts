@@ -175,26 +175,16 @@ export function checkMessageConversationOwnership(conversation: Conversation, it
  * the new message item can be merged into, or -1 if no match is found
  */
 export function findMatchingUnconfirmedMessageIndex(itemArray: ConversationItem[], newItem: MessageItem): number {
-        //If the message is incoming, we can't match the item
-        if(newItem.sender !== undefined) return -1;
-
-        //Try to match by GUID first
-        if(newItem.guid !== undefined) {
-                const guidIndex = itemArray.findIndex((existingItem) =>
-                        existingItem.itemType === ConversationItemType.Message &&
-                        existingItem.status === MessageStatusCode.Unconfirmed &&
-                        existingItem.sender === undefined &&
-                        existingItem.guid === newItem.guid);
-                if(guidIndex !== -1) return guidIndex;
-        }
-
-        //Try to find a matching unconfirmed message
-        if(newItem.text !== undefined && newItem.attachments.length === 0) {
-                return itemArray.findIndex((existingItem) =>
-                        existingItem.itemType === ConversationItemType.Message &&
-                        existingItem.status === MessageStatusCode.Unconfirmed &&
-                        existingItem.sender === undefined &&
-                        existingItem.attachments.length === 0 &&
+	//If the message is incoming, we can't match the item
+	if(newItem.sender !== undefined) return -1;
+	
+	//Try to find a matching unconfirmed message
+	if(newItem.text !== undefined && newItem.attachments.length === 0) {
+		return itemArray.findIndex((existingItem) =>
+			existingItem.itemType === ConversationItemType.Message &&
+			existingItem.status === MessageStatusCode.Unconfirmed &&
+			existingItem.sender === undefined &&
+			existingItem.attachments.length === 0 &&
 			existingItem.text === newItem.text);
 	} else if(newItem.text === undefined && newItem.attachments.length === 1 && newItem.attachments[0].checksum !== undefined) {
 		return itemArray.findIndex((existingItem) =>
