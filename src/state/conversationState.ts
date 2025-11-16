@@ -11,8 +11,7 @@ import {
         MessageItem,
         MessageModifier,
         MixedConversationID,
-        RemoteConversationID,
-        TapbackItem
+        RemoteConversationID
 } from "shared/data/blocks";
 import {ConversationItemType, ConversationPreviewType, ParticipantActionType} from "shared/data/stateCodes";
 import {getPlatformUtils} from "shared/interface/platform/platformUtils";
@@ -45,8 +44,6 @@ export default function useConversationState(activeConversationID: LocalConversa
         const [requestedCount, setRequestedCount] = useState<number>(loadChunkSize);
         const [hasMoreServerResults, setHasMoreServerResults] = useState<boolean>(false);
         const pendingConversationDataMap = useRef(new Map<RemoteConversationID, ConversationItem[]>()).current;
-        const handledTapbackModifiers = useRef<Set<string>>(new Set());
-        const handledTapbackOrder = useRef<string[]>([]);
 
         const peopleState = useContext(PeopleContext);
 
@@ -414,33 +411,13 @@ export default function useConversationState(activeConversationID: LocalConversa
                 if(!interactive) return;
 
                 const listener = (modifierArray: MessageModifier[]) => {
-                        const tapbackAdditions = modifierArray.filter((modifier): modifier is TapbackItem => isModifierTapback(modifier) && modifier.isAddition);
-                        if(tapbackAdditions.length === 0) return;
-
-                        const newTapbackKeys = tapbackAdditions.reduce<string[]>((keys, modifier) => {
-                                const tapbackKey = `${modifier.messageGuid}:${modifier.tapbackType}:${modifier.sender}:${modifier.messageIndex}:${modifier.isAddition}`;
-                                if(handledTapbackModifiers.current.has(tapbackKey)) return keys;
-
-                                handledTapbackModifiers.current.add(tapbackKey);
-                                handledTapbackOrder.current.push(tapbackKey);
-                                keys.push(tapbackKey);
-                                return keys;
-                        }, []);
-
-                        if(newTapbackKeys.length === 0) return;
-
-                        const maxTapbackHistory = 500;
-                        while(handledTapbackOrder.current.length > maxTapbackHistory) {
-                                const staleKey = handledTapbackOrder.current.shift();
-                                if(staleKey !== undefined) {
-                                        handledTapbackModifiers.current.delete(staleKey);
-                                }
+                        //Play a tapback sound
+                        if(modifierArray.some((modifier) => isModifierTapback(modifier) && modifier.isAddition)) {
+                                playSoundTapback({
+                                        type: "tapback",
+                                        modifiers: modifierArray
+                                });
                         }
-
-                        playSoundTapback({
-                                type: "tapback",
-                                modifiers: modifierArray
-                        });
                 };
                 modifierUpdateEmitter.subscribe(listener);
                 return () => modifierUpdateEmitter.unsubscribe(listener);
