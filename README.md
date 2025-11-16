@@ -46,11 +46,15 @@ Follow these steps:
    client. When you're ready to create an optimized bundle, run `npm run build`.
 6. **Address Book instructions**
    Go to https://contacts.google.com and export as Google CSV. Baikal is also another option that is supported.
+   
    CSV files go into `/public/address-books/` folder. They should be named `addressbook.<id>.<type>.csv`. For example, `addressbook.my-addressbook.personal.csv`.
+   
    Update the `manifest.json` file. `label` can be anything. `format` is `google` or `baikal`. `id` and `type` should match the file name.
+   
    Load the address book(s) under Settings.
-7. **LinkPreview API integration**
+8. **LinkPreview API integration**
    Create account at [LinkPreview](https://www.linkpreview.net/) and get API key.
+   
    Add API key to `.env` file in the root folder.
 
 ---
