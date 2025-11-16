@@ -53,6 +53,7 @@ interface ConversationMediaDrawerProps {
 const DEFAULT_LINK_INITIAL_COUNT = 20;
 const DEFAULT_LINK_PAGE_SIZE = 10;
 const MAX_LINK_BACKFILL_PAGES = 8;
+const LINK_RENDER_CHUNK = 30;
 const MAX_URL_DISPLAY_LENGTH = 70;
 
 const MediaGrid = styled("div")(({theme}) => ({
@@ -236,32 +237,48 @@ export default function ConversationMediaDrawer({
         const [blurhashPlaceholders, setBlurhashPlaceholders] = useState<Map<string, string>>(new Map());
         const scrollContainerRef = useRef<HTMLDivElement | null>(null);
         const linkSentinelRef = useRef<HTMLDivElement | null>(null);
+        const [linkDisplayCount, setLinkDisplayCount] = useState(LINK_RENDER_CHUNK);
 
         const downloadCache = useRef<Map<string, FileDownloadResult>>(new Map());
         const mountedRef = useRef(true);
         const previewUrlsRef = useRef<Map<string, string>>(new Map());
         const seenThumbnailFailuresRef = useRef<Set<string>>(new Set());
 
-const {
-links: conversationLinks,
-totalCount: totalLinkCount,
-hasMore: hasMoreLinks,
-isPaginating: isPaginatingLinks,
-isScanning: isScanningLinks,
-scanError: linkScanError,
-loadMore: loadMoreLinks
-} = useConversationLinks(conversationGuid, conversationKey, messages, {
-targetInitialCount: DEFAULT_LINK_INITIAL_COUNT,
-backfillPageSize: DEFAULT_LINK_PAGE_SIZE,
-maxBackfillPages: MAX_LINK_BACKFILL_PAGES,
-enabled: open
-});
+        const {
+                links: conversationLinks,
+                totalCount: totalLinkCount,
+                hasMore: hasMoreLinks,
+                isPaginating: isPaginatingLinks,
+                isScanning: isScanningLinks,
+                scanError: linkScanError,
+                loadMore: loadMoreLinks
+        } = useConversationLinks(conversationGuid, conversationKey, messages, {
+                targetInitialCount: DEFAULT_LINK_INITIAL_COUNT,
+                backfillPageSize: DEFAULT_LINK_PAGE_SIZE,
+                maxBackfillPages: MAX_LINK_BACKFILL_PAGES,
+                enabled: open
+        });
+        const hasUnrenderedLinks = linkDisplayCount < conversationLinks.length;
+        const canShowAdditionalLinks = hasUnrenderedLinks || hasMoreLinks;
+        const visibleLinks = useMemo(
+                () => conversationLinks.slice(0, Math.min(linkDisplayCount, conversationLinks.length)),
+                [conversationLinks, linkDisplayCount]
+        );
 
         const clearPreviewUrls = useCallback(() => {
                 previewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
                 previewUrlsRef.current = new Map();
                 setPreviewUrls(new Map());
         }, []);
+        useEffect(() => {
+                if(!open) return;
+                setLinkDisplayCount(LINK_RENDER_CHUNK);
+        }, [conversationKey, open]);
+        useEffect(() => {
+                if(activeTab === "links") {
+                        setLinkDisplayCount(LINK_RENDER_CHUNK);
+                }
+        }, [activeTab]);
         useEffect(() => {
                 mountedRef.current = true;
                 return () => {
@@ -325,32 +342,32 @@ enabled: open
                 return map;
         }, [getPerson, mediaItems]);
 
-const linkSenderDisplayMap = useMemo(() => {
-const map = new Map<string, SenderDisplayData>();
-for(const link of conversationLinks) {
-const sender = link.sender ?? "me";
-if(map.has(sender)) continue;
-const isMe = sender === "me";
-const person = isMe ? undefined : getPerson(sender);
-const personName = person?.name?.trim();
-const displayName = isMe ? "Me" : personName && personName.length > 0 ? personName : formatAddress(sender);
-const initials = isMe
-? "Me"
-: personName && personName.length > 0
-? deriveInitialsFromName(personName)
-: deriveInitialsFromAddress(sender);
-const avatarUrl = person?.avatar;
-const color = colorFromContact(sender);
-map.set(sender, {
-displayName,
-initials,
-color,
-avatarUrl,
-tooltip: displayName
-});
-}
-return map;
-}, [conversationLinks, getPerson]);
+        const linkSenderDisplayMap = useMemo(() => {
+                const map = new Map<string, SenderDisplayData>();
+                for(const link of conversationLinks) {
+                        const sender = link.sender ?? "me";
+                        if(map.has(sender)) continue;
+                        const isMe = sender === "me";
+                        const person = isMe ? undefined : getPerson(sender);
+                        const personName = person?.name?.trim();
+                        const displayName = isMe ? "Me" : personName && personName.length > 0 ? personName : formatAddress(sender);
+                        const initials = isMe
+                                ? "Me"
+                                : personName && personName.length > 0
+                                        ? deriveInitialsFromName(personName)
+                                        : deriveInitialsFromAddress(sender);
+                        const avatarUrl = person?.avatar;
+                        const color = colorFromContact(sender);
+                        map.set(sender, {
+                                displayName,
+                                initials,
+                                color,
+                                avatarUrl,
+                                tooltip: displayName
+                        });
+                }
+                return map;
+        }, [conversationLinks, getPerson]);
 
         const handleTileClick = useCallback(async (item: ConversationAttachmentEntry) => {
                 const guid = item.guid;
@@ -484,41 +501,79 @@ return map;
                 });
         }, [attachmentMap, open, snackbar, thumbnailMap]);
 
-useEffect(() => {
-if(activeTab !== "links") return;
-if(!hasMoreLinks || isScanningLinks) return;
-const sentinel = linkSentinelRef.current;
-const root = scrollContainerRef.current;
-if(!sentinel || !root) return;
+        useEffect(() => {
+                if(activeTab !== "links") return;
+                if(isScanningLinks || !canShowAdditionalLinks) return;
+                const sentinel = linkSentinelRef.current;
+                const root = scrollContainerRef.current;
+                if(!sentinel || !root) return;
 
-const observer = new IntersectionObserver(
-(entries) => {
-if(entries.some((entry) => entry.isIntersecting)) {
-void loadMoreLinks();
-}
-},
-{root, rootMargin: "160px"}
-);
+                const isScrollable = root.scrollHeight > root.clientHeight + 40;
+                if(!isScrollable && !hasUnrenderedLinks) {
+                        return;
+                }
 
-observer.observe(sentinel);
-return () => observer.disconnect();
-}, [activeTab, hasMoreLinks, isScanningLinks, loadMoreLinks]);
+                const observer = new IntersectionObserver(
+                        (entries) => {
+                                if(entries.some((entry) => entry.isIntersecting)) {
+                                        if(hasUnrenderedLinks) {
+                                                showNextLinkChunk();
+                                        } else {
+                                                maybeLoadAdditionalLinks();
+                                        }
+                                }
+                        },
+                        {root, rootMargin: "160px"}
+                );
 
-const handleLinkLoadMore = useCallback(() => {
-void loadMoreLinks();
-}, [loadMoreLinks]);
+                observer.observe(sentinel);
+                return () => observer.disconnect();
+        }, [
+                activeTab,
+                canShowAdditionalLinks,
+                hasUnrenderedLinks,
+                isScanningLinks,
+                maybeLoadAdditionalLinks,
+                showNextLinkChunk
+        ]);
 
-const handleRetryLinkScan = useCallback(() => {
-void loadMoreLinks();
-}, [loadMoreLinks]);
+        const maybeLoadAdditionalLinks = useCallback(() => {
+                if(!hasMoreLinks || isPaginatingLinks || isScanningLinks) return;
+                void loadMoreLinks();
+        }, [hasMoreLinks, isPaginatingLinks, isScanningLinks, loadMoreLinks]);
 
-const previousLinkScanErrorRef = useRef<string | undefined>();
-useEffect(() => {
-if(linkScanError && linkScanError !== previousLinkScanErrorRef.current) {
-snackbar?.({message: linkScanError});
-}
-previousLinkScanErrorRef.current = linkScanError;
-}, [linkScanError, snackbar]);
+        const showNextLinkChunk = useCallback(() => {
+                const totalAvailable = conversationLinks.length;
+                if(linkDisplayCount < totalAvailable) {
+                        const nextCount = Math.min(linkDisplayCount + LINK_RENDER_CHUNK, totalAvailable);
+                        setLinkDisplayCount(nextCount);
+                        if(nextCount >= totalAvailable) {
+                                maybeLoadAdditionalLinks();
+                        }
+                        return;
+                }
+                if(totalAvailable === 0) {
+                        maybeLoadAdditionalLinks();
+                        return;
+                }
+                maybeLoadAdditionalLinks();
+        }, [conversationLinks.length, linkDisplayCount, maybeLoadAdditionalLinks]);
+
+        const handleLinkLoadMore = useCallback(() => {
+                showNextLinkChunk();
+        }, [showNextLinkChunk]);
+
+        const handleRetryLinkScan = useCallback(() => {
+                maybeLoadAdditionalLinks();
+        }, [maybeLoadAdditionalLinks]);
+
+        const previousLinkScanErrorRef = useRef<string | undefined>();
+        useEffect(() => {
+                if(linkScanError && linkScanError !== previousLinkScanErrorRef.current) {
+                        snackbar?.({message: linkScanError});
+                }
+                previousLinkScanErrorRef.current = linkScanError;
+        }, [linkScanError, snackbar]);
 
         const renderPhotosPanel = () => {
                 if(isLoading) {
@@ -629,10 +684,10 @@ previousLinkScanErrorRef.current = linkScanError;
                 );
         };
 
-const renderLinksPanel = () => {
-if(conversationLinks.length === 0 && !isScanningLinks) {
-return (
-<Stack height="100%" alignItems="center" justifyContent="center" spacing={1}>
+        const renderLinksPanel = () => {
+                if(conversationLinks.length === 0 && !isScanningLinks) {
+                        return (
+                                <Stack height="100%" alignItems="center" justifyContent="center" spacing={1}>
                                         <Typography color="textSecondary" textAlign="center">
                                                 No links found in this conversation yet.
                                         </Typography>
@@ -640,36 +695,36 @@ return (
                         );
                 }
 
-return (
-<Stack spacing={1.5} paddingBottom={1}>
-{!enableLinkPreviews && (
-<Typography variant="caption" color="textSecondary">
-Link previews are disabled for now.
-</Typography>
-)}
-{isScanningLinks && (
-<Stack direction="row" spacing={1} alignItems="center">
-<CircularProgress size={18} />
-<Typography variant="body2" color="textSecondary">
-Scanning older messages…
-</Typography>
-</Stack>
-)}
-{linkScanError && (
-<Stack direction="row" spacing={1} alignItems="center">
-<Typography variant="body2" color="error">
-{linkScanError}
-</Typography>
-<Chip
-label="Retry scan"
-size="small"
-onClick={handleRetryLinkScan}
-disabled={isScanningLinks || isPaginatingLinks}
-/>
-</Stack>
-)}
+                return (
+                        <Stack spacing={1.5} paddingBottom={1}>
+                                {!enableLinkPreviews && (
+                                        <Typography variant="caption" color="textSecondary">
+                                                Link previews are disabled for now.
+                                        </Typography>
+                                )}
+                                {isScanningLinks && (
+                                        <Stack direction="row" spacing={1} alignItems="center">
+                                                <CircularProgress size={18} />
+                                                <Typography variant="body2" color="textSecondary">
+                                                        Scanning older messages…
+                                                </Typography>
+                                        </Stack>
+                                )}
+                                {linkScanError && (
+                                        <Stack direction="row" spacing={1} alignItems="center">
+                                                <Typography variant="body2" color="error">
+                                                        {linkScanError}
+                                                </Typography>
+                                                <Chip
+                                                        label="Retry scan"
+                                                        size="small"
+                                                        onClick={handleRetryLinkScan}
+                                                        disabled={isScanningLinks || isPaginatingLinks}
+                                                />
+                                        </Stack>
+                                )}
                                 <List disablePadding>
-                                        {conversationLinks.map((link) => {
+                                        {visibleLinks.map((link) => {
                                                 const senderInfo = linkSenderDisplayMap.get(link.sender ?? "me");
                                                 const displayUrl = truncateUrl(
                                                         link.normalizedUrl.replace(/^https?:\/\//, ""),
@@ -725,21 +780,23 @@ disabled={isScanningLinks || isPaginatingLinks}
                                                 );
                                         })}
                                 </List>
-<Box ref={linkSentinelRef} height={1} />
-{hasMoreLinks && (
-<Box display="flex" justifyContent="center">
-<Button
-variant="outlined"
-onClick={handleLinkLoadMore}
-disabled={isPaginatingLinks || isScanningLinks}
-startIcon={isPaginatingLinks ? <CircularProgress size={18} /> : undefined}>
-{isPaginatingLinks ? "Loading" : "Load more"}
-</Button>
-</Box>
-)}
-</Stack>
-);
-};
+                                <Box ref={linkSentinelRef} height={1} />
+                                {canShowAdditionalLinks && (
+                                        <Box display="flex" justifyContent="center">
+                                                <Button
+                                                        variant="outlined"
+                                                        onClick={handleLinkLoadMore}
+                                                        disabled={isPaginatingLinks || isScanningLinks}
+                                                        startIcon={
+                                                                isPaginatingLinks ? <CircularProgress size={18} /> : undefined
+                                                        }>
+                                                        {isPaginatingLinks ? "Loading" : "Load more"}
+                                                </Button>
+                                        </Box>
+                                )}
+                        </Stack>
+                );
+        };
 
         const content = (
                 <Stack height="100%">
