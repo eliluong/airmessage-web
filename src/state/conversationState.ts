@@ -26,6 +26,9 @@ import localMessageCache from "shared/state/localMessageCache";
 import {PeopleContext} from "shared/state/peopleState";
 import {useSettings} from "shared/components/settings/SettingsProvider";
 
+const TAPBACK_SOUND_CACHE_TTL_MS = 6000;
+const TAPBACK_SOUND_CACHE_MAX_ENTRIES = 1000;
+
 interface ConversationsState {
         conversations: Conversation[] | undefined,
         visibleConversations: Conversation[] | undefined,
@@ -44,6 +47,8 @@ export default function useConversationState(activeConversationID: LocalConversa
         const [requestedCount, setRequestedCount] = useState<number>(loadChunkSize);
         const [hasMoreServerResults, setHasMoreServerResults] = useState<boolean>(false);
         const pendingConversationDataMap = useRef(new Map<RemoteConversationID, ConversationItem[]>()).current;
+        const tapbackSoundCache = useRef<Map<string, number>>(new Map()).current;
+        const tapbackSoundQueue = useRef<{key: string; expires: number}[]>([]).current;
 
         const peopleState = useContext(PeopleContext);
 
@@ -413,15 +418,50 @@ export default function useConversationState(activeConversationID: LocalConversa
                 const listener = (modifierArray: MessageModifier[]) => {
                         //Play a tapback sound
                         if(modifierArray.some((modifier) => isModifierTapback(modifier) && modifier.isAddition)) {
-                                playSoundTapback({
-                                        type: "tapback",
-                                        modifiers: modifierArray
-                                });
+                                const now = Date.now();
+                                while(tapbackSoundQueue.length > 0 && tapbackSoundQueue[0].expires <= now) {
+                                        const expiredEntry = tapbackSoundQueue.shift();
+                                        if(expiredEntry !== undefined) {
+                                                const cachedExpiry = tapbackSoundCache.get(expiredEntry.key);
+                                                if(cachedExpiry !== undefined && cachedExpiry <= now) {
+                                                        tapbackSoundCache.delete(expiredEntry.key);
+                                                }
+                                        }
+                                }
+
+                                let shouldPlay = false;
+                                for(const modifier of modifierArray) {
+                                        if(!isModifierTapback(modifier) || !modifier.isAddition) continue;
+
+                                        const cacheKey = `${modifier.messageGuid}|${modifier.sender}|${modifier.tapbackType}`;
+                                        const cachedExpiry = tapbackSoundCache.get(cacheKey);
+                                        if(cachedExpiry === undefined || cachedExpiry <= now) {
+                                                shouldPlay = true;
+                                        }
+
+                                        const expires = now + TAPBACK_SOUND_CACHE_TTL_MS;
+                                        tapbackSoundCache.set(cacheKey, expires);
+                                        tapbackSoundQueue.push({key: cacheKey, expires});
+                                }
+
+                                while(tapbackSoundQueue.length > TAPBACK_SOUND_CACHE_MAX_ENTRIES) {
+                                        const evictedEntry = tapbackSoundQueue.shift();
+                                        if(evictedEntry !== undefined) {
+                                                tapbackSoundCache.delete(evictedEntry.key);
+                                        }
+                                }
+
+                                if(shouldPlay) {
+                                        playSoundTapback({
+                                                type: "tapback",
+                                                modifiers: modifierArray
+                                        });
+                                }
                         }
                 };
                 modifierUpdateEmitter.subscribe(listener);
                 return () => modifierUpdateEmitter.unsubscribe(listener);
-        }, [interactive]);
+        }, [interactive, tapbackSoundCache, tapbackSoundQueue]);
 
         const visibleConversations = useMemo(() => {
                 if(conversations === undefined) return undefined;

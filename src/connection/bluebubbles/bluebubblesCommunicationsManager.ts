@@ -54,6 +54,7 @@ const DEFAULT_THREAD_PAGE_SIZE = 50;
 const TAPBACK_ADD_OFFSET = 2000;
 const TAPBACK_REMOVE_OFFSET = 3000;
 const SMS_TAPBACK_CACHE_LIMIT = 50;
+const REACTION_GUID_CACHE_LIMIT = 5000;
 
 const SQLITE_LIKE_SPECIAL_CHARS = /[%_\[]/g;
 
@@ -109,11 +110,15 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
         private readonly auth: BlueBubblesAuthState;
         private metadata: ServerMetadataResponse | undefined;
         private pollTimer: ReturnType<typeof setInterval> | undefined;
+        private pollInFlight = false;
         private hasStartedPolling = false;
         private isClosed = false;
+        private lastRowId: number | undefined;
         private lastMessageTimestamp: number | undefined;
         private readonly tapbackCache = new Map<string, TapbackItem[]>();
         private readonly smsTapbackCache = new Map<string, SmsTapbackCacheEntry>();
+        private readonly reactionGuidQueue: string[] = [];
+        private readonly reactionGuidSet = new Set<string>();
         private supportsDeliveredReceipts = false;
         private supportsReadReceipts = false;
         private readonly conversationGuidCache = new Map<string, string>();
@@ -371,6 +376,7 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 this.hasStartedPolling = false;
                 this.conversationGuidCache.clear();
                 this.clearSmsTapbackCache();
+                this.lastRowId = undefined;
                 this.lastMessageTimestamp = undefined;
                 try {
                         this.metadata = await fetchServerMetadata(this.auth);
@@ -425,29 +431,52 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
         }
 
         private async pollUpdates() {
+                if(this.pollInFlight) return;
+                this.pollInFlight = true;
                 const payload: Record<string, unknown> = {
                         sort: "DESC",
                         limit: DEFAULT_THREAD_PAGE_SIZE,
                         with: ["attachments", "chat"],
                         offset: 0
                 };
-                if(this.lastMessageTimestamp !== undefined) {
-                        payload.after = this.lastMessageTimestamp;
+                if(this.lastRowId !== undefined) {
+                        payload.where = [
+                                {
+                                        statement: "message.ROWID > :rowid",
+                                        args: {rowid: this.lastRowId}
+                                }
+                        ];
+                } else if(this.lastMessageTimestamp !== undefined) {
+                        payload.after = toBlueBubblesTimestamp(new Date(this.lastMessageTimestamp));
                 }
 
-                const response = await queryMessages(this.auth, payload);
-                if(!response.data || response.data.length === 0) return;
+                try {
+                        const response = await queryMessages(this.auth, payload);
+                        if(!response.data || response.data.length === 0) return;
 
-                const sorted = response.data.sort((a, b) => a.dateCreated - b.dateCreated);
-                const latestTimestamp = sorted[sorted.length - 1].dateCreated;
-                this.lastMessageTimestamp = Math.max(this.lastMessageTimestamp ?? latestTimestamp, latestTimestamp);
-                const {items, modifiers} = this.processMessages(sorted);
-                if(items.length > 0) {
-                        const newestFirstItems = items.slice().reverse();
-                        this.listener?.onMessageUpdate(newestFirstItems);
-                }
-                if(modifiers.length > 0) {
-                        this.listener?.onModifierUpdate(modifiers);
+                        const sorted = response.data.sort((a, b) => a.dateCreated - b.dateCreated);
+                        const latestTimestamp = sorted[sorted.length - 1].dateCreated;
+                        this.lastMessageTimestamp = Math.max(this.lastMessageTimestamp ?? latestTimestamp, latestTimestamp);
+                        let latestRowId = this.lastRowId ?? -1;
+                        for(const message of sorted) {
+                                if(typeof message.originalROWID === "number" && message.originalROWID > latestRowId) {
+                                        latestRowId = message.originalROWID;
+                                }
+                        }
+                        if(latestRowId > (this.lastRowId ?? -1)) {
+                                this.lastRowId = latestRowId;
+                        }
+
+                        const {items, modifiers} = this.processMessages(sorted);
+                        if(items.length > 0) {
+                                const newestFirstItems = items.slice().reverse();
+                                this.listener?.onMessageUpdate(newestFirstItems);
+                        }
+                        if(modifiers.length > 0) {
+                                this.listener?.onModifierUpdate(modifiers);
+                        }
+                } finally {
+                        this.pollInFlight = false;
                 }
         }
 
@@ -593,7 +622,6 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
         private processMessages(messages: MessageResponse[]): {items: ConversationItem[]; modifiers: TapbackItem[]} {
                 const items: ConversationItem[] = [];
                 const pendingReactions: PendingReaction[] = [];
-                const modifiers: TapbackItem[] = [];
                 for(const message of messages) {
                         const service = getMessageService(message);
                         logBlueBubblesDebug("Message", {
@@ -611,6 +639,9 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                                 ? parseSmsTapback(message)
                                 : undefined;
                         if(smsTapback) {
+                                if(this.hasSeenReaction(message)) {
+                                        continue;
+                                }
                                 const targetGuid = this.resolveSmsTapbackTargetGuid(message, smsTapback, messages);
                                 if(targetGuid) {
                                         const tapback: TapbackItem = {
@@ -621,8 +652,8 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                                                 isAddition: smsTapback.isAddition,
                                                 tapbackType: smsTapback.tapbackType
                                         } as TapbackItem;
+                                        this.markReactionSeen(message);
                                         pendingReactions.push({messageGuid: targetGuid, tapback});
-                                        modifiers.push(tapback);
                                         continue;
                                 }
                                 console.warn("[BlueBubbles] Unable to resolve SMS tapback target", {
@@ -632,6 +663,9 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                                 });
                         }
                         if(isReactionMessage(message)) {
+                                if(this.hasSeenReaction(message)) {
+                                        continue;
+                                }
                                 const tapback = mapTapback(message);
                                 if(tapback) {
                                         logBlueBubblesDebug("Tapback", {
@@ -641,8 +675,8 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                                                 isAddition: tapback.isAddition,
                                                 sender: tapback.sender
                                         });
+                                        this.markReactionSeen(message);
                                         pendingReactions.push({messageGuid: tapback.messageGuid, tapback});
-                                        modifiers.push(tapback);
                                 }
                                 continue;
                         }
@@ -653,35 +687,65 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                         }
                 }
 
+                const effectiveModifiers: TapbackItem[] = [];
+
                 if(pendingReactions.length > 0) {
-                                for(const pending of pendingReactions) {
-                                        const tapbacks = this.tapbackCache.get(pending.messageGuid) ?? [];
-                                        const existingIndex = tapbacks.findIndex((tap) => tap.sender === pending.tapback.sender && tap.tapbackType === pending.tapback.tapbackType);
-                                        if(pending.tapback.isAddition) {
-                                                if(existingIndex === -1) tapbacks.push(pending.tapback);
-                                                else tapbacks[existingIndex] = pending.tapback;
-                                        } else if(existingIndex !== -1) {
-                                                tapbacks.splice(existingIndex, 1);
+                        for(const pending of pendingReactions) {
+                                const tapbacks = this.tapbackCache.get(pending.messageGuid) ?? [];
+                                const existingIndex = tapbacks.findIndex((tap) => tap.sender === pending.tapback.sender && tap.tapbackType === pending.tapback.tapbackType);
+                                let changed = false;
+
+                                if(pending.tapback.isAddition) {
+                                        if(existingIndex === -1) {
+                                                tapbacks.push(pending.tapback);
+                                                changed = true;
                                         }
-                                        this.tapbackCache.set(pending.messageGuid, tapbacks);
+                                } else if(existingIndex !== -1) {
+                                        tapbacks.splice(existingIndex, 1);
+                                        changed = true;
                                 }
 
-                                for(let index = 0; index < items.length; index++) {
-                                        const item = items[index];
-                                        if(item.itemType === ConversationItemType.Message && item.guid) {
-                                                const tapbacks = this.tapbackCache.get(item.guid);
-                                                if(tapbacks) {
-                                                        const messageItem = item as MessageItem;
-                                                        items[index] = {
-                                                                ...messageItem,
-                                                                tapbacks: tapbacks.slice()
-                                                        };
-                                                }
+                                this.tapbackCache.set(pending.messageGuid, tapbacks);
+
+                                if(changed) {
+                                        effectiveModifiers.push(pending.tapback);
+                                }
+                        }
+
+                        for(let index = 0; index < items.length; index++) {
+                                const item = items[index];
+                                if(item.itemType === ConversationItemType.Message && item.guid) {
+                                        const tapbacks = this.tapbackCache.get(item.guid);
+                                        if(tapbacks) {
+                                                const messageItem = item as MessageItem;
+                                                items[index] = {
+                                                        ...messageItem,
+                                                        tapbacks: tapbacks.slice()
+                                                };
                                         }
                                 }
+                        }
                 }
 
-                return {items, modifiers};
+                return {items, modifiers: effectiveModifiers};
+        }
+
+        private hasSeenReaction(message: MessageResponse): boolean {
+                return typeof message.originalROWID === "number" && this.reactionGuidSet.has(String(message.originalROWID));
+        }
+
+        private markReactionSeen(message: MessageResponse): void {
+                if(typeof message.originalROWID !== "number") return;
+                const key = String(message.originalROWID);
+                if(this.reactionGuidSet.has(key)) return;
+
+                this.reactionGuidSet.add(key);
+                this.reactionGuidQueue.push(key);
+
+                if(this.reactionGuidQueue.length > REACTION_GUID_CACHE_LIMIT) {
+                        const oldest = this.reactionGuidQueue.shift();
+                        if(oldest) this.reactionGuidSet.delete(oldest);
+                }
         }
 
         private convertMessage(message: MessageResponse): ConversationItem | undefined {
