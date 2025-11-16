@@ -1,4 +1,6 @@
 import CommunicationsManager, {
+        ConversationLinkFetchResult,
+        ConversationLinkScanCursor,
         ConversationMediaFetchResult,
         ThreadFetchMetadata,
         ThreadFetchOptions,
@@ -41,6 +43,7 @@ import {
         downloadAttachment,
         downloadAttachmentThumbnail,
         fetchChat,
+        fetchChatMessages,
         fetchChats,
         fetchServerMetadata,
         pingServer,
@@ -55,6 +58,7 @@ const TAPBACK_ADD_OFFSET = 2000;
 const TAPBACK_REMOVE_OFFSET = 3000;
 const SMS_TAPBACK_CACHE_LIMIT = 50;
 const REACTION_GUID_CACHE_LIMIT = 5000;
+const LINK_SCAN_QUERY_LIMIT = 1000;
 
 const SQLITE_LIKE_SPECIAL_CHARS = /[%_\[]/g;
 
@@ -222,6 +226,77 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 const attachments = extractConversationAttachments(items);
                 const metadata = this.buildThreadMetadata(items);
                 return {items: attachments, metadata};
+        }
+
+        public async fetchConversationLinkMessages(
+                chatGUID: string,
+                cursor?: ConversationLinkScanCursor
+        ): Promise<ConversationLinkFetchResult> {
+                const currentCursor: ConversationLinkScanCursor = cursor
+                        ? {...cursor}
+                        : {phase: "coarse", pagesFetched: 0, beforeTimestamp: undefined};
+
+                if(currentCursor.phase === "coarse") {
+                        const payload: Record<string, unknown> = {
+                                chatGuid: chatGUID,
+                                sort: "DESC",
+                                limit: LINK_SCAN_QUERY_LIMIT,
+                                with: [
+                                        "chat",
+                                        "handle",
+                                        "attachments",
+                                        "message.attributedbody",
+                                        "message.payloadData"
+                                ]
+                        };
+                        const where = [
+                                {statement: "chat.guid = :chatGuid", args: {chatGuid: chatGUID}},
+                                {
+                                        statement:
+                                                "(message.text LIKE :httpPattern OR message.text LIKE :httpsPattern OR message.text LIKE :wwwPattern)",
+                                        args: {
+                                                httpPattern: "%http://%",
+                                                httpsPattern: "%https://%",
+                                                wwwPattern: "%www.%"
+                                        }
+                                }
+                        ];
+                        payload.where = where;
+                        const response = await queryMessages(this.auth, payload);
+                        const ordered = (response.data ?? []).slice().sort((a, b) => b.dateCreated - a.dateCreated);
+                        const {items} = this.processMessages(ordered);
+                        const messages = items.filter(
+                                (item): item is MessageItem => item.itemType === ConversationItemType.Message
+                        );
+                        const oldestTimestamp = ordered.length > 0 ? ordered[ordered.length - 1].dateCreated : undefined;
+                        const nextCursor: ConversationLinkScanCursor = {
+                                phase: "backfill",
+                                pagesFetched: 0,
+                                beforeTimestamp: oldestTimestamp !== undefined ? oldestTimestamp - 1 : undefined
+                        };
+                        return {messages, cursor: nextCursor, exhausted: nextCursor.beforeTimestamp === undefined};
+                }
+
+                if(currentCursor.beforeTimestamp === undefined) {
+                        return {messages: [], cursor: currentCursor, exhausted: true};
+                }
+
+                const response = await fetchChatMessages(this.auth, chatGUID, {
+                        limit: LINK_SCAN_QUERY_LIMIT,
+                        before: currentCursor.beforeTimestamp,
+                        sort: "DESC"
+                });
+                const ordered = (response.data ?? []).slice().sort((a, b) => b.dateCreated - a.dateCreated);
+                const {items} = this.processMessages(ordered);
+                const messages = items.filter((item): item is MessageItem => item.itemType === ConversationItemType.Message);
+                const oldestTimestamp = ordered.length > 0 ? ordered[ordered.length - 1].dateCreated : undefined;
+                const nextCursor: ConversationLinkScanCursor = {
+                        phase: "backfill",
+                        pagesFetched: currentCursor.pagesFetched + 1,
+                        beforeTimestamp: oldestTimestamp !== undefined ? oldestTimestamp - 1 : undefined
+                };
+                const exhausted = ordered.length < LINK_SCAN_QUERY_LIMIT || nextCursor.beforeTimestamp === undefined;
+                return {messages, cursor: nextCursor, exhausted};
         }
 
         public async fetchAttachmentThumbnail(attachmentGUID: string, signal?: AbortSignal): Promise<Blob> {

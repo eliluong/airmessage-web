@@ -1,6 +1,8 @@
 import DataProxyConnect from "shared/connection/connect/dataProxyConnect";
 import CommunicationsManager, {
         CommunicationsManagerListener,
+        ConversationLinkFetchResult,
+        ConversationLinkScanCursor,
         ThreadFetchOptions,
         ThreadFetchMetadata,
         normalizeThreadFetchOptions
@@ -692,6 +694,23 @@ export async function fetchConversationMedia(chatGUID: string, options?: ThreadF
         const threadResult = await fetchThread(chatGUID, normalizedOptions);
         const attachments = extractConversationAttachments(threadResult.items);
         return {items: attachments, metadata: threadResult.metadata};
+}
+
+export async function fetchConversationLinkMessages(
+        chatGUID: string,
+        cursor?: ConversationLinkScanCursor
+): Promise<ConversationLinkFetchResult> {
+        if(!isConnected()) return Promise.reject(messageErrorNetwork);
+        if(!chatGUID) {
+                return Promise.reject(new Error("Media is unavailable for unsynced conversations."));
+        }
+        if(dataProxy.proxyType !== "BlueBubbles") {
+                return Promise.reject(new Error("Media is only available when connected to BlueBubbles."));
+        }
+        if(!communicationsManager?.fetchConversationLinkMessages) {
+                return Promise.reject(new Error("The active connection does not support link scanning."));
+        }
+        return communicationsManager.fetchConversationLinkMessages(chatGUID, cursor);
 }
 
 export async function fetchAttachmentThumbnail(attachmentGUID: string, signal?: AbortSignal): Promise<Blob> {
