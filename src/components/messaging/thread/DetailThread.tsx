@@ -1,4 +1,4 @@
-import React, {useCallback, useEffect, useRef, useState} from "react";
+import React, {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {
 	Conversation,
 	ConversationItem,
@@ -757,13 +757,18 @@ export default function DetailThread({conversation, focusTarget}: {
                 }
 	}, [displayState, conversation, registerUploadProgress, setMessageInput, setAttachmentInput, applyMessageError]);
 	
-	const startCall = useCallback(async () => {
-		await ConnectionManager.initiateFaceTimeCall(conversation.members);
-	}, [conversation]);
-	
-	let body: React.ReactNode;
-	if(displayState.type === DisplayType.Messages) {
-		body = (
+        const startCall = useCallback(async () => {
+                await ConnectionManager.initiateFaceTimeCall(conversation.members);
+        }, [conversation]);
+
+        const conversationMessages = useMemo(
+                () => (displayState.type === DisplayType.Messages ? displayState.messages : []),
+                [displayState]
+        );
+
+        let body: React.ReactNode;
+        if(displayState.type === DisplayType.Messages) {
+                body = (
                         <MessageList
                                 conversation={conversation}
                                 items={displayState.messages}
@@ -875,6 +880,7 @@ export default function DetailThread({conversation, focusTarget}: {
                                 conversation={conversation}
                                 open={isMediaDrawerOpen}
                                 onClose={closeMediaDrawer}
+                                messages={conversationMessages}
                         />
                 </>
         );

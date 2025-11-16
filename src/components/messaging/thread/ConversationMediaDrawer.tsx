@@ -1,5 +1,6 @@
 import React, {useCallback, useContext, useEffect, useMemo, useRef, useState} from "react";
-import {Conversation} from "shared/data/blocks";
+import {Conversation, ConversationItem, MessageItem} from "shared/data/blocks";
+import {ConversationItemType} from "shared/data/stateCodes";
 import {
         Box,
         Button,
@@ -15,7 +16,14 @@ import {
         ButtonBase,
         styled,
         Avatar,
-        Tooltip
+        Tooltip,
+        Tabs,
+        Tab,
+        List,
+        ListItem,
+        ListItemAvatar,
+        ListItemText,
+        Link as MuiLink
 } from "@mui/material";
 import {Close, InsertDriveFileOutlined} from "@mui/icons-material";
 import {useTheme} from "@mui/material/styles";
@@ -32,12 +40,19 @@ import {ConversationAttachmentEntry} from "shared/data/attachment";
 import {blurhashToDataURL} from "shared/util/blurhash";
 import {PeopleContext} from "shared/state/peopleState";
 import {colorFromContact} from "shared/util/avatarUtils";
+import useConversationLinks from "shared/hooks/useConversationLinks";
 
 interface ConversationMediaDrawerProps {
         conversation: Conversation;
         open: boolean;
         onClose: () => void;
+        messages: ConversationItem[];
+        enableLinkPreviews?: boolean;
 }
+
+const DEFAULT_LINK_INITIAL_COUNT = 20;
+const DEFAULT_LINK_PAGE_SIZE = 10;
+const MAX_URL_DISPLAY_LENGTH = 70;
 
 const MediaGrid = styled("div")(({theme}) => ({
         display: "grid",
@@ -173,15 +188,31 @@ function deriveInitialsFromAddress(address: string): string {
         return "??";
 }
 
-export default function ConversationMediaDrawer({conversation, open, onClose}: ConversationMediaDrawerProps) {
+function truncateUrl(url: string, maxLength: number): string {
+        if(url.length <= maxLength) return url;
+        return `${url.slice(0, maxLength - 1)}…`;
+}
+
+export default function ConversationMediaDrawer({
+        conversation,
+        open,
+        onClose,
+        messages,
+        enableLinkPreviews = false
+}: ConversationMediaDrawerProps) {
         const theme = useTheme();
         const fullScreen = useMediaQuery(theme.breakpoints.down("md"));
         const snackbar = useContext(SnackbarContext);
         const peopleState = useContext(PeopleContext);
         const {getPerson} = peopleState;
+        const [activeTab, setActiveTab] = useState<"photos" | "links">("photos");
 
         const conversationGuid = conversation.localOnly ? undefined : conversation.guid;
         const conversationKey = useMemo(() => conversationGuid ?? `local:${conversation.localID}`, [conversationGuid, conversation.localID]);
+        const photosTabId = "conversation-media-tab-photos";
+        const linksTabId = "conversation-media-tab-links";
+        const photosPanelId = "conversation-media-panel-photos";
+        const linksPanelId = "conversation-media-panel-links";
         const {
                 items: mediaItems,
                 isLoading,
@@ -202,11 +233,30 @@ export default function ConversationMediaDrawer({conversation, open, onClose}: C
         const [previewUrls, setPreviewUrls] = useState<Map<string, string>>(new Map());
         const {thumbnails: thumbnailMap, loadThumbnails, cancelActive: cancelThumbnailDownloads} = useAttachmentThumbnails(open);
         const [blurhashPlaceholders, setBlurhashPlaceholders] = useState<Map<string, string>>(new Map());
+        const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+        const linkSentinelRef = useRef<HTMLDivElement | null>(null);
 
         const downloadCache = useRef<Map<string, FileDownloadResult>>(new Map());
         const mountedRef = useRef(true);
         const previewUrlsRef = useRef<Map<string, string>>(new Map());
         const seenThumbnailFailuresRef = useRef<Set<string>>(new Set());
+
+        const messageItems = useMemo(
+                () => messages.filter((item): item is MessageItem => item.itemType === ConversationItemType.Message),
+                [messages]
+        );
+
+        const {
+                links: conversationLinks,
+                totalCount: totalLinkCount,
+                hasMore: hasMoreLinks,
+                isPaginating: isPaginatingLinks,
+                loadMore: loadMoreLinks
+        } = useConversationLinks(conversationKey, messages, {
+                initialCount: DEFAULT_LINK_INITIAL_COUNT,
+                pageSize: DEFAULT_LINK_PAGE_SIZE,
+                enabled: open
+        });
 
         const clearPreviewUrls = useCallback(() => {
                 previewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
@@ -275,6 +325,33 @@ export default function ConversationMediaDrawer({conversation, open, onClose}: C
                 }
                 return map;
         }, [getPerson, mediaItems]);
+
+        const linkSenderDisplayMap = useMemo(() => {
+                const map = new Map<string, SenderDisplayData>();
+                for(const message of messageItems) {
+                        const sender = message.sender ?? "me";
+                        if(map.has(sender)) continue;
+                        const isMe = sender === "me";
+                        const person = isMe ? undefined : getPerson(sender);
+                        const personName = person?.name?.trim();
+                        const displayName = isMe ? "Me" : personName && personName.length > 0 ? personName : formatAddress(sender);
+                        const initials = isMe
+                                ? "Me"
+                                : personName && personName.length > 0
+                                        ? deriveInitialsFromName(personName)
+                                        : deriveInitialsFromAddress(sender);
+                        const avatarUrl = person?.avatar;
+                        const color = colorFromContact(sender);
+                        map.set(sender, {
+                                displayName,
+                                initials,
+                                color,
+                                avatarUrl,
+                                tooltip: displayName
+                        });
+                }
+                return map;
+        }, [getPerson, messageItems]);
 
         const handleTileClick = useCallback(async (item: ConversationAttachmentEntry) => {
                 const guid = item.guid;
@@ -408,7 +485,27 @@ export default function ConversationMediaDrawer({conversation, open, onClose}: C
                 });
         }, [attachmentMap, open, snackbar, thumbnailMap]);
 
-        const renderBody = () => {
+        useEffect(() => {
+                if(activeTab !== "links") return;
+                if(!hasMoreLinks) return;
+                const sentinel = linkSentinelRef.current;
+                const root = scrollContainerRef.current;
+                if(!sentinel || !root) return;
+
+                const observer = new IntersectionObserver(
+                        (entries) => {
+                                if(entries.some((entry) => entry.isIntersecting)) {
+                                        loadMoreLinks();
+                                }
+                        },
+                        {root, rootMargin: "160px"}
+                );
+
+                observer.observe(sentinel);
+                return () => observer.disconnect();
+        }, [activeTab, hasMoreLinks, loadMoreLinks]);
+
+        const renderPhotosPanel = () => {
                 if(isLoading) {
                         return (
                                 <Stack height="100%" alignItems="center" justifyContent="center">
@@ -517,6 +614,97 @@ export default function ConversationMediaDrawer({conversation, open, onClose}: C
                 );
         };
 
+        const renderLinksPanel = () => {
+                if(conversationLinks.length === 0) {
+                        return (
+                                <Stack height="100%" alignItems="center" justifyContent="center" spacing={1}>
+                                        <Typography color="textSecondary" textAlign="center">
+                                                No links found in this conversation yet.
+                                        </Typography>
+                                </Stack>
+                        );
+                }
+
+                return (
+                        <Stack spacing={1.5} paddingBottom={1}>
+                                {!enableLinkPreviews && (
+                                        <Typography variant="caption" color="textSecondary">
+                                                Link previews are disabled for now.
+                                        </Typography>
+                                )}
+                                <List disablePadding>
+                                        {conversationLinks.map((link) => {
+                                                const senderInfo = linkSenderDisplayMap.get(link.sender ?? "me");
+                                                const displayUrl = truncateUrl(
+                                                        link.normalizedUrl.replace(/^https?:\/\//, ""),
+                                                        MAX_URL_DISPLAY_LENGTH
+                                                );
+                                                const key = `${link.normalizedUrl}-${link.messageGuid ?? link.messageLocalID ?? link.messageServerID ?? link.date.getTime()}`;
+                                                return (
+                                                        <ListItem key={key} alignItems="flex-start" disableGutters sx={{py: 1}}>
+                                                                <ListItemAvatar>
+                                                                        <Avatar
+                                                                                src={senderInfo?.avatarUrl}
+                                                                                alt=""
+                                                                                sx={{
+                                                                                        width: 40,
+                                                                                        height: 40,
+                                                                                        fontSize: senderInfo && senderInfo.initials.length > 2 ? 12 : 14,
+                                                                                        fontWeight: 600,
+                                                                                        bgcolor: senderInfo?.avatarUrl ? undefined : senderInfo?.color,
+                                                                                        color: senderInfo?.avatarUrl
+                                                                                                ? undefined
+                                                                                                : senderInfo
+                                                                                                        ? theme.palette.getContrastText(senderInfo.color)
+                                                                                                        : undefined
+                                                                                }}
+                                                                        >
+                                                                                {!senderInfo?.avatarUrl ? senderInfo?.initials ?? "?" : null}
+                                                                        </Avatar>
+                                                                </ListItemAvatar>
+                                                                <ListItemText
+                                                                        primary={
+                                                                                <Stack spacing={0.25}>
+                                                                                        <Typography variant="subtitle1" noWrap>
+                                                                                                {link.domain}
+                                                                                        </Typography>
+                                                                                        <MuiLink
+                                                                                                href={link.normalizedUrl}
+                                                                                                target="_blank"
+                                                                                                rel="noopener noreferrer"
+                                                                                                underline="hover"
+                                                                                                variant="body2"
+                                                                                                sx={{wordBreak: "break-all"}}>
+                                                                                                {displayUrl}
+                                                                                        </MuiLink>
+                                                                                </Stack>
+                                                                        }
+                                                                        secondary={
+                                                                                <Typography variant="body2" color="textSecondary">
+                                                                                        {senderInfo?.displayName ?? "Unknown sender"} • {dateFormatter.format(link.date)}
+                                                                                </Typography>
+                                                                        }
+                                                                />
+                                                        </ListItem>
+                                                );
+                                        })}
+                                </List>
+                                <Box ref={linkSentinelRef} height={1} />
+                                {hasMoreLinks && (
+                                        <Box display="flex" justifyContent="center">
+                                                <Button
+                                                        variant="outlined"
+                                                        onClick={loadMoreLinks}
+                                                        disabled={isPaginatingLinks}
+                                                        startIcon={isPaginatingLinks ? <CircularProgress size={18} /> : undefined}>
+                                                        {isPaginatingLinks ? "Loading" : "Load more"}
+                                                </Button>
+                                        </Box>
+                                )}
+                        </Stack>
+                );
+        };
+
         const content = (
                 <Stack height="100%">
                         <Toolbar>
@@ -528,8 +716,37 @@ export default function ConversationMediaDrawer({conversation, open, onClose}: C
                                 </IconButton>
                         </Toolbar>
                         <Divider />
-                        <Box flexGrow={1} minHeight={0} padding={2} overflow="auto">
-                                {renderBody()}
+                        <Tabs
+                                value={activeTab}
+                                onChange={(event, value: "photos" | "links") => setActiveTab(value)}
+                                aria-label="Conversation media tabs"
+                                variant="fullWidth">
+                                <Tab label="Photos" value="photos" id={photosTabId} aria-controls={photosPanelId} />
+                                <Tab
+                                        label={`Links (${totalLinkCount})`}
+                                        value="links"
+                                        id={linksTabId}
+                                        aria-controls={linksPanelId}
+                                />
+                        </Tabs>
+                        <Divider />
+                        <Box ref={scrollContainerRef} flexGrow={1} minHeight={0} padding={2} overflow="auto">
+                                <Box
+                                        role="tabpanel"
+                                        hidden={activeTab !== "photos"}
+                                        id={photosPanelId}
+                                        aria-labelledby={photosTabId}
+                                        height="100%">
+                                        {activeTab === "photos" ? renderPhotosPanel() : null}
+                                </Box>
+                                <Box
+                                        role="tabpanel"
+                                        hidden={activeTab !== "links"}
+                                        id={linksPanelId}
+                                        aria-labelledby={linksTabId}
+                                        height="100%">
+                                        {activeTab === "links" ? renderLinksPanel() : null}
+                                </Box>
                         </Box>
                 </Stack>
         );
