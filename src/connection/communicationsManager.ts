@@ -6,7 +6,7 @@ import {
 	MessageError,
 	RemoteUpdateErrorCode
 } from "../data/stateCodes";
-import {Conversation, ConversationItem, LinkedConversation, MessageModifier} from "../data/blocks";
+import {Conversation, ConversationItem, LinkedConversation, MessageItem, MessageModifier} from "../data/blocks";
 import {ConversationAttachmentEntry} from "../data/attachment";
 import {TransferAccumulator} from "./transferAccumulator";
 import {MessageSearchHydratedResult, MessageSearchOptions} from "./messageSearch";
@@ -29,6 +29,18 @@ export interface ThreadFetchMetadata {
 export interface ConversationMediaFetchResult {
         items: ConversationAttachmentEntry[];
         metadata?: ThreadFetchMetadata;
+}
+
+export interface ConversationLinkScanCursor {
+        phase: "coarse" | "backfill";
+        beforeTimestamp?: number;
+        pagesFetched: number;
+}
+
+export interface ConversationLinkFetchResult {
+        messages: MessageItem[];
+        cursor: ConversationLinkScanCursor;
+        exhausted: boolean;
 }
 
 export function normalizeThreadFetchOptions(options?: ThreadFetchOptions): ThreadFetchOptions | undefined {
@@ -167,6 +179,14 @@ export default abstract class CommunicationsManager {
          * Requests media metadata from a conversation thread.
          */
         public fetchConversationMedia?(chatGUID: string, options?: ThreadFetchOptions): Promise<ConversationMediaFetchResult>;
+
+        /**
+         * Requests batches of messages likely to contain link previews for a conversation.
+         */
+        public fetchConversationLinkMessages?(
+                chatGUID: string,
+                cursor?: ConversationLinkScanCursor
+        ): Promise<ConversationLinkFetchResult>;
 
         /**
          * Downloads a thumbnail preview for an attachment.

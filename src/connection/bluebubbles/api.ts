@@ -140,11 +140,16 @@ export async function createChat(auth: BlueBubblesAuthState, body: Record<string
         });
 }
 
-export async function fetchChatMessages(auth: BlueBubblesAuthState, guid: string, options: {limit?: number; before?: number; after?: number;} = {}): Promise<MessageQueryResponse> {
+export async function fetchChatMessages(
+        auth: BlueBubblesAuthState,
+        guid: string,
+        options: {limit?: number; before?: number; after?: number; sort?: "ASC" | "DESC";} = {}
+): Promise<MessageQueryResponse> {
         const params = new URLSearchParams();
         if(options.limit !== undefined) params.set("limit", String(options.limit));
         if(options.before !== undefined) params.set("before", String(options.before));
         if(options.after !== undefined) params.set("after", String(options.after));
+        if(options.sort !== undefined) params.set("sort", options.sort);
         params.append("with", "attachments");
         params.append("with", "message.attributedbody");
         params.append("with", "message.messageSummaryInfo");
