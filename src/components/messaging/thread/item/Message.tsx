@@ -366,6 +366,7 @@ const showFootnoteRow = showEditedLabel || !!statusText;
 const editedLabelTitle = hasHistoryEntries
 ? (showEditHistory ? "Hide edit history" : "Show edit history")
 : undefined;
+const messageError = props.message.error;
 
 return (<>
 <MessageStack
@@ -464,7 +465,7 @@ sx={{
                                                                                         outline: "2px solid currentColor",
                                                                                         outlineOffset: 2
                                                                                 } : undefined
-                                                                        }}
+                                                                        }}>
                                                                         Edited
                                                                 </Typography>
                                                         )}
@@ -482,7 +483,7 @@ sx={{
 
                                 {/* Progress spinner */}
                                 {props.message.progress !== undefined
-                                        && props.message.error === undefined
+                                        && messageError === undefined
 					&& (
 						<CircularProgress
 							sx={{
@@ -495,12 +496,12 @@ sx={{
 					)}
 				
 				{/* Error indicator	*/}
-				{props.message.error !== undefined && (
-					<IconButton
-						sx={{margin: "1px"}}
-						color="error"
-						size="small"
-						onClick={openDialogError}>
+                                {messageError !== undefined && (
+                                        <IconButton
+                                                sx={{margin: "1px"}}
+                                                color="error"
+                                                size="small"
+                                                onClick={openDialogError}>
 						<ErrorRounded />
 					</IconButton>
 				)}
@@ -531,21 +532,21 @@ sx={{
                 </MessageStack>
 		
 		{/* Message error dialog */}
-		<Dialog open={dialogState === MessageDialog.Error} onClose={closeDialog}>
-			<DialogTitle>Your message could not be sent</DialogTitle>
-			{props.message.error !== undefined && <React.Fragment>
-				<DialogContent>
-					<DialogContentText>
-						{messageErrorToDisplay(props.message.error!.code)}
-					</DialogContentText>
-				</DialogContent>
-				
-				<DialogActions>
-					{props.message.error!.detail !== undefined && (
-						<Button onClick={openDialogRawError} color="primary">
-							Error details
-						</Button>
-					)}
+                <Dialog open={dialogState === MessageDialog.Error} onClose={closeDialog}>
+                        <DialogTitle>Your message could not be sent</DialogTitle>
+                        {messageError !== undefined && <React.Fragment>
+                                <DialogContent>
+                                        <DialogContentText>
+                                                {messageErrorToDisplay(messageError.code)}
+                                        </DialogContentText>
+                                </DialogContent>
+
+                                <DialogActions>
+                                        {messageError.detail !== undefined && (
+                                                <Button onClick={openDialogRawError} color="primary">
+                                                        Error details
+                                                </Button>
+                                        )}
 					<Button onClick={closeDialog} color="primary" autoFocus>
 						Dismiss
 					</Button>
@@ -554,16 +555,16 @@ sx={{
 		</Dialog>
 		
 		{/* Message raw error dialog */}
-		<Dialog open={dialogState === MessageDialog.RawError} onClose={closeDialog}>
-			<DialogTitle>Error details</DialogTitle>
-			{props.message.error !== undefined && <React.Fragment>
-				<DialogContent>
-					<DialogContentText fontFamily="monospace">
-						{props.message.error.detail!}
-					</DialogContentText>
-				</DialogContent>
-				
-				<DialogActions>
+                <Dialog open={dialogState === MessageDialog.RawError} onClose={closeDialog}>
+                        <DialogTitle>Error details</DialogTitle>
+                        {messageError !== undefined && <React.Fragment>
+                                <DialogContent>
+                                        <DialogContentText fontFamily="monospace">
+                                                {messageError.detail!}
+                                        </DialogContentText>
+                                </DialogContent>
+
+                                <DialogActions>
 					<Button onClick={copyRawErrorAndClose} color="primary">
 						Copy to clipboard
 					</Button>
