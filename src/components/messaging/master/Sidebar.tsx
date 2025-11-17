@@ -476,85 +476,107 @@ function SearchPanel(props: SearchPanelProps) {
                 };
         }, [cacheKey]);
 
-        return (
-                <Stack flex={1} minHeight={0} px={2} pb={2} spacing={2}>
-                        <Stack direction="row" spacing={1} alignItems="center">
-                                <IconButton aria-label="Back to conversations" onClick={handleCancel}>
-                                        <ArrowBackRounded />
-                                </IconButton>
-                                <TextField
-                                        inputRef={inputRef}
-                                        value={query}
-                                        onChange={(event) => onQueryChange(event.target.value)}
-                                        placeholder="Search messages"
-                                        fullWidth
-                                        autoFocus
-                                        size="small"
-                                        InputProps={{
-                                                startAdornment: (
-                                                        <InputAdornment position="start">
-                                                                <SearchRounded fontSize="small" />
-                                                        </InputAdornment>
-                                                ),
-                                                endAdornment: hasQuery ? (
-                                                        <InputAdornment position="end">
-                                                                <IconButton
-                                                                        aria-label="Clear search"
-                                                                        size="small"
-                                                                        onClick={handleClearQuery}>
-                                                                        <ClearRounded fontSize="small" />
-                                                                </IconButton>
-                                                        </InputAdornment>
-                                                ) : undefined
-                                        }}
-                                />
-                        </Stack>
+        const statusBoxSx = {
+                flex: 1,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                textAlign: "center",
+                paddingX: 1.5,
+                paddingY: 3
+        } as const;
 
-			<ToggleButtonGroup
-				value={timeRange}
-				exclusive
-				onChange={handleTimeRangeChange}
-				size="small"
-                                fullWidth>
-                                {SEARCH_TIME_RANGES.map(({value, label}) => (
-                                        <ToggleButton key={value} value={value}>
-                                                {label}
-                                        </ToggleButton>
-                                ))}
-                        </ToggleButtonGroup>
+        return (
+                <Box display="flex" flexDirection="column" flex={1} minHeight={0}>
+                        <Box
+                                component="header"
+                                sx={{
+                                        paddingX: 1.5,
+                                        paddingY: 1,
+                                        borderBottom: (theme) => `1px solid ${theme.palette.divider}`,
+                                        display: "flex",
+                                        flexDirection: "column",
+                                        gap: 1
+                                }}>
+                                <Stack direction="row" spacing={1} alignItems="center">
+                                        <IconButton aria-label="Back to conversations" onClick={handleCancel}>
+                                                <ArrowBackRounded />
+                                        </IconButton>
+                                        <TextField
+                                                inputRef={inputRef}
+                                                value={query}
+                                                onChange={(event) => onQueryChange(event.target.value)}
+                                                placeholder="Search messages"
+                                                fullWidth
+                                                autoFocus
+                                                size="small"
+                                                InputProps={{
+                                                        startAdornment: (
+                                                                <InputAdornment position="start">
+                                                                        <SearchRounded fontSize="small" />
+                                                                </InputAdornment>
+                                                        ),
+                                                        endAdornment: hasQuery ? (
+                                                                <InputAdornment position="end">
+                                                                        <IconButton
+                                                                                aria-label="Clear search"
+                                                                                size="small"
+                                                                                onClick={handleClearQuery}>
+                                                                                <ClearRounded fontSize="small" />
+                                                                        </IconButton>
+                                                                </InputAdornment>
+                                                        ) : undefined
+                                                }}
+                                        />
+                                </Stack>
+
+                                <ToggleButtonGroup
+                                        value={timeRange}
+                                        exclusive
+                                        onChange={handleTimeRangeChange}
+                                        size="small"
+                                        fullWidth>
+                                        {SEARCH_TIME_RANGES.map(({value, label}) => (
+                                                <ToggleButton key={value} value={value}>
+                                                        {label}
+                                                </ToggleButton>
+                                        ))}
+                                </ToggleButtonGroup>
+                        </Box>
 
                         <Box flex={1} minHeight={0} display="flex" flexDirection="column">
-				{loading ? (
-					<Box height="100%" display="flex" alignItems="center" justifyContent="center">
-						<CircularProgress />
-					</Box>
-				) : error ? (
-					<Box px={2} py={4} textAlign="center">
-						<Typography color="error">{error.message}</Typography>
-					</Box>
-				) : !hasQuery ? (
-					<Box px={2} py={4} textAlign="center">
-						<Typography color="textSecondary">Type to search your messages</Typography>
-					</Box>
-				) : results.length === 0 ? (
-					<Box px={2} py={4} textAlign="center">
-						<Typography color="textSecondary">No results found</Typography>
-					</Box>
-				) : (
+                                {loading ? (
+                                        <Box sx={statusBoxSx}>
+                                                <CircularProgress />
+                                        </Box>
+                                ) : error ? (
+                                        <Box sx={statusBoxSx}>
+                                                <Typography color="error">{error.message}</Typography>
+                                        </Box>
+                                ) : !hasQuery ? (
+                                        <Box sx={statusBoxSx}>
+                                                <Typography color="textSecondary">Type to search your messages</Typography>
+                                        </Box>
+                                ) : results.length === 0 ? (
+                                        <Box sx={statusBoxSx}>
+                                                <Typography color="textSecondary">No results found</Typography>
+                                        </Box>
+                                ) : (
                                         <List
                                                 className={styles.sidebarList}
+                                                disablePadding
                                                 sx={{paddingTop: 0}}
                                                 ref={listRef}
                                                 onScroll={handleListScroll}>
                                                 {results.map((hit) => {
                                                         const key = String(hit.originalROWID);
                                                         const titleKey = hit.conversationGuid ?? hit.message.chatGuid;
-							const title = (titleKey ? conversationTitleMap.get(titleKey) : undefined)
-								?? conversationTitleMap.get(hit.message.chatGuid ?? "")
-								?? conversationTitleMap.get(hit.conversationGuid ?? "")
-								?? titleKey
-								?? "Unknown conversation";
-							return (
+                                                        const title = (titleKey ? conversationTitleMap.get(titleKey) : undefined)
+                                                                ?? conversationTitleMap.get(hit.message.chatGuid ?? "")
+                                                                ?? conversationTitleMap.get(hit.conversationGuid ?? "")
+                                                                ?? titleKey
+                                                                ?? "Unknown conversation";
+                                                        return (
                                                                 <SearchResultItem
                                                                         key={key}
                                                                         hit={hit}
@@ -565,9 +587,9 @@ function SearchPanel(props: SearchPanelProps) {
                                                 })}
                                         </List>
                                 )}
-			</Box>
-		</Stack>
-	);
+                        </Box>
+                </Box>
+        );
 }
 
 function SearchResultItem(props: {hit: MessageSearchHit; title: string; query: string; onSelected: (result: MessageSearchHit) => void}) {
@@ -653,36 +675,44 @@ function SearchResultItem(props: {hit: MessageSearchHit; title: string; query: s
 
         return (
                 <ListItemButton
-			alignItems="flex-start"
-			onClick={() => onSelected(hit)}
-			sx={{
-				marginX: 1,
-				marginY: 0.5,
-				borderRadius: 1,
-				paddingX: 1.5,
-				paddingY: 1,
-				"&&:hover": {
-					backgroundColor: "action.hover"
-				}
-			}}>
-			<ListItemText
-				primary={(
-					<Stack direction="row" alignItems="flex-start" spacing={1}>
-						<Typography
-							variant="subtitle1"
-							sx={{
-								flexGrow: 1,
-								overflow: "hidden",
-								textOverflow: "ellipsis",
-								whiteSpace: "nowrap"
-							}}>
-							{title}
-						</Typography>
-						<Typography variant="caption" color="textSecondary" sx={{flexShrink: 0}}>
-							{timestamp}
-						</Typography>
-					</Stack>
-				)}
+                        alignItems="flex-start"
+                        onClick={() => onSelected(hit)}
+                        sx={{
+                                marginX: 1,
+                                marginY: 0.5,
+                                borderRadius: 1,
+                                paddingX: 1.5,
+                                paddingY: 0.5,
+                                "&&:hover": {
+                                        backgroundColor: "action.hover"
+                                }
+                        }}>
+                        <ListItemText
+                                primary={(
+                                        <Stack direction="row" alignItems="flex-start" spacing={1}>
+                                                <Typography
+                                                        variant="body1"
+                                                        sx={{
+                                                                flexGrow: 1,
+                                                                overflow: "hidden",
+                                                                textOverflow: "ellipsis",
+                                                                whiteSpace: "nowrap",
+                                                                fontSize: "1rem",
+                                                                fontWeight: 500
+                                                        }}>
+                                                        {title}
+                                                </Typography>
+                                                <Typography
+                                                        variant="body2"
+                                                        color="textSecondary"
+                                                        sx={{
+                                                                flexShrink: 0,
+                                                                paddingTop: 0.5
+                                                        }}>
+                                                        {timestamp}
+                                                </Typography>
+                                        </Stack>
+                                )}
 				secondary={(
                                         <Typography
                                                 variant="body2"
