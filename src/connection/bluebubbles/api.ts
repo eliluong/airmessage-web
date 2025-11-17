@@ -7,7 +7,8 @@ import {
         MessageSendResponse,
         ServerFeaturesResponse,
         ServerMetadataResponse,
-        SingleChatResponse
+        SingleChatResponse,
+        SingleMessageResponse
 } from "./types";
 
 const API_ROOT = "/api/v1";
@@ -112,7 +113,7 @@ export async function pingServer(auth: BlueBubblesAuthState): Promise<void> {
 
 export async function fetchChats(auth: BlueBubblesAuthState, options: {limit?: number} = {}): Promise<ChatQueryResponse> {
         const body: Record<string, unknown> = {
-                with: ["participants", "lastmessage"],
+                with: ["participants", "lastmessage", "lastmessage.attachments"],
                 sort: "lastmessage"
         };
         if(options.limit !== undefined) {
@@ -130,7 +131,21 @@ export async function fetchChat(auth: BlueBubblesAuthState, guid: string): Promi
         const params = new URLSearchParams();
         params.append("with", "participants");
         params.append("with", "lastmessage");
+        params.append("with", "lastmessage.attachments");
         return requestJson<SingleChatResponse>(auth, `/chat/${encodeURIComponent(guid)}?${params.toString()}`, {method: "GET"});
+}
+
+export async function fetchMessage(auth: BlueBubblesAuthState, guid: string, options: {includeMetadata?: boolean} = {}): Promise<SingleMessageResponse> {
+        const params = new URLSearchParams();
+        params.append("with", "attachments");
+        if(options.includeMetadata) {
+                params.append("with", "attachment.metadata");
+        }
+        return requestJson<SingleMessageResponse>(
+                auth,
+                `/message/${encodeURIComponent(guid)}?${params.toString()}`,
+                {method: "GET"}
+        );
 }
 
 export async function createChat(auth: BlueBubblesAuthState, body: Record<string, unknown>): Promise<ChatCreateResponse> {

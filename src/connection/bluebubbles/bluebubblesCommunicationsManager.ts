@@ -45,6 +45,7 @@ import {
         fetchChat,
         fetchChatMessages,
         fetchChats,
+        fetchMessage,
         fetchServerMetadata,
         pingServer,
         queryMessages,
@@ -126,6 +127,8 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
         private supportsDeliveredReceipts = false;
         private supportsReadReceipts = false;
         private readonly conversationGuidCache = new Map<string, string>();
+        private readonly previewAttachmentHydrations = new Map<string, Promise<void>>();
+        private readonly previewAttachmentCache = new Map<string, AttachmentResponse[]>();
 
         constructor(dataProxy: DataProxy, auth: BlueBubblesAuthState, private readonly options: {onError?: (error: Error) => void} = {}) {
                 super(dataProxy);
@@ -558,7 +561,101 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 const response: ChatQueryResponse = await fetchChats(this.auth, {limit: requestLimit});
                 const conversations = response.data.map((chat) => this.convertChat(chat));
                 this.listener?.onMessageConversations(conversations);
+                response.data.forEach((chat, index) => {
+                        const conversation = conversations[index];
+                        if(conversation) {
+                                this.ensureLastMessagePreviewHydrated(chat, conversation);
+                        }
+                });
                 this.ensurePollingStarted();
+        }
+
+        private getVisibleAttachments(message: MessageResponse | undefined): AttachmentResponse[] {
+                if(!message?.attachments) return [];
+                return message.attachments.filter((attachment) => !attachment.hideAttachment);
+        }
+
+        private resolvePreviewMessage(message: MessageResponse): MessageResponse {
+                const visibleAttachments = this.getVisibleAttachments(message);
+                if(visibleAttachments.length > 0) {
+                        this.rememberPreviewAttachments(message);
+                        return message;
+                }
+
+                const canonicalGuid = normalizeMessageGuid(message.guid) ?? message.guid;
+                if(!canonicalGuid) return message;
+
+                const cached = this.previewAttachmentCache.get(canonicalGuid);
+                if(!cached || cached.length === 0) return message;
+
+                return {
+                        ...message,
+                        attachments: cached.map((attachment) => ({...attachment}))
+                };
+        }
+
+        private ensureLastMessagePreviewHydrated(chat: ChatResponse, conversation: LinkedConversation) {
+                const message = chat.lastMessage;
+                if(!message) return;
+
+                const resolvedMessage = this.resolvePreviewMessage(message);
+                const visibleAttachments = this.getVisibleAttachments(resolvedMessage);
+                if(visibleAttachments.length > 0) return;
+
+                const text = resolvedMessage.text?.trim();
+                if(text && text.length > 0) return;
+                if(isReactionMessage(resolvedMessage) || isGroupAction(resolvedMessage) || isRenameAction(resolvedMessage)) return;
+
+                const canonicalGuid = normalizeMessageGuid(resolvedMessage.guid) ?? resolvedMessage.guid;
+                if(!canonicalGuid) return;
+                if(this.previewAttachmentHydrations.has(canonicalGuid)) return;
+
+                const hydration = this.hydrateLastMessagePreview(conversation, canonicalGuid);
+                this.previewAttachmentHydrations.set(canonicalGuid, hydration);
+                hydration.finally(() => {
+                        if(this.previewAttachmentHydrations.get(canonicalGuid) === hydration) {
+                                this.previewAttachmentHydrations.delete(canonicalGuid);
+                        }
+                });
+        }
+
+        private async hydrateLastMessagePreview(conversation: LinkedConversation, messageGuid: string): Promise<void> {
+                try {
+                        console.log("[BlueBubbles] Hydrating last message attachments", {chatGuid: conversation.guid, messageGuid});
+                        const response = await fetchMessage(this.auth, messageGuid, {includeMetadata: true});
+                        const hydratedMessage = response.data;
+                        const visibleAttachments = this.getVisibleAttachments(hydratedMessage);
+                        if(visibleAttachments.length === 0) {
+                                console.log("[BlueBubbles] No attachments returned for preview hydration", {chatGuid: conversation.guid, messageGuid});
+                                return;
+                        }
+
+                        this.previewAttachmentCache.set(
+                                messageGuid,
+                                visibleAttachments.map((attachment) => ({...attachment}))
+                        );
+                        this.rememberPreviewAttachments(hydratedMessage);
+
+                        const preview = buildConversationPreview(hydratedMessage);
+                        const updatedConversation: LinkedConversation = {
+                                ...conversation,
+                                preview
+                        };
+                        this.listener?.onConversationUpdate([[conversation.guid, updatedConversation]]);
+                } catch(error) {
+                        console.warn("[BlueBubbles] Failed to hydrate last message attachments", {chatGuid: conversation.guid, messageGuid, error});
+                }
+        }
+
+        private rememberPreviewAttachments(message: MessageResponse) {
+                const canonicalGuid = normalizeMessageGuid(message.guid) ?? message.guid;
+                if(!canonicalGuid) return;
+                const visibleAttachments = this.getVisibleAttachments(message);
+                if(visibleAttachments.length === 0) return;
+                this.previewAttachmentCache.set(
+                        canonicalGuid,
+                        visibleAttachments.map((attachment) => ({...attachment}))
+                );
         }
 
         private ensurePollingStarted() {
@@ -571,7 +668,9 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 const results: [string, Conversation | undefined][] = await Promise.all(chatGUIDs.map(async (guid) => {
                         try {
                                 const response = await fetchChat(this.auth, guid);
-                                return [guid, this.convertChat(response.data)];
+                                const conversation = this.convertChat(response.data);
+                                this.ensureLastMessagePreviewHydrated(response.data, conversation);
+                                return [guid, conversation];
                         } catch(error) {
                                 console.warn(`Failed to fetch chat ${guid}`, error);
                                 return [guid, undefined];
@@ -840,6 +939,7 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 }
 
                 const canonicalGuid = normalizeMessageGuid(message.guid) ?? message.guid;
+                this.rememberPreviewAttachments(message);
                 const attachments = (message.attachments ?? [])
                         .filter((attachment) => !attachment.hideAttachment)
                         .map(convertAttachment);
@@ -975,7 +1075,8 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
 
         private convertChat(chat: ChatResponse): LinkedConversation {
                 const members = (chat.participants ?? []).map((handle) => handle.address).filter(Boolean);
-                const preview: ConversationPreview = chat.lastMessage ? buildConversationPreview(chat.lastMessage) : {
+                const previewMessage = chat.lastMessage ? this.resolvePreviewMessage(chat.lastMessage) : undefined;
+                const preview: ConversationPreview = previewMessage ? buildConversationPreview(previewMessage) : {
                         type: ConversationPreviewType.ChatCreation,
                         date: new Date()
                 };
@@ -1040,10 +1141,30 @@ function convertAttachment(attachment: AttachmentResponse) {
         };
 }
 
+function resolveAttachmentPreviewDescriptor(attachment: AttachmentResponse): string {
+        if(attachment.mimeType) return attachment.mimeType;
+        const uti = attachment.uti?.toLowerCase();
+        if(uti) {
+                if(uti.startsWith("public.image")
+                        || uti.includes("image")
+                        || uti.includes("jpeg")
+                        || uti.includes("png")
+                        || uti.includes("heic")
+                        || uti.includes("heif")) {
+                        return "image/*";
+                }
+                if(uti.startsWith("public.movie") || uti.includes("video")) return "video/*";
+                if(uti.startsWith("public.audio") || uti.includes("audio") || uti.includes("aiff") || uti.includes("m4a")) {
+                        return "audio/*";
+                }
+        }
+        return attachment.transferName;
+}
+
 function buildConversationPreview(message: MessageResponse): ConversationPreview {
         const attachments = (message.attachments ?? [])
                 .filter((attachment) => !attachment.hideAttachment)
-                .map((attachment) => attachment.transferName);
+                .map((attachment) => resolveAttachmentPreviewDescriptor(attachment));
         return {
                 type: ConversationPreviewType.Message,
                 date: new Date(message.dateCreated),
@@ -1409,7 +1530,8 @@ export const __testables = {
         mapTapback,
         normalizeTapbackIdentifier,
         normalizeMessageGuid,
-        computeMessageStatus
+        computeMessageStatus,
+        buildConversationPreview
 };
 
 function normalizeMessageGuid(guid: string | null | undefined): string | undefined {
