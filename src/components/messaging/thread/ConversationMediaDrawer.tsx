@@ -798,7 +798,7 @@ export default function ConversationMediaDrawer({
                 );
         };
 
-        const content = (
+        const drawerContent = open ? (
                 <Stack height="100%">
                         <Toolbar>
                                 <Typography variant="h6" flexGrow={1} noWrap>
@@ -842,21 +842,21 @@ export default function ConversationMediaDrawer({
                                 </Box>
                         </Box>
                 </Stack>
-        );
+        ) : null;
 
         return (<>
                 {fullScreen ? (
                         <Dialog fullScreen open={open} onClose={onClose}>
-                                {content}
+                                {drawerContent}
                         </Dialog>
                 ) : (
                         <Drawer
                                 anchor="right"
                                 open={open}
                                 onClose={onClose}
-                                ModalProps={{keepMounted: true}}
+                                ModalProps={{keepMounted: false}}
                                 PaperProps={{sx: {width: {xs: "100%", sm: 360, lg: 420}}}}>
-                                {content}
+                                {drawerContent}
                         </Drawer>
                 )}
                 <AttachmentLightbox
