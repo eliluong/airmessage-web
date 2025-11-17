@@ -34,6 +34,7 @@ import EventEmitter from "shared/util/eventEmitter";
 import localMessageCache from "shared/state/localMessageCache";
 import {installCancellablePromise} from "shared/util/cancellablePromise";
 import {ThreadFocusTarget, areFocusTargetsEqual} from "./types";
+import {useEditedMessageGroups} from "./hooks/useEditedMessageGroups";
 import ConversationMediaDrawer from "./ConversationMediaDrawer";
 
 const DEFAULT_FOCUS_PAGE_LIMIT = 15;
@@ -908,12 +909,16 @@ export default function DetailThread({conversation, focusTarget}: {
                 [displayState]
         );
 
+        const editedMessages = useEditedMessageGroups(
+                displayState.type === DisplayType.Messages ? displayState.messages : undefined
+        );
+
         let body: React.ReactNode;
         if(displayState.type === DisplayType.Messages) {
                 body = (
                         <MessageList
                                 conversation={conversation}
-                                items={displayState.messages}
+                                items={editedMessages}
                                 messageSubmitEmitter={messageSubmitEmitter.current}
                                 focusTarget={focusMetadata}
                                 showHistoryLoader={historyLoadState === PageLoadState.Loading}
