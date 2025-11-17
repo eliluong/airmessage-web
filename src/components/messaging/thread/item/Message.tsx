@@ -334,14 +334,6 @@ if(!hasHistoryEntries) return;
 setShowEditHistory((value) => !value);
 }, [hasHistoryEntries]);
 
-const handleEditedLabelKeyDown = useCallback((event: React.KeyboardEvent<HTMLSpanElement>) => {
-if(!hasHistoryEntries) return;
-if(event.key === "Enter" || event.key === " ") {
-event.preventDefault();
-setShowEditHistory((value) => !value);
-}
-}, [hasHistoryEntries]);
-
 const historyFlow: MessagePartFlow = {
 isOutgoing,
 isUnconfirmed,
@@ -429,6 +421,7 @@ amLinked={props.flow.anchorTop}
                                         sx={{marginLeft: 1}}
                                         flexGrow={1}
                                         direction="column"
+                                        spacing={0.5}
                                         alignItems={isOutgoing ? "end" : "start"}>
                                         <Stack
                                                 ref={messageBubbleRef}
@@ -438,15 +431,58 @@ amLinked={props.flow.anchorTop}
                                                 direction="column"
 alignItems={isOutgoing ? "end" : "start"}
 sx={{
-width: "100%"
-}}>
-{bubbleNodes}
-</Stack>
-</Stack>
-				
-				{/* Progress spinner */}
-				{props.message.progress !== undefined
-					&& props.message.error === undefined
+                                                width: "100%"
+                                        }}>
+                                                {bubbleNodes}
+                                        </Stack>
+
+                                        {/* Message status / edit chip */}
+                                        {showFootnoteRow && (
+                                                <Stack
+                                                        direction="row"
+                                                        spacing={1}
+                                                        alignItems="center"
+                                                        alignSelf={isOutgoing ? "flex-end" : "flex-start"}>
+                                                        {showEditedLabel && (
+                                                                <Typography
+                                                                        component={hasHistoryEntries ? "button" : "span"}
+                                                                        type={hasHistoryEntries ? "button" : undefined}
+                                                                        variant="caption"
+                                                                        aria-expanded={hasHistoryEntries ? showEditHistory : undefined}
+                                                                        onClick={hasHistoryEntries ? toggleHistoryVisibility : undefined}
+                                                                        title={editedLabelTitle}
+                                                                        sx={{
+                                                                                cursor: hasHistoryEntries ? "pointer" : "default",
+                                                                                textDecoration: showEditHistory ? "underline" : "none",
+                                                                                outline: "none",
+                                                                                color: "#448AFF",
+                                                                                fontWeight: 700,
+                                                                                backgroundColor: "transparent",
+                                                                                border: 0,
+                                                                                padding: 0,
+                                                                                '&:focus-visible': hasHistoryEntries ? {
+                                                                                        outline: "2px solid currentColor",
+                                                                                        outlineOffset: 2
+                                                                                } : undefined
+                                                                        }}
+                                                                        Edited
+                                                                </Typography>
+                                                        )}
+                                                        {statusText && (
+                                                                <Typography
+                                                                        textAlign={isOutgoing ? "end" : "start"}
+                                                                        variant="caption"
+                                                                        color="textSecondary">
+                                                                        {statusText}
+                                                                </Typography>
+                                                        )}
+                                                </Stack>
+                                        )}
+                                </Stack>
+
+                                {/* Progress spinner */}
+                                {props.message.progress !== undefined
+                                        && props.message.error === undefined
 					&& (
 						<CircularProgress
 							sx={{
@@ -470,47 +506,6 @@ width: "100%"
 				)}
 			</Stack>
 			
-{/* Message status / edit chip */}
-{showFootnoteRow && (
-<Stack
-marginTop={0.5}
-direction="row"
-spacing={1}
-justifyContent={isOutgoing ? "flex-end" : "flex-start"}
-alignItems="center">
-{showEditedLabel && (
-<Typography
-variant="caption"
-color="textSecondary"
-role={hasHistoryEntries ? "button" : undefined}
-tabIndex={hasHistoryEntries ? 0 : undefined}
-aria-expanded={hasHistoryEntries ? showEditHistory : undefined}
-onClick={hasHistoryEntries ? toggleHistoryVisibility : undefined}
-onKeyDown={hasHistoryEntries ? handleEditedLabelKeyDown : undefined}
-title={editedLabelTitle}
-sx={{
-cursor: hasHistoryEntries ? "pointer" : "default",
-textDecoration: showEditHistory ? "underline" : "none",
-outline: "none",
-'&:focus-visible': hasHistoryEntries ? {
-outline: "2px solid currentColor",
-outlineOffset: 2
-} : undefined
-}}
->
-Edited
-</Typography>
-)}
-{statusText && (
-<Typography
-textAlign={isOutgoing ? "end" : "start"}
-variant="caption"
-color="textSecondary">
-{statusText}
-</Typography>
-)}
-</Stack>
-)}
                         {timestampPosition !== undefined && (
                                 <Fade in={showTimestamp} timeout={{enter: 150, exit: 100}} mountOnEnter unmountOnExit>
                                         <Typography
