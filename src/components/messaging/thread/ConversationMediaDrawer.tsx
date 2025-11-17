@@ -732,7 +732,7 @@ export default function ConversationMediaDrawer({
                                                 );
                                                 const key = `${link.normalizedUrl}-${link.messageGuid ?? link.messageLocalID ?? link.messageServerID ?? link.date.getTime()}`;
                                                 return (
-                                                        <ListItem key={key} alignItems="flex-start" disableGutters sx={{py: 1}}>
+                                                        <ListItem key={key} alignItems="flex-start" disableGutters sx={{py: 0}}>
                                                                 <ListItemAvatar>
                                                                         <Avatar
                                                                                 src={senderInfo?.avatarUrl}
