@@ -20,6 +20,7 @@ import DetailThread from "shared/components/messaging/thread/DetailThread";
 import {ThreadFocusTarget} from "shared/components/messaging/thread/types";
 import {PeopleContext} from "shared/state/peopleState";
 import {logSelectedConversationPayload} from "shared/connection/bluebubbles/debugLogging";
+import {searchCache} from "shared/state/searchCache";
 
 export default function Messaging(props: {
         serverUrl: string;
@@ -42,6 +43,7 @@ export default function Messaging(props: {
                 markConversationRead
         } = useConversationState(detailPane.type === DetailType.Thread ? detailPane.conversationID : undefined, true);
         useEffect(() => {
+                searchCache.clear();
                 ConnectionManager.setBlueBubblesAuth({
                         serverUrl,
                         accessToken,
@@ -51,6 +53,7 @@ export default function Messaging(props: {
                 });
 
                 return () => {
+                        searchCache.clear();
                         ConnectionManager.setBlueBubblesAuth(undefined);
                 };
         }, [serverUrl, accessToken, refreshToken, legacyPasswordAuth, deviceName]);
