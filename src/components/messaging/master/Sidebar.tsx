@@ -1,4 +1,4 @@
-import React, {useCallback, useContext, useEffect, useMemo, useRef, useState} from "react";
+import React, {useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState} from "react";
 import styles from "./Sidebar.module.css";
 import AirMessageLogo from "../../logo/AirMessageLogo";
 import {
@@ -50,6 +50,7 @@ import {TransitionGroup} from "react-transition-group";
 import SettingsDialog from "shared/components/messaging/dialog/SettingsDialog";
 import {MessageSearchHit} from "shared/data/blocks";
 import useMessageSearch from "shared/state/useMessageSearch";
+import {searchCache} from "shared/state/searchCache";
 import {getMemberTitleSync, mimeTypeToPreview} from "shared/util/conversationUtils";
 import {PeopleContext} from "shared/state/peopleState";
 import {usePersonName} from "shared/util/hookUtils";
@@ -128,9 +129,30 @@ export default function Sidebar(props: {
 	
         const [isFaceTimeLinkLoading, setFaceTimeLinkLoading] = useState(false);
         const [isSearchMode, setIsSearchMode] = useState(false);
-	const {results: searchResults, loading: searchLoading, error: searchError, search, cancel} = useMessageSearch({debounceMs: 350});
+        const {
+                results: searchResults,
+                loading: searchLoading,
+                error: searchError,
+                cacheKey: searchCacheKey,
+                search
+        } = useMessageSearch({debounceMs: 350});
         const [searchQuery, setSearchQuery] = useState("");
         const [searchTimeRange, setSearchTimeRange] = useState<SearchTimeRange>(DEFAULT_SEARCH_TIME_RANGE);
+        const searchOptions = useMemo(() => {
+                const trimmed = searchQuery.trim();
+                if(trimmed.length === 0) {
+                        return undefined;
+                }
+
+                const {startDate, endDate} = resolveSearchRange(searchTimeRange);
+                return {
+                        term: trimmed,
+                        startDate,
+                        endDate,
+                        offset: undefined,
+                        limit: undefined,
+                };
+        }, [searchQuery, searchTimeRange]);
         const createFaceTimeLink = useCallback(async () => {
                 setFaceTimeLinkLoading(true);
 
@@ -183,44 +205,17 @@ export default function Sidebar(props: {
         }, [props.conversations, peopleState]);
 
         const handleToggleSearchMode = useCallback(() => {
-                setIsSearchMode((current) => {
-                        const next = !current;
-                        if(!next) {
-                                setSearchQuery("");
-                                setSearchTimeRange(DEFAULT_SEARCH_TIME_RANGE);
-                                search(undefined);
-                                cancel();
-                        }
-                        return next;
-                });
-        }, [cancel, search]);
+                setIsSearchMode((current) => !current);
+        }, []);
 
         const handleCloseSearchMode = useCallback(() => {
                 setIsSearchMode(false);
-                setSearchQuery("");
-                setSearchTimeRange(DEFAULT_SEARCH_TIME_RANGE);
-                search(undefined);
-                cancel();
-        }, [cancel, search]);
+        }, []);
 
         useEffect(() => {
                 if(!isSearchMode) return;
-
-                const trimmed = searchQuery.trim();
-                if(trimmed.length === 0) {
-                        search(undefined);
-                        return;
-                }
-
-                const {startDate, endDate} = resolveSearchRange(searchTimeRange);
-                search({
-                        term: trimmed,
-                        startDate,
-                        endDate,
-                        offset: undefined,
-                        limit: undefined,
-                });
-        }, [isSearchMode, searchQuery, searchTimeRange, search]);
+                search(searchOptions);
+        }, [isSearchMode, searchOptions, search]);
 
         useEffect(() => {
                 if(!isSearchMode) return;
@@ -353,17 +348,18 @@ export default function Sidebar(props: {
 			)}
 			
 			{isSearchMode ? (
-				<SearchPanel
-					conversationTitleMap={conversationTitleMap}
-					query={searchQuery}
-					onQueryChange={setSearchQuery}
-					timeRange={searchTimeRange}
-					onTimeRangeChange={setSearchTimeRange}
-					loading={searchLoading}
-					results={searchResults}
-					error={searchError}
-					onResultSelected={handleSearchResultSelected}
-					onCancel={handleCloseSearchMode} />
+                                <SearchPanel
+                                        conversationTitleMap={conversationTitleMap}
+                                        query={searchQuery}
+                                        onQueryChange={setSearchQuery}
+                                        timeRange={searchTimeRange}
+                                        onTimeRangeChange={setSearchTimeRange}
+                                        loading={searchLoading}
+                                        results={searchResults}
+                                        error={searchError}
+                                        onResultSelected={handleSearchResultSelected}
+                                        onCancel={handleCloseSearchMode}
+                                        cacheKey={searchCacheKey} />
 			) : props.conversations !== undefined ? (
 				<List className={styles.sidebarList} onScroll={handleScroll} ref={listRef}>
 					<TransitionGroup>
@@ -403,12 +399,13 @@ interface SearchPanelProps {
         query: string;
         onQueryChange: (value: string) => void;
         timeRange: SearchTimeRange;
-	onTimeRangeChange: (value: SearchTimeRange) => void;
-	loading: boolean;
-	results: MessageSearchHit[];
-	error: Error | undefined;
-	onResultSelected: (result: MessageSearchHit) => void;
-	onCancel: VoidFunction;
+        onTimeRangeChange: (value: SearchTimeRange) => void;
+        loading: boolean;
+        results: MessageSearchHit[];
+        error: Error | undefined;
+        onResultSelected: (result: MessageSearchHit) => void;
+        onCancel: VoidFunction;
+        cacheKey?: string;
 }
 
 function SearchPanel(props: SearchPanelProps) {
@@ -416,16 +413,19 @@ function SearchPanel(props: SearchPanelProps) {
                 conversationTitleMap,
                 query,
                 onQueryChange,
-		timeRange,
-		onTimeRangeChange,
-		loading,
-		results,
-		error,
-		onResultSelected,
-                onCancel
+                timeRange,
+                onTimeRangeChange,
+                loading,
+                results,
+                error,
+                onResultSelected,
+                onCancel,
+                cacheKey
         } = props;
 
         const inputRef = useRef<HTMLInputElement | null>(null);
+        const listRef = useRef<HTMLUListElement | null>(null);
+        const scrollPersistHandleRef = useRef<number | undefined>(undefined);
 
         const handleTimeRangeChange = useCallback((event: React.MouseEvent<HTMLElement>, value: SearchTimeRange | null) => {
                 if(value !== null) {
@@ -434,10 +434,8 @@ function SearchPanel(props: SearchPanelProps) {
         }, [onTimeRangeChange]);
 
         const handleCancel = useCallback(() => {
-                onQueryChange("");
-                onTimeRangeChange(DEFAULT_SEARCH_TIME_RANGE);
                 onCancel();
-        }, [onCancel, onQueryChange, onTimeRangeChange]);
+        }, [onCancel]);
 
         const hasQuery = query.trim().length > 0;
 
@@ -445,6 +443,38 @@ function SearchPanel(props: SearchPanelProps) {
                 onQueryChange("");
                 inputRef.current?.focus();
         }, [onQueryChange]);
+
+        useLayoutEffect(() => {
+                if(!cacheKey) return;
+                const viewState = searchCache.getViewState(cacheKey);
+                const scrollTop = viewState?.scrollTop ?? 0;
+                if(listRef.current) {
+                        listRef.current.scrollTo({top: scrollTop});
+                }
+        }, [cacheKey]);
+
+        const handleListScroll = useCallback((event: React.UIEvent<HTMLUListElement>) => {
+                if(!cacheKey) return;
+                const target = event.currentTarget;
+                if(scrollPersistHandleRef.current !== undefined) return;
+                scrollPersistHandleRef.current = window.setTimeout(() => {
+                        scrollPersistHandleRef.current = undefined;
+                        searchCache.updateViewState(cacheKey, {scrollTop: target.scrollTop});
+                }, 100);
+        }, [cacheKey]);
+
+        useEffect(() => {
+                return () => {
+                        if(scrollPersistHandleRef.current !== undefined) {
+                                window.clearTimeout(scrollPersistHandleRef.current);
+                                scrollPersistHandleRef.current = undefined;
+                        }
+                        if(cacheKey) {
+                                searchCache.updateViewState(cacheKey, {scrollTop: listRef.current?.scrollTop ?? 0});
+                        }
+                        listRef.current = null;
+                };
+        }, [cacheKey]);
 
         return (
                 <Stack flex={1} minHeight={0} px={2} pb={2} spacing={2}>
@@ -511,10 +541,14 @@ function SearchPanel(props: SearchPanelProps) {
 						<Typography color="textSecondary">No results found</Typography>
 					</Box>
 				) : (
-					<List className={styles.sidebarList} sx={{paddingTop: 0}}>
-						{results.map((hit) => {
-							const key = String(hit.originalROWID);
-							const titleKey = hit.conversationGuid ?? hit.message.chatGuid;
+                                        <List
+                                                className={styles.sidebarList}
+                                                sx={{paddingTop: 0}}
+                                                ref={listRef}
+                                                onScroll={handleListScroll}>
+                                                {results.map((hit) => {
+                                                        const key = String(hit.originalROWID);
+                                                        const titleKey = hit.conversationGuid ?? hit.message.chatGuid;
 							const title = (titleKey ? conversationTitleMap.get(titleKey) : undefined)
 								?? conversationTitleMap.get(hit.message.chatGuid ?? "")
 								?? conversationTitleMap.get(hit.conversationGuid ?? "")

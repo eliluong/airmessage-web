@@ -2,6 +2,7 @@ import {useCallback, useEffect, useRef, useState} from "react";
 import * as ConnectionManager from "shared/connection/connectionManager";
 import type {MessageSearchOptions, MessageSearchResult, MessageSearchMetadata} from "shared/connection/messageSearch";
 import type {MessageSearchHit} from "shared/data/blocks";
+import {searchCache} from "shared/state/searchCache";
 
 interface UseMessageSearchConfig {
         debounceMs?: number;
@@ -12,6 +13,10 @@ interface UseMessageSearchState {
         metadata?: MessageSearchMetadata;
         loading: boolean;
         error: Error | undefined;
+        cacheKey?: string;
+        options?: MessageSearchOptions;
+        fromCache: boolean;
+        stale: boolean;
         search: (options: MessageSearchOptions | undefined) => void;
         cancel: () => void;
 }
@@ -27,6 +32,10 @@ export default function useMessageSearch(config: UseMessageSearchConfig = {}): U
         const [metadata, setMetadata] = useState<MessageSearchMetadata | undefined>(undefined);
         const [loading, setLoading] = useState(false);
         const [error, setError] = useState<Error | undefined>(undefined);
+        const [fromCache, setFromCache] = useState(false);
+        const [stale, setStale] = useState(false);
+        const [activeOptions, setActiveOptions] = useState<MessageSearchOptions | undefined>(undefined);
+        const [cacheKey, setCacheKey] = useState<string | undefined>(undefined);
         const [pendingOptions, setPendingOptions] = useState<MessageSearchOptions | undefined>(undefined);
         const [requestSequence, setRequestSequence] = useState(0);
         const debounceHandleRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -54,19 +63,46 @@ export default function useMessageSearch(config: UseMessageSearchConfig = {}): U
                 clearPendingTimeout();
 
                 const options = pendingOptions;
+                setActiveOptions(options);
+
                 if(!options || options.term.trim().length === 0) {
                         activeRequestRef.current += 1;
                         setLoading(false);
                         setError(undefined);
                         setResults([]);
                         setMetadata(undefined);
+                        setFromCache(false);
+                        setStale(false);
+                        setCacheKey(undefined);
                         return;
                 }
 
+                const key = searchCache.makeKey(options);
+                setCacheKey(key);
+
                 const requestId = activeRequestRef.current + 1;
                 activeRequestRef.current = requestId;
-                setLoading(true);
+
                 setError(undefined);
+
+                const cachedResult = searchCache.get(key);
+                const shouldRefresh = !cachedResult || cachedResult.stale;
+
+                if(cachedResult) {
+                        setResults(cachedResult.results);
+                        setMetadata(cachedResult.metadata);
+                        setFromCache(true);
+                        setStale(!!cachedResult.stale);
+                        setLoading(false);
+                } else {
+                        setFromCache(false);
+                        setStale(false);
+                        setLoading(true);
+                }
+
+                if(!shouldRefresh) {
+                        return;
+                }
 
                 debounceHandleRef.current = setTimeout(() => {
                         if(activeRequestRef.current !== requestId) return;
@@ -74,15 +110,24 @@ export default function useMessageSearch(config: UseMessageSearchConfig = {}): U
                         ConnectionManager.searchMessages(options)
                                 .then((result: MessageSearchResult) => {
                                         if(activeRequestRef.current !== requestId) return;
+                                        searchCache.put(key, {options, results: result.items, metadata: result.metadata});
                                         setResults(result.items);
                                         setMetadata(result.metadata);
                                         setError(undefined);
+                                        setFromCache(false);
+                                        setStale(false);
                                 })
                                 .catch((err) => {
                                         if(activeRequestRef.current !== requestId) return;
                                         setError(normalizeError(err));
-                                        setResults([]);
-                                        setMetadata(undefined);
+                                        if(!cachedResult) {
+                                                setResults([]);
+                                                setMetadata(undefined);
+                                                setFromCache(false);
+                                        } else {
+                                                setFromCache(true);
+                                                setStale(true);
+                                        }
                                 })
                                 .finally(() => {
                                         if(activeRequestRef.current === requestId) {
@@ -106,6 +151,10 @@ export default function useMessageSearch(config: UseMessageSearchConfig = {}): U
                 metadata,
                 loading,
                 error,
+                cacheKey,
+                options: activeOptions,
+                fromCache,
+                stale,
                 search,
                 cancel
         };
