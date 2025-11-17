@@ -9,6 +9,7 @@ import EventEmitter from "../../../util/eventEmitter";
 import ConversationActionParticipant from "./item/ConversationActionParticipant";
 import ConversationActionRename from "./item/ConversationActionRename";
 import {ThreadFocusTarget, areFocusTargetsEqual} from "./types";
+import type {MessageItemWithEdits} from "./hooks/useEditedMessageGroups";
 
 interface Props {
         conversation: Conversation;
@@ -125,15 +126,16 @@ export default class MessageList extends React.Component<Props, State> {
                                         {this.props.showFutureLoader && <HistoryLoadingProgress key="static-futureloader" />}
                                         {this.props.items.map((item, i, array) => {
                                                 if(item.itemType === ConversationItemType.Message) {
+                                                        const message = item as MessageItemWithEdits;
                                                         return (
-								<Message
-									key={(item.localID ?? item.guid)}
-									message={item}
-									isGroupChat={this.props.conversation.members.length > 1}
-									service={this.props.conversation.service}
-									flow={getMessageFlow(item, array[i + 1], array[i - 1])}
-									showStatus={i === readTargetIndex || i === deliveredTargetIndex} />
-							);
+                                                                <Message
+                                                                        key={(item.localID ?? item.guid)}
+                                                                        message={message}
+                                                                        isGroupChat={this.props.conversation.members.length > 1}
+                                                                        service={this.props.conversation.service}
+                                                                        flow={getMessageFlow(item, array[i + 1], array[i - 1])}
+                                                                        showStatus={i === readTargetIndex || i === deliveredTargetIndex} />
+                                                        );
 						} else if(item.itemType === ConversationItemType.ParticipantAction) {
 							return (
 								<ConversationActionParticipant

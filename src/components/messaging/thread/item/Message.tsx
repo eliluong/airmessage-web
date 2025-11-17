@@ -1,21 +1,22 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {MessageItem} from "shared/data/blocks";
 import {
-	Avatar,
-        Button,
-        CircularProgress,
-        Dialog,
-        DialogActions,
-        DialogContent,
-        DialogContentText,
-        DialogTitle,
-        Fade,
-        IconButton,
-        Palette,
-        Stack,
-        StackProps,
-        styled,
-        Typography
+Avatar,
+Box,
+Button,
+CircularProgress,
+Dialog,
+DialogActions,
+DialogContent,
+DialogContentText,
+DialogTitle,
+Fade,
+IconButton,
+Palette,
+Stack,
+StackProps,
+styled,
+Typography
 } from "@mui/material";
 import {formatMessageHoverTime, getDeliveryStatusTime, getTimeDivider} from "shared/util/dateUtils";
 import {ErrorRounded} from "@mui/icons-material";
@@ -32,6 +33,7 @@ import MessageBubbleDownloadable from "shared/components/messaging/thread/item/b
 import {messageErrorToDisplay} from "shared/util/languageUtils";
 import {groupArray} from "shared/util/arrayUtils";
 import {isAttachmentPreviewable} from "shared/util/conversationUtils";
+import type {MessageItemWithEdits} from "shared/components/messaging/thread/hooks/useEditedMessageGroups";
 
 enum MessageDialog {
 	Error,
@@ -53,11 +55,11 @@ type TimestampPosition = {
 };
 
 export default function Message(props: {
-	message: MessageItem;
-	isGroupChat: boolean;
-	service: string;
-	flow: MessageFlow;
-	showStatus?: boolean;
+message: MessageItemWithEdits;
+isGroupChat: boolean;
+service: string;
+flow: MessageFlow;
+showStatus?: boolean;
 }) {
 	const [dialogState, setDialogState] = useState<MessageDialog | undefined>(undefined);
 	const closeDialog = useCallback(() => setDialogState(undefined), [setDialogState]);
@@ -76,8 +78,9 @@ export default function Message(props: {
 		closeDialog();
 	}, [props.message, closeDialog]);
 	
-        const [attachmentDataMap, setAttachmentDataMap] = useState<Map<number, FileDownloadResult>>(new Map());
-        const [showTimestamp, setShowTimestamp] = useState(false);
+const [attachmentDataMap, setAttachmentDataMap] = useState<Map<number, FileDownloadResult>>(new Map());
+const [showTimestamp, setShowTimestamp] = useState(false);
+const [showEditHistory, setShowEditHistory] = useState(false);
         const [timestampPosition, setTimestampPosition] = useState<TimestampPosition | undefined>(undefined);
         const hoverTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
         const messageStackRef = useRef<HTMLDivElement | null>(null);
@@ -244,42 +247,43 @@ export default function Message(props: {
         }, [clearHoverTimeout]);
 	
 	//Build message parts
-	const messagePartsArray: React.ReactNode[] = [];
-	if(props.message.text) {
-		messagePartsArray.push(
-			<MessageBubbleText
-				key="messagetext"
-				flow={{
-					isOutgoing: isOutgoing,
-					isUnconfirmed: isUnconfirmed,
-					color: `${colorPalette}.contrastText`,
-					backgroundColor: `${colorPalette}.main`,
-					anchorTop: props.flow.anchorTop,
-					anchorBottom: props.flow.anchorBottom || props.message.attachments.length > 0
-				}}
-				text={props.message.text}
-				stickers={stickerGroups.get(0) ?? []}
-				tapbacks={tapbackGroups.get(0) ?? []} />
-		);
-	}
-	messagePartsArray.push(
-		props.message.attachments.map((attachment, i, attachmentArray) => {
-			const componentKey = attachment.guid ?? attachment.localID;
-			const messagePartIndex = props.message.text ? i + 1 : i;
-			const stickers = stickerGroups.get(messagePartIndex) ?? [];
-			const tapbacks = tapbackGroups.get(messagePartIndex) ?? [];
-			
-			//Get the attachment's data
-			const attachmentData = getComputedFileData(i);
-			
-			const flow: MessagePartFlow = {
-				isOutgoing: isOutgoing,
-				isUnconfirmed: isUnconfirmed,
-				color: `${colorPalette}.contrastText`,
-				backgroundColor: `${colorPalette}.main`,
-				anchorTop: !!props.message.text || props.flow.anchorTop || i > 0,
-				anchorBottom: props.flow.anchorBottom || i + 1 < attachmentArray.length
-			};
+const displayedText = props.message.uiEdited?.latestText ?? props.message.text;
+const messagePartsArray: React.ReactNode[] = [];
+if(displayedText) {
+messagePartsArray.push(
+<MessageBubbleText
+key="messagetext"
+flow={{
+isOutgoing: isOutgoing,
+isUnconfirmed: isUnconfirmed,
+color: `${colorPalette}.contrastText`,
+backgroundColor: `${colorPalette}.main`,
+anchorTop: props.flow.anchorTop,
+anchorBottom: props.flow.anchorBottom || props.message.attachments.length > 0
+}}
+text={displayedText}
+stickers={stickerGroups.get(0) ?? []}
+tapbacks={tapbackGroups.get(0) ?? []} />
+);
+}
+messagePartsArray.push(
+props.message.attachments.map((attachment, i, attachmentArray) => {
+const componentKey = attachment.guid ?? attachment.localID;
+const messagePartIndex = displayedText ? i + 1 : i;
+const stickers = stickerGroups.get(messagePartIndex) ?? [];
+const tapbacks = tapbackGroups.get(messagePartIndex) ?? [];
+
+//Get the attachment's data
+const attachmentData = getComputedFileData(i);
+
+const flow: MessagePartFlow = {
+isOutgoing: isOutgoing,
+isUnconfirmed: isUnconfirmed,
+color: `${colorPalette}.contrastText`,
+backgroundColor: `${colorPalette}.main`,
+anchorTop: !!displayedText || props.flow.anchorTop || i > 0,
+anchorBottom: props.flow.anchorBottom || i + 1 < attachmentArray.length
+};
 			
 			if(attachmentData.data !== undefined && isAttachmentPreviewable(attachmentData.type)) {
 				return (
@@ -311,10 +315,70 @@ export default function Message(props: {
 		})
 	);
 	
-	return (<>
-                <MessageStack
-                        direction="column"
-                        amLinked={props.flow.anchorTop}
+const historyEntries = props.message.uiEdited?.history ?? [];
+const hasHistoryEntries = historyEntries.length > 0;
+const showHistory = showEditHistory && hasHistoryEntries;
+
+useEffect(() => {
+setShowEditHistory(false);
+}, [props.message.guid, props.message.localID, historyEntries.length]);
+
+useEffect(() => {
+if(!hasHistoryEntries) {
+setShowEditHistory(false);
+}
+}, [hasHistoryEntries]);
+
+const toggleHistoryVisibility = useCallback(() => {
+if(!hasHistoryEntries) return;
+setShowEditHistory((value) => !value);
+}, [hasHistoryEntries]);
+
+const handleEditedLabelKeyDown = useCallback((event: React.KeyboardEvent<HTMLSpanElement>) => {
+if(!hasHistoryEntries) return;
+if(event.key === "Enter" || event.key === " ") {
+event.preventDefault();
+setShowEditHistory((value) => !value);
+}
+}, [hasHistoryEntries]);
+
+const historyFlow: MessagePartFlow = {
+isOutgoing,
+isUnconfirmed,
+color: `${colorPalette}.contrastText`,
+backgroundColor: `${colorPalette}.main`,
+anchorTop: false,
+anchorBottom: false
+};
+
+const historyNodes: React.ReactNode[] = [];
+if(showHistory) {
+historyEntries.forEach((entry, index) => {
+historyNodes.push(
+<Box key={`history-${entry.sourceGuid ?? index}`} sx={{opacity: 0.7, width: "100%"}}>
+<MessageBubbleText
+flow={historyFlow}
+text={entry.text}
+stickers={[]}
+tapbacks={[]} />
+</Box>
+);
+});
+}
+
+const bubbleNodes = historyNodes.length > 0 ? historyNodes.concat(messagePartsArray) : messagePartsArray;
+
+const statusText = props.showStatus ? getStatusString(props.message) : undefined;
+const showEditedLabel = props.message.uiEdited !== undefined;
+const showFootnoteRow = showEditedLabel || !!statusText;
+const editedLabelTitle = hasHistoryEntries
+? (showEditHistory ? "Hide edit history" : "Show edit history")
+: undefined;
+
+return (<>
+<MessageStack
+direction="column"
+amLinked={props.flow.anchorTop}
                         ref={messageStackRef}
                         data-message-guid={props.message.guid}
                         data-message-server-id={props.message.serverID !== undefined ? props.message.serverID.toString() : undefined}>
@@ -372,13 +436,13 @@ export default function Message(props: {
                                                 onMouseLeave={handleMouseLeave}
                                                 gap={getBubbleSpacing(false)}
                                                 direction="column"
-                                                alignItems={isOutgoing ? "end" : "start"}
-                                                sx={{
-                                                        width: "100%"
-                                                }}>
-                                                {messagePartsArray}
-                                        </Stack>
-                                </Stack>
+alignItems={isOutgoing ? "end" : "start"}
+sx={{
+width: "100%"
+}}>
+{bubbleNodes}
+</Stack>
+</Stack>
 				
 				{/* Progress spinner */}
 				{props.message.progress !== undefined
@@ -406,16 +470,47 @@ export default function Message(props: {
 				)}
 			</Stack>
 			
-			{/* Message status */}
-			{props.showStatus && (
-				<Typography
-					marginTop={0.5}
-					textAlign="end"
-					variant="caption"
-					color="textSecondary">
-					{getStatusString(props.message)}
-				</Typography>
-			)}
+{/* Message status / edit chip */}
+{showFootnoteRow && (
+<Stack
+marginTop={0.5}
+direction="row"
+spacing={1}
+justifyContent={isOutgoing ? "flex-end" : "flex-start"}
+alignItems="center">
+{showEditedLabel && (
+<Typography
+variant="caption"
+color="textSecondary"
+role={hasHistoryEntries ? "button" : undefined}
+tabIndex={hasHistoryEntries ? 0 : undefined}
+aria-expanded={hasHistoryEntries ? showEditHistory : undefined}
+onClick={hasHistoryEntries ? toggleHistoryVisibility : undefined}
+onKeyDown={hasHistoryEntries ? handleEditedLabelKeyDown : undefined}
+title={editedLabelTitle}
+sx={{
+cursor: hasHistoryEntries ? "pointer" : "default",
+textDecoration: showEditHistory ? "underline" : "none",
+outline: "none",
+'&:focus-visible': hasHistoryEntries ? {
+outline: "2px solid currentColor",
+outlineOffset: 2
+} : undefined
+}}
+>
+Edited
+</Typography>
+)}
+{statusText && (
+<Typography
+textAlign={isOutgoing ? "end" : "start"}
+variant="caption"
+color="textSecondary">
+{statusText}
+</Typography>
+)}
+</Stack>
+)}
                         {timestampPosition !== undefined && (
                                 <Fade in={showTimestamp} timeout={{enter: 150, exit: 100}} mountOnEnter unmountOnExit>
                                         <Typography
