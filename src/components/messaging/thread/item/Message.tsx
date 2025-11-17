@@ -429,20 +429,69 @@ amLinked={props.flow.anchorTop}
                                         sx={{marginLeft: 1}}
                                         flexGrow={1}
                                         direction="column"
-                                        alignItems={isOutgoing ? "end" : "start"}>
+                                        alignItems={isOutgoing ? "end" : "start"}
+                                        spacing={showFootnoteRow ? 0.5 : 0}>
                                         <Stack
                                                 ref={messageBubbleRef}
                                                 onMouseEnter={handleMouseEnter}
                                                 onMouseLeave={handleMouseLeave}
                                                 gap={getBubbleSpacing(false)}
                                                 direction="column"
-alignItems={isOutgoing ? "end" : "start"}
-sx={{
-width: "100%"
-}}>
-{bubbleNodes}
-</Stack>
-</Stack>
+                                                alignItems={isOutgoing ? "end" : "start"}
+                                                sx={{
+                                                        width: "100%"
+                                                }}>
+                                                {bubbleNodes}
+                                        </Stack>
+
+                                        {/* Message status / edit chip */}
+                                        {showFootnoteRow && (
+                                                <Stack
+                                                        direction="row"
+                                                        spacing={1}
+                                                        justifyContent={isOutgoing ? "flex-end" : "flex-start"}
+                                                        alignItems="center"
+                                                        sx={{width: "100%"}}>
+                                                        {showEditedLabel && (
+                                                                <Typography
+                                                                        variant="caption"
+                                                                        component={hasHistoryEntries ? "button" : "span"}
+                                                                        type={hasHistoryEntries ? "button" : undefined}
+                                                                        tabIndex={hasHistoryEntries ? 0 : undefined}
+                                                                        aria-expanded={hasHistoryEntries ? showEditHistory : undefined}
+                                                                        onClick={hasHistoryEntries ? toggleHistoryVisibility : undefined}
+                                                                        onKeyDown={hasHistoryEntries ? handleEditedLabelKeyDown : undefined}
+                                                                        title={editedLabelTitle}
+                                                                        sx={{
+                                                                                color: "#448AFF",
+                                                                                fontWeight: 700,
+                                                                                cursor: hasHistoryEntries ? "pointer" : "default",
+                                                                                textDecoration: showEditHistory ? "underline" : "none",
+                                                                                outline: "none",
+                                                                                backgroundColor: "transparent",
+                                                                                border: 0,
+                                                                                padding: 0,
+                                                                                alignSelf: isOutgoing ? "flex-end" : "flex-start",
+                                                                                '&:focus-visible': hasHistoryEntries ? {
+                                                                                        outline: "2px solid currentColor",
+                                                                                        outlineOffset: 2
+                                                                                } : undefined
+                                                                        }}
+                                                                >
+                                                                        Edited
+                                                                </Typography>
+                                                        )}
+                                                        {statusText && (
+                                                                <Typography
+                                                                        textAlign={isOutgoing ? "end" : "start"}
+                                                                        variant="caption"
+                                                                        color="textSecondary">
+                                                                        {statusText}
+                                                                </Typography>
+                                                        )}
+                                                </Stack>
+                                        )}
+                                </Stack>
 				
 				{/* Progress spinner */}
 				{props.message.progress !== undefined
@@ -470,47 +519,6 @@ width: "100%"
 				)}
 			</Stack>
 			
-{/* Message status / edit chip */}
-{showFootnoteRow && (
-<Stack
-marginTop={0.5}
-direction="row"
-spacing={1}
-justifyContent={isOutgoing ? "flex-end" : "flex-start"}
-alignItems="center">
-{showEditedLabel && (
-<Typography
-variant="caption"
-color="textSecondary"
-role={hasHistoryEntries ? "button" : undefined}
-tabIndex={hasHistoryEntries ? 0 : undefined}
-aria-expanded={hasHistoryEntries ? showEditHistory : undefined}
-onClick={hasHistoryEntries ? toggleHistoryVisibility : undefined}
-onKeyDown={hasHistoryEntries ? handleEditedLabelKeyDown : undefined}
-title={editedLabelTitle}
-sx={{
-cursor: hasHistoryEntries ? "pointer" : "default",
-textDecoration: showEditHistory ? "underline" : "none",
-outline: "none",
-'&:focus-visible': hasHistoryEntries ? {
-outline: "2px solid currentColor",
-outlineOffset: 2
-} : undefined
-}}
->
-Edited
-</Typography>
-)}
-{statusText && (
-<Typography
-textAlign={isOutgoing ? "end" : "start"}
-variant="caption"
-color="textSecondary">
-{statusText}
-</Typography>
-)}
-</Stack>
-)}
                         {timestampPosition !== undefined && (
                                 <Fade in={showTimestamp} timeout={{enter: 150, exit: 100}} mountOnEnter unmountOnExit>
                                         <Typography
