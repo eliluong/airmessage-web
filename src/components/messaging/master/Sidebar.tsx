@@ -138,6 +138,10 @@ export default function Sidebar(props: {
                 search: runContactSearch,
                 clear: clearContactSearch
         } = useConversationContactSearch(props.conversations);
+        const runContactSearchRef = useRef(runContactSearch);
+        useEffect(() => {
+                runContactSearchRef.current = runContactSearch;
+        }, [runContactSearch]);
         const {
                 results: searchResults,
                 loading: searchLoading,
@@ -220,10 +224,10 @@ export default function Sidebar(props: {
                 : props.conversations ?? [];
         useEffect(() => {
                 const handle = window.setTimeout(() => {
-                        runContactSearch(contactQuery);
+                        runContactSearchRef.current(contactQuery);
                 }, 200);
                 return () => window.clearTimeout(handle);
-        }, [contactQuery, runContactSearch]);
+        }, [contactQuery]);
 
         const handleToggleSearchMode = useCallback(() => {
                 setIsSearchMode((current) => !current);

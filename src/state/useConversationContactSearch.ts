@@ -30,13 +30,14 @@ interface NormalizedQuery {
 type NameLookupMap = Map<string, string[]>;
 
 const DEFAULT_QUERY: NormalizedQuery = normalizeQuery("");
+const EMPTY_CONVERSATIONS: Conversation[] = [];
 const REMOTE_SCAN_PAGE_SIZE = 1000;
 
 export default function useConversationContactSearch(
         conversations: Conversation[] | undefined
 ): ConversationContactSearchState {
         const peopleState = useContext(PeopleContext);
-        const safeConversations = conversations ?? [];
+        const safeConversations = conversations ?? EMPTY_CONVERSATIONS;
         const [query, setQuery] = useState<NormalizedQuery>(DEFAULT_QUERY);
         const [localMatches, setLocalMatches] = useState<Conversation[]>(safeConversations);
         const [remoteMatches, setRemoteMatches] = useState<Conversation[]>([]);
@@ -118,6 +119,11 @@ export default function useConversationContactSearch(
                 void performScan();
         }, [nameLookup, peopleState]);
 
+        const runRemoteScanRef = useRef(runRemoteScan);
+        useEffect(() => {
+                runRemoteScanRef.current = runRemoteScan;
+        }, [runRemoteScan]);
+
         const search = useCallback((rawQuery: string) => {
                 const descriptor = normalizeQuery(rawQuery);
                 setQuery(descriptor);
@@ -135,8 +141,8 @@ export default function useConversationContactSearch(
 
                 const token = ++scanTokenRef.current;
                 setLoading(true);
-                runRemoteScan(descriptor, token);
-        }, [cancelRemoteScan, runRemoteScan]);
+                runRemoteScanRef.current(descriptor, token);
+        }, [cancelRemoteScan]);
 
         const clear = useCallback(() => {
                 cancelRemoteScan();
