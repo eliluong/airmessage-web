@@ -36,6 +36,7 @@ import FileDownloadResult from "shared/data/fileDownloadResult";
 import AttachmentLightbox from "./item/AttachmentLightbox";
 import useConversationMedia from "shared/state/useConversationMedia";
 import useAttachmentThumbnails from "shared/state/useAttachmentThumbnails";
+import {getMediaThumbnailCacheUrl} from "shared/state/mediaThumbnailCache";
 import {ConversationAttachmentEntry} from "shared/data/attachment";
 import {blurhashToDataURL} from "shared/util/blurhash";
 import {PeopleContext} from "shared/state/peopleState";
@@ -48,6 +49,7 @@ interface ConversationMediaDrawerProps {
         onClose: () => void;
         messages: ConversationItem[];
         enableLinkPreviews?: boolean;
+        prefetchEnabled?: boolean;
 }
 
 const DEFAULT_LINK_INITIAL_COUNT = 20;
@@ -200,7 +202,8 @@ export default function ConversationMediaDrawer({
         open,
         onClose,
         messages,
-        enableLinkPreviews = false
+        enableLinkPreviews = false,
+        prefetchEnabled = false
 }: ConversationMediaDrawerProps) {
         const theme = useTheme();
         const fullScreen = useMediaQuery(theme.breakpoints.down("md"));
@@ -223,7 +226,7 @@ export default function ConversationMediaDrawer({
                 hasMore,
                 loadMore,
                 reload
-        } = useConversationMedia(conversationGuid, open);
+        } = useConversationMedia(conversationGuid, {enabled: prefetchEnabled, visible: open});
         const [previewState, setPreviewState] = useState<{
                 guid: string;
                 title: string;
@@ -613,7 +616,8 @@ export default function ConversationMediaDrawer({
                                                 const previewUrl = guid ? previewUrls.get(guid) : undefined;
                                                 const thumbnail = guid ? thumbnailMap.get(guid) : undefined;
                                                 const fallbackUrl = guid ? blurhashPlaceholders.get(guid) : undefined;
-                                                const tileImage = previewUrl ?? thumbnail?.url ?? fallbackUrl;
+                                                const warmedUrl = guid ? getMediaThumbnailCacheUrl(guid) : undefined;
+                                                const tileImage = previewUrl ?? thumbnail?.url ?? warmedUrl ?? fallbackUrl;
                                                 const isLoadingPreview = guid !== undefined && previewLoadingGuid === guid;
                                                 const showLoadingOverlay = isLoadingPreview || (!!guid && thumbnail?.status === "loading" && !previewUrl);
                                                 const senderInfo = senderDisplayMap.get(item.key);

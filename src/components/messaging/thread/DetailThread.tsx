@@ -971,6 +971,7 @@ export default function DetailThread({conversation, focusTarget}: {
 	}, [setAttachmentInput]);
 	
         const showMediaDrawer = ConnectionManager.getBlueBubblesAuth() !== undefined;
+        const shouldPrefetchMedia = showMediaDrawer && displayState.type === DisplayType.Messages;
 
         useEffect(() => {
                 if(!showMediaDrawer && isMediaDrawerOpen) {
@@ -1028,6 +1029,7 @@ export default function DetailThread({conversation, focusTarget}: {
                                 open={isMediaDrawerOpen}
                                 onClose={closeMediaDrawer}
                                 messages={conversationMessages}
+                                prefetchEnabled={shouldPrefetchMedia}
                         />
                 </>
         );
