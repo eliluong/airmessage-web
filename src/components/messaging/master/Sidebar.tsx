@@ -222,7 +222,9 @@ export default function Sidebar(props: {
                         }
 
                         if(conversation.members !== undefined) {
-                                return conversation.members.some((member) => member.toLowerCase().includes(lowerQuery));
+                                return conversation.members.some((memberAddress) =>
+                                        memberAddress.toLowerCase().includes(lowerQuery)
+                                );
                         }
 
                         return false;
