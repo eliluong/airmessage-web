@@ -10,13 +10,12 @@ import CommunicationsManager, {
         normalizeThreadFetchOptions
 } from "../communicationsManager";
 import DataProxy from "../dataProxy";
-import {Conversation, ConversationItem, ConversationPreview, LinkedConversation, MessageItem, TapbackItem} from "../../data/blocks";
+import {Conversation, ConversationItem, LinkedConversation, MessageItem, TapbackItem} from "../../data/blocks";
 import {extractConversationAttachments} from "../../data/attachment";
 import {
         AttachmentRequestErrorCode,
         ConnectionErrorCode,
         ConversationItemType,
-        ConversationPreviewType,
         CreateChatErrorCode,
         MessageError,
         MessageErrorCode,
@@ -54,6 +53,7 @@ import {
         queryMessages,
         sendTextMessage
 } from "./api";
+import {convertChatResponse} from "./chatTransformers";
 import {logBlueBubblesDebug} from "./debugLogging";
 
 const POLL_INTERVAL_MS = 5000;
@@ -1000,21 +1000,7 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
         }
 
         private convertChat(chat: ChatResponse): LinkedConversation {
-                const members = (chat.participants ?? []).map((handle) => handle.address).filter(Boolean);
-                const preview: ConversationPreview = chat.lastMessage ? buildConversationPreview(chat.lastMessage) : {
-                        type: ConversationPreviewType.ChatCreation,
-                        date: new Date()
-                };
-                const conversation: LinkedConversation = {
-                        localID: chat.originalROWID,
-                        guid: chat.guid,
-                        service: inferService(chat),
-                        name: chat.displayName || undefined,
-                        members,
-                        preview,
-                        unreadMessages: false,
-                        localOnly: false
-                };
+                const conversation = convertChatResponse(chat);
                 const key = buildConversationKey(conversation.members, conversation.service);
                 this.conversationGuidCache.set(key, conversation.guid);
                 return conversation;
@@ -1074,19 +1060,6 @@ function convertAttachment(attachment: AttachmentResponse) {
                 type: attachment.mimeType,
                 size: attachment.totalBytes,
                 blurhash: attachment.blurhash
-        };
-}
-
-function buildConversationPreview(message: MessageResponse): ConversationPreview {
-        const attachments = (message.attachments ?? [])
-                .filter((attachment) => !attachment.hideAttachment)
-                .map((attachment) => attachment.transferName);
-        return {
-                type: ConversationPreviewType.Message,
-                date: new Date(message.dateCreated),
-                text: message.text || undefined,
-                attachments,
-                sendStyle: message.expressiveSendStyleId || undefined
         };
 }
 
@@ -1508,13 +1481,6 @@ function computeMessageStatus(message: MessageResponse, supportsDeliveredReceipt
         }
 
         return {status: MessageStatusCode.Delivered};
-}
-
-function inferService(chat: ChatResponse): string {
-        if(chat.participants && chat.participants.length > 0) {
-                return chat.participants[0].service || "iMessage";
-        }
-        return "iMessage";
 }
 
 function buildConversationKey(members: string[], service: string): string {

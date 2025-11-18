@@ -2,6 +2,8 @@ import {BlueBubblesAuthState} from "./session";
 import {
         ApiErrorResponse,
         ChatCreateResponse,
+        ChatCountResponse,
+        ChatQueryPageResponse,
         ChatQueryResponse,
         MessageQueryResponse,
         MessageSendResponse,
@@ -116,6 +118,11 @@ export interface FetchChatsOptions {
         signal?: AbortSignal;
 }
 
+export function fetchChats(
+        auth: BlueBubblesAuthState,
+        options: FetchChatsOptions & {offset: number;}
+): Promise<ChatQueryPageResponse>;
+export function fetchChats(auth: BlueBubblesAuthState, options?: FetchChatsOptions): Promise<ChatQueryResponse>;
 export async function fetchChats(auth: BlueBubblesAuthState, options: FetchChatsOptions = {}): Promise<ChatQueryResponse> {
         const body: Record<string, unknown> = {
                 with: ["participants", "lastmessage"],
@@ -132,6 +139,20 @@ export async function fetchChats(auth: BlueBubblesAuthState, options: FetchChats
         return requestJson<ChatQueryResponse>(auth, "/chat/query", {
                 method: "POST",
                 body: JSON.stringify(body),
+                signal: options.signal
+        });
+}
+
+export interface FetchChatCountOptions {
+        signal?: AbortSignal;
+}
+
+export function fetchChatCount(
+        auth: BlueBubblesAuthState,
+        options: FetchChatCountOptions = {}
+): Promise<ChatCountResponse> {
+        return requestJson<ChatCountResponse>(auth, "/chat/count", {
+                method: "GET",
                 signal: options.signal
         });
 }

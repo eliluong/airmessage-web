@@ -14,6 +14,9 @@ import ClientComm5 from "./comm5/clientComm5";
 import DataProxy from "./dataProxy";
 import BlueBubblesCommunicationsManager from "./bluebubbles/bluebubblesCommunicationsManager";
 import BlueBubblesDataProxy from "./bluebubbles/bluebubblesDataProxy";
+import {fetchChats as fetchChatsApi, fetchChatCount as fetchChatCountApi, FetchChatsOptions} from "./bluebubbles/api";
+import {convertChatResponse} from "./bluebubbles/chatTransformers";
+import {ChatQueryResponse} from "./bluebubbles/types";
 import {Conversation, ConversationItem, LinkedConversation, MessageItem, MessageModifier, MessageSearchHit} from "../data/blocks";
 import {ConversationAttachmentEntry, extractConversationAttachments} from "../data/attachment";
 import {
@@ -94,6 +97,32 @@ export function setBlueBubblesAuth(config: BlueBubblesAuthConfig | undefined) {
 
 export function getBlueBubblesAuth(): BlueBubblesAuthConfig | undefined {
         return blueBubblesAuthConfig;
+}
+
+function getActiveBlueBubblesAuth(): BlueBubblesAuthConfig | undefined {
+        const auth = getBlueBubblesAuth();
+        if(!auth) return undefined;
+        if(dataProxy.proxyType !== "BlueBubbles") return undefined;
+        return auth;
+}
+
+function assertBlueBubblesChatSupport(action: string): BlueBubblesAuthConfig {
+        const auth = getActiveBlueBubblesAuth();
+        if(!auth) {
+                throw new Error(`${action} are only available when connected to a BlueBubbles server.`);
+        }
+        return auth;
+}
+
+function normalizeChatQueryMetadata(
+        response: ChatQueryResponse,
+        requested?: {offset?: number; limit?: number;}
+): ConversationQueryMetadata {
+        const count = response.metadata?.count ?? response.data.length;
+        const total = response.metadata?.total ?? count;
+        const offset = response.metadata?.offset ?? requested?.offset ?? 0;
+        const limit = response.metadata?.limit ?? requested?.limit;
+        return {count, total, offset, limit};
 }
 
 let dataProxy: DataProxy = new DataProxyConnect();
@@ -739,6 +768,61 @@ export async function fetchConversationScanPage(options: ConversationQueryOption
                 return Promise.reject(new Error("The active connection does not support conversation scanning."));
         }
         return communicationsManager.fetchConversationQueryPage(options);
+}
+
+export async function queryChatsPage(options: ConversationQueryOptions = {}): Promise<ConversationQueryResult> {
+        if(!isConnected()) return Promise.reject(messageErrorNetwork);
+
+        let auth: BlueBubblesAuthConfig;
+        try {
+                auth = assertBlueBubblesChatSupport("Chat queries");
+        } catch(error) {
+                return Promise.reject(error);
+        }
+
+        const limit = options.limit !== undefined ? Math.max(1, Math.floor(options.limit)) : 50;
+        const requestOptions: FetchChatsOptions = {
+                limit,
+                offset: options.offset,
+                signal: options.signal
+        };
+        const response = await fetchChatsApi(auth, requestOptions);
+        const metadata = normalizeChatQueryMetadata(response, {offset: requestOptions.offset, limit});
+        const conversations = response.data.map((chat) => convertChatResponse(chat));
+        return {conversations, metadata};
+}
+
+export async function queryChats(options: ConversationQueryOptions = {}): Promise<ChatQueryResponse> {
+        if(!isConnected()) return Promise.reject(messageErrorNetwork);
+
+        let auth: BlueBubblesAuthConfig;
+        try {
+                auth = assertBlueBubblesChatSupport("Chat queries");
+        } catch(error) {
+                return Promise.reject(error);
+        }
+
+        const limit = options.limit !== undefined ? Math.max(1, Math.floor(options.limit)) : undefined;
+        const requestOptions: FetchChatsOptions = {
+                limit,
+                offset: options.offset,
+                signal: options.signal
+        };
+        return fetchChatsApi(auth, requestOptions);
+}
+
+export async function fetchChatCount(signal?: AbortSignal): Promise<number> {
+        if(!isConnected()) return Promise.reject(messageErrorNetwork);
+
+        let auth: BlueBubblesAuthConfig;
+        try {
+                auth = assertBlueBubblesChatSupport("Chat counts");
+        } catch(error) {
+                return Promise.reject(error);
+        }
+
+        const response = await fetchChatCountApi(auth, {signal});
+        return response.data;
 }
 
 export async function fetchAttachmentThumbnail(attachmentGUID: string, signal?: AbortSignal): Promise<Blob> {
