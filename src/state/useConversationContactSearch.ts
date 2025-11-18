@@ -30,7 +30,7 @@ interface NormalizedQuery {
 type NameLookupMap = Map<string, string[]>;
 
 const DEFAULT_QUERY: NormalizedQuery = normalizeQuery("");
-const REMOTE_SCAN_PAGE_SIZE = 50;
+const REMOTE_SCAN_PAGE_SIZE = 1000;
 
 export default function useConversationContactSearch(
         conversations: Conversation[] | undefined
