@@ -4,11 +4,12 @@ import type {ConversationMediaFetchResult} from "shared/connection/connectionMan
 import type {ThreadFetchMetadata} from "shared/connection/communicationsManager";
 import {ConversationAttachmentEntry, mergeConversationAttachments} from "shared/data/attachment";
 import {
-        deleteConversationMediaCacheEntry,
-        ensureConversationMediaCacheScope,
-        getConversationMediaCacheEntry,
-        isConversationMediaCacheEntryFresh,
-        updateConversationMediaCacheEntry
+deleteConversationMediaCacheEntry,
+ensureConversationMediaCacheScope,
+getConversationMediaCacheEntry,
+isConversationMediaCacheEntryFresh,
+subscribeToConversationMediaCacheStale,
+updateConversationMediaCacheEntry
 } from "shared/state/mediaCache";
 import {warmConversationMediaThumbnails} from "shared/state/mediaThumbnailWarmup";
 
@@ -88,6 +89,7 @@ export interface ConversationMediaState {
 export default function useConversationMedia(chatGuid: string | undefined, options?: UseConversationMediaOptions): ConversationMediaState {
         ensureConversationMediaCacheScope();
         const prefetchEnabled = options?.enabled ?? false;
+        const visibilityEnabled = options?.visible ?? false;
         const effectiveEnabled = options?.enabled ?? options?.visible ?? false;
         const initialCache = chatGuid ? getConversationMediaCacheEntry(chatGuid) : undefined;
         const [items, setItems] = useState<ConversationAttachmentEntry[]>(() => initialCache?.items ?? []);
@@ -157,90 +159,105 @@ export default function useConversationMedia(chatGuid: string | undefined, optio
                 }
         }, [chatGuid]);
 
-        const loadInitial = useCallback(async (force: boolean = false) => {
-                if(!chatGuid) {
-                        const message = "Media is unavailable for unsynced conversations.";
-                        setItems([]);
-                        setHasMore(false);
-                        setError(message);
-                        metadataRef.current = undefined;
-                        return;
-                }
+	const loadInitial = useCallback(async (force: boolean = false) => {
+		if(!chatGuid) {
+			const message = "Media is unavailable for unsynced conversations.";
+			setItems([]);
+			setHasMore(false);
+			setError(message);
+			metadataRef.current = undefined;
+			return;
+		}
 
-                ensureConversationMediaCacheScope();
+		ensureConversationMediaCacheScope();
 
-                const cached = getConversationMediaCacheEntry(chatGuid);
-                if(!force && cached?.loaded && isConversationMediaCacheEntryFresh(cached)) {
-                        setItems(cached.items);
-                        setHasMore(cached.hasMore);
-                        setError(cached.error);
-                        metadataRef.current = cached.metadata;
-                        maybeWarmThumbnails(cached.items);
-                        return;
-                }
+		const cached = getConversationMediaCacheEntry(chatGuid);
+		if(cached?.loaded) {
+			setItems(cached.items);
+			setHasMore(cached.hasMore);
+			setError(cached.error);
+			metadataRef.current = cached.metadata;
+			maybeWarmThumbnails(cached.items);
+		} else {
+			setItems([]);
+			setHasMore(false);
+			setError(undefined);
+			metadataRef.current = undefined;
+		}
 
-                if(ConnectionManager.getActiveProxyType() !== "BlueBubbles") {
-                        const message = "Media is only available when connected to BlueBubbles.";
-                        setItems([]);
-                        setHasMore(false);
-                        setError(message);
-                        metadataRef.current = undefined;
-                        updateConversationMediaCacheEntry(chatGuid, {
-                                items: [],
-                                metadata: undefined,
-                                hasMore: false,
-                                error: message,
-                                loaded: true,
-                                fetchedAt: Date.now(),
-                                stale: false
-                        });
-                        return;
-                }
+		const needsFetch = force || !cached?.loaded || !isConversationMediaCacheEntryFresh(cached);
+		if(!needsFetch) return;
 
-                setIsLoading(true);
-                setError(undefined);
-                try {
-                        const result = await ConnectionManager.fetchConversationMedia(chatGuid, {limit: PAGE_SIZE});
-                        if(!mountedRef.current) return;
-                        const attachments = result.items;
-                        const metadata = mergeResultMetadata(undefined, result);
-                        metadataRef.current = metadata;
-                        const moreAvailable = attachments.length >= PAGE_SIZE && metadata?.oldestServerID !== undefined;
-                        setItems(attachments);
-                        setHasMore(moreAvailable);
-                        setError(undefined);
-                        updateConversationMediaCacheEntry(chatGuid, {
-                                items: attachments,
-                                metadata,
-                                hasMore: moreAvailable,
-                                error: undefined,
-                                loaded: true,
-                                fetchedAt: Date.now(),
-                                stale: false
-                        });
-                        maybeWarmThumbnails(attachments);
-                } catch(error) {
-                        if(!mountedRef.current) return;
-                        const message = "Unable to load media for this conversation.";
-                        setItems([]);
-                        setHasMore(false);
-                        setError(message);
-                        metadataRef.current = undefined;
-                        updateConversationMediaCacheEntry(chatGuid, {
-                                items: [],
-                                metadata: undefined,
-                                hasMore: false,
-                                error: message,
-                                loaded: true,
-                                fetchedAt: Date.now(),
-                                stale: false
-                        });
-                } finally {
-                        if(mountedRef.current) {
-                                setIsLoading(false);
-                        }
-                }
-        }, [chatGuid, maybeWarmThumbnails]);
+		if(ConnectionManager.getActiveProxyType() !== "BlueBubbles") {
+			const message = "Media is only available when connected to BlueBubbles.";
+			if(!cached?.loaded) {
+				setItems([]);
+				setHasMore(false);
+				metadataRef.current = undefined;
+			}
+			setError(message);
+			updateConversationMediaCacheEntry(chatGuid, {
+				items: [],
+				metadata: undefined,
+				hasMore: false,
+				error: message,
+				loaded: true,
+				fetchedAt: Date.now(),
+				stale: false
+			});
+			return;
+		}
+
+		const backgroundFetch = Boolean(cached?.loaded) && !force;
+		if(!backgroundFetch) {
+			setIsLoading(true);
+			setError(undefined);
+		}
+		try {
+			const result = await ConnectionManager.fetchConversationMedia(chatGuid, {limit: PAGE_SIZE});
+			if(!mountedRef.current) return;
+			const attachments = result.items;
+			const metadata = mergeResultMetadata(undefined, result);
+			metadataRef.current = metadata;
+			const moreAvailable = attachments.length >= PAGE_SIZE && metadata?.oldestServerID !== undefined;
+			setItems(attachments);
+			setHasMore(moreAvailable);
+			setError(undefined);
+			updateConversationMediaCacheEntry(chatGuid, {
+				items: attachments,
+				metadata,
+				hasMore: moreAvailable,
+				error: undefined,
+				loaded: true,
+				fetchedAt: Date.now(),
+				stale: false
+			});
+			maybeWarmThumbnails(attachments);
+		} catch(error) {
+			if(!mountedRef.current) return;
+			const message = "Unable to load media for this conversation.";
+			if(!cached?.loaded) {
+				setItems([]);
+				setHasMore(false);
+				metadataRef.current = undefined;
+			}
+			setError(message);
+			updateConversationMediaCacheEntry(chatGuid, {
+				items: cached?.loaded ? cached.items : [],
+				metadata: cached?.loaded ? cached.metadata : undefined,
+				hasMore: cached?.loaded ? cached.hasMore : false,
+				error: message,
+				loaded: true,
+				fetchedAt: Date.now(),
+				stale: false
+			});
+		} finally {
+			if(!backgroundFetch && mountedRef.current) {
+				setIsLoading(false);
+			}
+		}
+	}, [chatGuid, maybeWarmThumbnails]);
+
 
         useEffect(() => {
                 if(!effectiveEnabled) return;
@@ -249,6 +266,15 @@ export default function useConversationMedia(chatGuid: string | undefined, optio
                 });
                 return () => cancel();
         }, [effectiveEnabled, loadInitial]);
+
+        useEffect(() => {
+                if(!chatGuid) return;
+                return subscribeToConversationMediaCacheStale((staleChatGuid) => {
+                        if(staleChatGuid !== chatGuid) return;
+                        if(!prefetchEnabled && !visibilityEnabled) return;
+                        void loadInitial();
+                });
+        }, [chatGuid, loadInitial, prefetchEnabled, visibilityEnabled]);
 
         const loadMore = useCallback(async () => {
                 if(!chatGuid || isLoading || isLoadingMore) return;
