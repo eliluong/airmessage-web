@@ -31,6 +31,24 @@ export interface ConversationMediaFetchResult {
         metadata?: ThreadFetchMetadata;
 }
 
+export interface ConversationQueryMetadata {
+        count: number;
+        total: number;
+        offset?: number;
+        limit?: number;
+}
+
+export interface ConversationQueryOptions {
+        offset?: number;
+        limit?: number;
+        signal?: AbortSignal;
+}
+
+export interface ConversationQueryResult {
+        conversations: LinkedConversation[];
+        metadata: ConversationQueryMetadata;
+}
+
 export interface ConversationLinkScanCursor {
         phase: "coarse" | "backfill";
         beforeTimestamp?: number;
@@ -187,6 +205,16 @@ export default abstract class CommunicationsManager {
                 chatGUID: string,
                 cursor?: ConversationLinkScanCursor
         ): Promise<ConversationLinkFetchResult>;
+
+        /**
+         * Fetches metadata about the remote conversation list.
+         */
+        public fetchConversationQueryTotals?(signal?: AbortSignal): Promise<ConversationQueryMetadata>;
+
+        /**
+         * Fetches a page of conversations from the remote transport.
+         */
+        public fetchConversationQueryPage?(options: ConversationQueryOptions): Promise<ConversationQueryResult>;
 
         /**
          * Downloads a thumbnail preview for an attachment.

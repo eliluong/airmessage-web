@@ -1,6 +1,9 @@
 import DataProxyConnect from "shared/connection/connect/dataProxyConnect";
 import CommunicationsManager, {
         CommunicationsManagerListener,
+        ConversationQueryMetadata,
+        ConversationQueryOptions,
+        ConversationQueryResult,
         ConversationLinkFetchResult,
         ConversationLinkScanCursor,
         ThreadFetchOptions,
@@ -711,6 +714,31 @@ export async function fetchConversationLinkMessages(
                 return Promise.reject(new Error("The active connection does not support link scanning."));
         }
         return communicationsManager.fetchConversationLinkMessages(chatGUID, cursor);
+}
+
+export type ConversationScanMetadata = ConversationQueryMetadata;
+export type ConversationScanPageResult = ConversationQueryResult;
+
+export async function fetchConversationScanTotals(signal?: AbortSignal): Promise<ConversationScanMetadata> {
+        if(!isConnected()) return Promise.reject(messageErrorNetwork);
+        if(dataProxy.proxyType !== "BlueBubbles") {
+                return Promise.reject(new Error("Conversation scanning is only available when connected to BlueBubbles."));
+        }
+        if(!communicationsManager?.fetchConversationQueryTotals) {
+                return Promise.reject(new Error("The active connection does not support conversation scanning."));
+        }
+        return communicationsManager.fetchConversationQueryTotals(signal);
+}
+
+export async function fetchConversationScanPage(options: ConversationQueryOptions): Promise<ConversationScanPageResult> {
+        if(!isConnected()) return Promise.reject(messageErrorNetwork);
+        if(dataProxy.proxyType !== "BlueBubbles") {
+                return Promise.reject(new Error("Conversation scanning is only available when connected to BlueBubbles."));
+        }
+        if(!communicationsManager?.fetchConversationQueryPage) {
+                return Promise.reject(new Error("The active connection does not support conversation scanning."));
+        }
+        return communicationsManager.fetchConversationQueryPage(options);
 }
 
 export async function fetchAttachmentThumbnail(attachmentGUID: string, signal?: AbortSignal): Promise<Blob> {
