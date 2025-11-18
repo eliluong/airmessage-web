@@ -48,6 +48,7 @@ interface ConversationMediaDrawerProps {
         onClose: () => void;
         messages: ConversationItem[];
         enableLinkPreviews?: boolean;
+        prefetchEnabled?: boolean;
 }
 
 const DEFAULT_LINK_INITIAL_COUNT = 20;
@@ -200,7 +201,8 @@ export default function ConversationMediaDrawer({
         open,
         onClose,
         messages,
-        enableLinkPreviews = false
+        enableLinkPreviews = false,
+        prefetchEnabled = false
 }: ConversationMediaDrawerProps) {
         const theme = useTheme();
         const fullScreen = useMediaQuery(theme.breakpoints.down("md"));
@@ -223,7 +225,7 @@ export default function ConversationMediaDrawer({
                 hasMore,
                 loadMore,
                 reload
-        } = useConversationMedia(conversationGuid, open);
+        } = useConversationMedia(conversationGuid, {enabled: prefetchEnabled, visible: open});
         const [previewState, setPreviewState] = useState<{
                 guid: string;
                 title: string;

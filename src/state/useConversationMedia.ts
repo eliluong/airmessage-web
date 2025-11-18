@@ -3,67 +3,43 @@ import * as ConnectionManager from "shared/connection/connectionManager";
 import type {ConversationMediaFetchResult} from "shared/connection/connectionManager";
 import type {ThreadFetchMetadata} from "shared/connection/communicationsManager";
 import {ConversationAttachmentEntry, mergeConversationAttachments} from "shared/data/attachment";
+import {
+        deleteConversationMediaCacheEntry,
+        ensureConversationMediaCacheScope,
+        getConversationMediaCacheEntry,
+        isConversationMediaCacheEntryFresh,
+        updateConversationMediaCacheEntry
+} from "shared/state/mediaCache";
 
 const PAGE_SIZE = 30;
+const PREFETCH_TIMEOUT_MS = 1000;
 
-interface ConversationMediaCacheEntry {
-        items: ConversationAttachmentEntry[];
-        metadata?: ThreadFetchMetadata;
-        hasMore: boolean;
-        error?: string;
-        loaded: boolean;
+interface UseConversationMediaOptions {
+        enabled?: boolean;
+        visible?: boolean;
 }
 
-const mediaCache = new Map<string, ConversationMediaCacheEntry>();
-let cacheScopeKey: string | undefined;
+type CancelDeferredTask = () => void;
 
-export function getConversationMediaCacheScopeKey(): string {
-        const proxyType = ConnectionManager.getActiveProxyType();
-        if(proxyType === "BlueBubbles") {
-                const auth = ConnectionManager.getBlueBubblesAuth();
-                if(auth) {
-                        const accountKey = [
-                                auth.serverUrl,
-                                auth.accessToken,
-                                auth.refreshToken ?? "",
-                                auth.deviceName ?? "",
-                                auth.legacyPasswordAuth ? "legacy" : "modern"
-                        ].join("|");
-                        return `${proxyType}:${accountKey}`;
-                }
-                return `${proxyType}:no-auth`;
+function scheduleDeferredTask(task: () => void): CancelDeferredTask {
+        if(typeof window === "undefined") {
+                const timeout = setTimeout(task, 0);
+                return () => clearTimeout(timeout);
         }
-        return proxyType;
-}
-
-function ensureCacheScope() {
-        const key = getConversationMediaCacheScopeKey();
-        if(cacheScopeKey !== key) {
-                mediaCache.clear();
-                cacheScopeKey = key;
+        const win = window as typeof window & {
+                requestIdleCallback?: (cb: () => void, options?: {timeout: number}) => number;
+                cancelIdleCallback?: (handle: number) => void;
+        };
+        if(typeof win.requestIdleCallback === "function") {
+                const handle = win.requestIdleCallback(task, {timeout: PREFETCH_TIMEOUT_MS});
+                return () => {
+                        if(typeof win.cancelIdleCallback === "function") {
+                                win.cancelIdleCallback(handle);
+                        }
+                };
         }
-}
-
-function updateCacheEntry(guid: string, partial: Partial<ConversationMediaCacheEntry>): ConversationMediaCacheEntry {
-        const existing = mediaCache.get(guid) ?? {items: [], metadata: undefined, hasMore: false, error: undefined, loaded: false};
-        const next: ConversationMediaCacheEntry = {...existing};
-        if("items" in partial) {
-                next.items = partial.items ?? [];
-        }
-        if("metadata" in partial) {
-                next.metadata = partial.metadata;
-        }
-        if("hasMore" in partial) {
-                next.hasMore = partial.hasMore ?? false;
-        }
-        if("error" in partial) {
-                next.error = partial.error;
-        }
-        if("loaded" in partial) {
-                next.loaded = partial.loaded ?? false;
-        }
-        mediaCache.set(guid, next);
-        return next;
+        const timeout = window.setTimeout(task, 0);
+        return () => window.clearTimeout(timeout);
 }
 
 function mergeMetadata(base: ThreadFetchMetadata | undefined, incoming: ThreadFetchMetadata | undefined): ThreadFetchMetadata | undefined {
@@ -107,14 +83,16 @@ export interface ConversationMediaState {
         reload: () => Promise<void>;
 }
 
-export default function useConversationMedia(chatGuid: string | undefined, open: boolean): ConversationMediaState {
-        ensureCacheScope();
-        const [items, setItems] = useState<ConversationAttachmentEntry[]>(() => (chatGuid ? mediaCache.get(chatGuid)?.items ?? [] : []));
-        const [error, setError] = useState<string | undefined>(() => (chatGuid ? mediaCache.get(chatGuid)?.error : undefined));
-        const [hasMore, setHasMore] = useState<boolean>(() => (chatGuid ? mediaCache.get(chatGuid)?.hasMore ?? false : false));
+export default function useConversationMedia(chatGuid: string | undefined, options?: UseConversationMediaOptions): ConversationMediaState {
+        ensureConversationMediaCacheScope();
+        const effectiveEnabled = options?.enabled ?? options?.visible ?? false;
+        const initialCache = chatGuid ? getConversationMediaCacheEntry(chatGuid) : undefined;
+        const [items, setItems] = useState<ConversationAttachmentEntry[]>(() => initialCache?.items ?? []);
+        const [error, setError] = useState<string | undefined>(() => initialCache?.error);
+        const [hasMore, setHasMore] = useState<boolean>(() => initialCache?.hasMore ?? false);
         const [isLoading, setIsLoading] = useState(false);
         const [isLoadingMore, setIsLoadingMore] = useState(false);
-        const metadataRef = useRef<ThreadFetchMetadata | undefined>(chatGuid ? mediaCache.get(chatGuid)?.metadata : undefined);
+        const metadataRef = useRef<ThreadFetchMetadata | undefined>(initialCache?.metadata);
         const mountedRef = useRef(true);
 
         useEffect(() => {
@@ -125,34 +103,42 @@ export default function useConversationMedia(chatGuid: string | undefined, open:
         }, []);
 
         useEffect(() => {
-                ensureCacheScope();
+                ensureConversationMediaCacheScope();
                 if(!chatGuid) {
                         setItems([]);
                         setHasMore(false);
-                        setError(open ? "Media is unavailable for unsynced conversations." : undefined);
+                        setError(undefined);
                         metadataRef.current = undefined;
                         return;
                 }
-                const cached = mediaCache.get(chatGuid);
-                setItems(cached?.items ?? []);
-                setHasMore(cached?.hasMore ?? false);
-                setError(cached?.error);
-                metadataRef.current = cached?.metadata;
-        }, [chatGuid, open]);
+                const cached = getConversationMediaCacheEntry(chatGuid);
+                if(cached) {
+                        setItems(cached.items);
+                        setHasMore(cached.hasMore);
+                        setError(cached.error);
+                        metadataRef.current = cached.metadata;
+                } else {
+                        setItems([]);
+                        setHasMore(false);
+                        setError(undefined);
+                        metadataRef.current = undefined;
+                }
+        }, [chatGuid]);
 
         const loadInitial = useCallback(async (force: boolean = false) => {
                 if(!chatGuid) {
+                        const message = "Media is unavailable for unsynced conversations.";
                         setItems([]);
                         setHasMore(false);
-                        setError("Media is unavailable for unsynced conversations.");
+                        setError(message);
                         metadataRef.current = undefined;
                         return;
                 }
 
-                ensureCacheScope();
+                ensureConversationMediaCacheScope();
 
-                const cached = mediaCache.get(chatGuid);
-                if(!force && cached?.loaded) {
+                const cached = getConversationMediaCacheEntry(chatGuid);
+                if(!force && cached?.loaded && isConversationMediaCacheEntryFresh(cached)) {
                         setItems(cached.items);
                         setHasMore(cached.hasMore);
                         setError(cached.error);
@@ -166,7 +152,15 @@ export default function useConversationMedia(chatGuid: string | undefined, open:
                         setHasMore(false);
                         setError(message);
                         metadataRef.current = undefined;
-                        updateCacheEntry(chatGuid, {items: [], metadata: undefined, hasMore: false, error: message, loaded: true});
+                        updateConversationMediaCacheEntry(chatGuid, {
+                                items: [],
+                                metadata: undefined,
+                                hasMore: false,
+                                error: message,
+                                loaded: true,
+                                fetchedAt: Date.now(),
+                                stale: false
+                        });
                         return;
                 }
 
@@ -178,11 +172,19 @@ export default function useConversationMedia(chatGuid: string | undefined, open:
                         const attachments = result.items;
                         const metadata = mergeResultMetadata(undefined, result);
                         metadataRef.current = metadata;
-                        const moreAvailable = attachments.length >= PAGE_SIZE && (metadata?.oldestServerID !== undefined);
+                        const moreAvailable = attachments.length >= PAGE_SIZE && metadata?.oldestServerID !== undefined;
                         setItems(attachments);
                         setHasMore(moreAvailable);
                         setError(undefined);
-                        updateCacheEntry(chatGuid, {items: attachments, metadata, hasMore: moreAvailable, error: undefined, loaded: true});
+                        updateConversationMediaCacheEntry(chatGuid, {
+                                items: attachments,
+                                metadata,
+                                hasMore: moreAvailable,
+                                error: undefined,
+                                loaded: true,
+                                fetchedAt: Date.now(),
+                                stale: false
+                        });
                 } catch(error) {
                         if(!mountedRef.current) return;
                         const message = "Unable to load media for this conversation.";
@@ -190,7 +192,15 @@ export default function useConversationMedia(chatGuid: string | undefined, open:
                         setHasMore(false);
                         setError(message);
                         metadataRef.current = undefined;
-                        updateCacheEntry(chatGuid, {items: [], metadata: undefined, hasMore: false, error: message, loaded: true});
+                        updateConversationMediaCacheEntry(chatGuid, {
+                                items: [],
+                                metadata: undefined,
+                                hasMore: false,
+                                error: message,
+                                loaded: true,
+                                fetchedAt: Date.now(),
+                                stale: false
+                        });
                 } finally {
                         if(mountedRef.current) {
                                 setIsLoading(false);
@@ -199,29 +209,21 @@ export default function useConversationMedia(chatGuid: string | undefined, open:
         }, [chatGuid]);
 
         useEffect(() => {
-                if(!open) return;
-                if(!chatGuid) {
-                        setItems([]);
-                        setHasMore(false);
-                        setError("Media is unavailable for unsynced conversations.");
-                        metadataRef.current = undefined;
-                        return;
-                }
-
-                const cached = mediaCache.get(chatGuid);
-                if(!cached || !cached.loaded) {
+                if(!effectiveEnabled) return;
+                const cancel = scheduleDeferredTask(() => {
                         void loadInitial();
-                }
-        }, [open, chatGuid, loadInitial]);
+                });
+                return () => cancel();
+        }, [effectiveEnabled, loadInitial]);
 
         const loadMore = useCallback(async () => {
                 if(!chatGuid || isLoading || isLoadingMore) return;
 
-                ensureCacheScope();
+                ensureConversationMediaCacheScope();
                 const oldest = metadataRef.current?.oldestServerID;
                 if(oldest === undefined) {
                         setHasMore(false);
-                        updateCacheEntry(chatGuid, {hasMore: false, metadata: metadataRef.current, loaded: true});
+                        updateConversationMediaCacheEntry(chatGuid, {hasMore: false, metadata: metadataRef.current, loaded: true, fetchedAt: Date.now(), stale: false});
                         return;
                 }
 
@@ -245,17 +247,25 @@ export default function useConversationMedia(chatGuid: string | undefined, open:
                         setHasMore(moreAvailable);
                         setItems((current) => {
                                 const merged = mergeConversationAttachments(current, attachments);
-                                updateCacheEntry(chatGuid, {
+                                updateConversationMediaCacheEntry(chatGuid, {
                                         items: merged,
                                         metadata: mergedMetadata,
                                         hasMore: moreAvailable,
                                         error: undefined,
-                                        loaded: true
+                                        loaded: true,
+                                        fetchedAt: Date.now(),
+                                        stale: false
                                 });
                                 return merged;
                         });
                         if(attachments.length === 0 && !moreAvailable) {
-                                updateCacheEntry(chatGuid, {metadata: mergedMetadata, hasMore: false, loaded: true});
+                                updateConversationMediaCacheEntry(chatGuid, {
+                                        metadata: mergedMetadata,
+                                        hasMore: false,
+                                        loaded: true,
+                                        fetchedAt: Date.now(),
+                                        stale: false
+                                });
                         }
                 } catch(error) {
                         if(!mountedRef.current) return;
@@ -269,8 +279,8 @@ export default function useConversationMedia(chatGuid: string | undefined, open:
 
         const reload = useCallback(async () => {
                 if(!chatGuid) return;
-                ensureCacheScope();
-                mediaCache.delete(chatGuid);
+                ensureConversationMediaCacheScope();
+                deleteConversationMediaCacheEntry(chatGuid);
                 metadataRef.current = undefined;
                 await loadInitial(true);
         }, [chatGuid, loadInitial]);

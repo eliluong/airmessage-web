@@ -1,6 +1,6 @@
 import {useCallback, useEffect, useMemo, useState} from "react";
 import * as ConnectionManager from "shared/connection/connectionManager";
-import {getConversationMediaCacheScopeKey} from "shared/state/useConversationMedia";
+import {getConversationMediaCacheScopeKey} from "shared/state/mediaCache";
 
 const MAX_CONCURRENT_REQUESTS = 4;
 
