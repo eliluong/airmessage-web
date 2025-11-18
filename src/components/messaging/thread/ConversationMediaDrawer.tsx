@@ -36,6 +36,7 @@ import FileDownloadResult from "shared/data/fileDownloadResult";
 import AttachmentLightbox from "./item/AttachmentLightbox";
 import useConversationMedia from "shared/state/useConversationMedia";
 import useAttachmentThumbnails from "shared/state/useAttachmentThumbnails";
+import {getMediaThumbnailCacheUrl} from "shared/state/mediaThumbnailCache";
 import {ConversationAttachmentEntry} from "shared/data/attachment";
 import {blurhashToDataURL} from "shared/util/blurhash";
 import {PeopleContext} from "shared/state/peopleState";
@@ -615,7 +616,8 @@ export default function ConversationMediaDrawer({
                                                 const previewUrl = guid ? previewUrls.get(guid) : undefined;
                                                 const thumbnail = guid ? thumbnailMap.get(guid) : undefined;
                                                 const fallbackUrl = guid ? blurhashPlaceholders.get(guid) : undefined;
-                                                const tileImage = previewUrl ?? thumbnail?.url ?? fallbackUrl;
+                                                const warmedUrl = guid ? getMediaThumbnailCacheUrl(guid) : undefined;
+                                                const tileImage = previewUrl ?? thumbnail?.url ?? warmedUrl ?? fallbackUrl;
                                                 const isLoadingPreview = guid !== undefined && previewLoadingGuid === guid;
                                                 const showLoadingOverlay = isLoadingPreview || (!!guid && thumbnail?.status === "loading" && !previewUrl);
                                                 const senderInfo = senderDisplayMap.get(item.key);

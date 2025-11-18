@@ -10,9 +10,11 @@ import {
         isConversationMediaCacheEntryFresh,
         updateConversationMediaCacheEntry
 } from "shared/state/mediaCache";
+import {warmConversationMediaThumbnails} from "shared/state/mediaThumbnailWarmup";
 
 const PAGE_SIZE = 30;
 const PREFETCH_TIMEOUT_MS = 1000;
+const THUMBNAIL_WARM_LIMIT = 10;
 
 interface UseConversationMediaOptions {
         enabled?: boolean;
@@ -85,6 +87,7 @@ export interface ConversationMediaState {
 
 export default function useConversationMedia(chatGuid: string | undefined, options?: UseConversationMediaOptions): ConversationMediaState {
         ensureConversationMediaCacheScope();
+        const prefetchEnabled = options?.enabled ?? false;
         const effectiveEnabled = options?.enabled ?? options?.visible ?? false;
         const initialCache = chatGuid ? getConversationMediaCacheEntry(chatGuid) : undefined;
         const [items, setItems] = useState<ConversationAttachmentEntry[]>(() => initialCache?.items ?? []);
@@ -94,6 +97,7 @@ export default function useConversationMedia(chatGuid: string | undefined, optio
         const [isLoadingMore, setIsLoadingMore] = useState(false);
         const metadataRef = useRef<ThreadFetchMetadata | undefined>(initialCache?.metadata);
         const mountedRef = useRef(true);
+        const warmupAbortRef = useRef<AbortController | null>(null);
 
         useEffect(() => {
                 mountedRef.current = true;
@@ -101,6 +105,34 @@ export default function useConversationMedia(chatGuid: string | undefined, optio
                         mountedRef.current = false;
                 };
         }, []);
+
+        useEffect(() => {
+                return () => {
+                        warmupAbortRef.current?.abort();
+                        warmupAbortRef.current = null;
+                };
+        }, [chatGuid]);
+
+        const maybeWarmThumbnails = useCallback((attachments: ConversationAttachmentEntry[]) => {
+                if(!prefetchEnabled) return;
+                if(attachments.length === 0) return;
+                if(typeof navigator !== "undefined") {
+                        const connection = (navigator as Navigator & {
+                                connection?: {
+                                        saveData?: boolean;
+                                        effectiveType?: string;
+                                };
+                        }).connection;
+                        if(connection?.saveData) return;
+                        const effectiveType = connection?.effectiveType;
+                        if(typeof effectiveType === "string" && /(^|-)2g/.test(effectiveType)) return;
+                }
+                if(typeof document !== "undefined" && document.visibilityState === "hidden") return;
+                warmupAbortRef.current?.abort();
+                const controller = new AbortController();
+                warmupAbortRef.current = controller;
+                void warmConversationMediaThumbnails(attachments, {signal: controller.signal, limit: THUMBNAIL_WARM_LIMIT});
+        }, [prefetchEnabled]);
 
         useEffect(() => {
                 ensureConversationMediaCacheScope();
@@ -143,6 +175,7 @@ export default function useConversationMedia(chatGuid: string | undefined, optio
                         setHasMore(cached.hasMore);
                         setError(cached.error);
                         metadataRef.current = cached.metadata;
+                        maybeWarmThumbnails(cached.items);
                         return;
                 }
 
@@ -185,6 +218,7 @@ export default function useConversationMedia(chatGuid: string | undefined, optio
                                 fetchedAt: Date.now(),
                                 stale: false
                         });
+                        maybeWarmThumbnails(attachments);
                 } catch(error) {
                         if(!mountedRef.current) return;
                         const message = "Unable to load media for this conversation.";
@@ -206,7 +240,7 @@ export default function useConversationMedia(chatGuid: string | undefined, optio
                                 setIsLoading(false);
                         }
                 }
-        }, [chatGuid]);
+        }, [chatGuid, maybeWarmThumbnails]);
 
         useEffect(() => {
                 if(!effectiveEnabled) return;

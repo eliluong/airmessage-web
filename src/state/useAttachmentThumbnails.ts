@@ -1,6 +1,11 @@
 import {useCallback, useEffect, useMemo, useState} from "react";
 import * as ConnectionManager from "shared/connection/connectionManager";
 import {getConversationMediaCacheScopeKey} from "shared/state/mediaCache";
+import {
+        clearMediaThumbnailCache,
+        getMediaThumbnailCacheUrl,
+        storeMediaThumbnailBlob
+} from "shared/state/mediaThumbnailCache";
 
 const MAX_CONCURRENT_REQUESTS = 4;
 
@@ -33,20 +38,14 @@ function subscribe(listener: () => void): () => void {
         };
 }
 
-function revokeUrl(entry: ThumbnailCacheEntry | undefined) {
-        if(entry?.url) {
-                URL.revokeObjectURL(entry.url);
-        }
-}
-
 function resetCacheForScopeChange() {
         requestQueue.length = 0;
         activeRequests = 0;
         thumbnailCache.forEach((entry) => {
                 entry.controller?.abort();
-                revokeUrl(entry);
         });
         thumbnailCache.clear();
+        clearMediaThumbnailCache();
         notifyListeners();
 }
 
@@ -69,10 +68,9 @@ async function performDownload(guid: string, controller: AbortController) {
         try {
                 const blob = await ConnectionManager.fetchAttachmentThumbnail(guid, controller.signal);
                 if(controller.signal.aborted) throw new DOMException("Aborted", "AbortError");
-                const url = URL.createObjectURL(blob);
+                const url = storeMediaThumbnailBlob(guid, blob);
                 const current = thumbnailCache.get(guid);
                 if(!current) return;
-                revokeUrl(current);
                 thumbnailCache.set(guid, {status: "loaded", url});
         } catch(error) {
                 if(controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) {
@@ -125,6 +123,13 @@ function requestThumbnail(guid: string, abortSignal?: AbortSignal) {
                                 abortSignal.addEventListener("abort", () => existing.controller?.abort(), {once: true});
                         }
                 }
+                return;
+        }
+
+        const cachedUrl = getMediaThumbnailCacheUrl(guid);
+        if(cachedUrl) {
+                thumbnailCache.set(guid, {status: "loaded", url: cachedUrl});
+                notifyListeners();
                 return;
         }
 
