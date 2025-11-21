@@ -55,6 +55,7 @@ import {getMemberTitleSync, mimeTypeToPreview} from "shared/util/conversationUti
 import {PeopleContext} from "shared/state/peopleState";
 import {usePersonName} from "shared/util/hookUtils";
 import {useLiveLastUpdateStatusTime} from "../../../util/dateUtils";
+import useConversationContactSearch from "shared/state/useConversationContactSearch";
 
 type SearchTimeRange = "all" | "week" | "month" | "year";
 
@@ -130,6 +131,17 @@ export default function Sidebar(props: {
         const [isFaceTimeLinkLoading, setFaceTimeLinkLoading] = useState(false);
         const [isSearchMode, setIsSearchMode] = useState(false);
         const [contactQuery, setContactQuery] = useState("");
+        const {
+                results: contactSearchResults,
+                loading: contactSearchLoading,
+                progress: contactSearchProgress,
+                search: runContactSearch,
+                clear: clearContactSearch
+        } = useConversationContactSearch(props.conversations);
+        const runContactSearchRef = useRef(runContactSearch);
+        useEffect(() => {
+                runContactSearchRef.current = runContactSearch;
+        }, [runContactSearch]);
         const {
                 results: searchResults,
                 loading: searchLoading,
@@ -207,29 +219,15 @@ export default function Sidebar(props: {
 
         const trimmedContactQuery = contactQuery.trim();
         const isContactSearchActive = trimmedContactQuery.length > 0;
-        const contactSearchResults = useMemo(() => {
-                if(props.conversations === undefined) return [] as Conversation[];
-                if(trimmedContactQuery.length === 0) return props.conversations;
-
-                const lowerQuery = trimmedContactQuery.toLowerCase();
-                return props.conversations.filter((conversation) => {
-                        const title = conversation.name && conversation.name.length > 0
-                                ? conversation.name
-                                : getMemberTitleSync(conversation.members, peopleState);
-
-                        if(title?.toLowerCase().includes(lowerQuery)) {
-                                return true;
-                        }
-
-                        if(conversation.members !== undefined) {
-                                return conversation.members.some((memberAddress) =>
-                                        memberAddress.toLowerCase().includes(lowerQuery)
-                                );
-                        }
-
-                        return false;
-                });
-        }, [peopleState, props.conversations, trimmedContactQuery]);
+        const displayedConversations = isContactSearchActive
+                ? contactSearchResults
+                : props.conversations ?? [];
+        useEffect(() => {
+                const handle = window.setTimeout(() => {
+                        runContactSearchRef.current(contactQuery);
+                }, 200);
+                return () => window.clearTimeout(handle);
+        }, [contactQuery]);
 
         const handleToggleSearchMode = useCallback(() => {
                 setIsSearchMode((current) => !current);
@@ -409,26 +407,46 @@ export default function Sidebar(props: {
                                                                                 <SearchRounded fontSize="small" />
                                                                         </InputAdornment>
                                                                 ),
-                                                                endAdornment: contactQuery.length > 0 ? (
+                                                                endAdornment: (
                                                                         <InputAdornment position="end">
-                                                                                <IconButton
-                                                                                        aria-label="Clear contact search"
-                                                                                        size="small"
-                                                                                        onClick={() => setContactQuery("")}
-                                                                                >
-                                                                                        <ClearRounded fontSize="small" />
-                                                                                </IconButton>
+                                                                                {contactSearchLoading && (
+                                                                                        <CircularProgress
+                                                                                                size={16}
+                                                                                                sx={{mr: contactQuery.length > 0 ? 1 : 0}}
+                                                                                        />
+                                                                                )}
+                                                                                {contactQuery.length > 0 && (
+                                                                                        <IconButton
+                                                                                                aria-label="Clear contact search"
+                                                                                                size="small"
+                                                                                                onClick={() => {
+                                                                                                        setContactQuery("");
+                                                                                                        clearContactSearch();
+                                                                                                }}
+                                                                                        >
+                                                                                                <ClearRounded fontSize="small" />
+                                                                                        </IconButton>
+                                                                                )}
                                                                         </InputAdornment>
-                                                                ) : undefined,
+                                                                ),
                                                         }}
                                                 />
+                                                {contactSearchLoading && contactSearchProgress && (
+                                                        <Stack direction="row" alignItems="center" spacing={1} mt={0.5}>
+                                                                <Typography variant="caption" color="text.secondary">
+                                                                        {contactSearchProgress.total !== undefined
+                                                                                ? `Scanning ${Math.min(contactSearchProgress.scanned, contactSearchProgress.total)} / ${contactSearchProgress.total}`
+                                                                                : `Scanning ${contactSearchProgress.scanned} chats`}
+                                                                </Typography>
+                                                        </Stack>
+                                                )}
                                         </Box>
                                         <List
                                                 className={styles.sidebarList}
                                                 onScroll={isContactSearchActive ? undefined : handleScroll}
                                                 ref={listRef}>
                                                 <TransitionGroup>
-                                                        {(isContactSearchActive ? contactSearchResults : props.conversations).map((conversation) => (
+                                                        {displayedConversations.map((conversation) => (
                                                                 <Collapse key={conversation.localID}>
                                                                         <ListConversation
                                                                                 conversation={conversation}

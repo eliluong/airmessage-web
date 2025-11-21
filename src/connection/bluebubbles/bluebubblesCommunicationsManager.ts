@@ -2,6 +2,9 @@ import CommunicationsManager, {
         ConversationLinkFetchResult,
         ConversationLinkScanCursor,
         ConversationMediaFetchResult,
+        ConversationQueryMetadata,
+        ConversationQueryOptions,
+        ConversationQueryResult,
         ThreadFetchMetadata,
         ThreadFetchOptions,
         normalizeThreadFetchOptions
@@ -45,6 +48,7 @@ import {
         fetchChat,
         fetchChatMessages,
         fetchChats,
+        FetchChatsOptions,
         fetchServerMetadata,
         pingServer,
         queryMessages,
@@ -555,10 +559,14 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
 
         private async fetchLiteConversations(limit?: number) {
                 const requestLimit = limit !== undefined ? Math.max(1, limit) : undefined;
-                const response: ChatQueryResponse = await fetchChats(this.auth, {limit: requestLimit});
+                const response = await this.queryChats({limit: requestLimit});
                 const conversations = response.data.map((chat) => this.convertChat(chat));
                 this.listener?.onMessageConversations(conversations);
                 this.ensurePollingStarted();
+        }
+
+        private queryChats(options: FetchChatsOptions): Promise<ChatQueryResponse> {
+                return fetchChats(this.auth, options);
         }
 
         private ensurePollingStarted() {
@@ -635,6 +643,24 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 // Historical thread fetches already include tapbacks on each message item, so do not forward
                 // the modifier events (`processed.modifiers`) for this batch. Emitting them would cause the UI
                 // to treat historical reactions as newly-arrived ones (triggering tapback sounds, etc.).
+        }
+
+        public async fetchConversationQueryTotals(signal?: AbortSignal): Promise<ConversationQueryMetadata> {
+                const response = await this.queryChats({limit: 1, signal});
+                return this.normalizeChatQueryMetadata(response, {limit: 1, offset: 0});
+        }
+
+        public async fetchConversationQueryPage(options: ConversationQueryOptions = {}): Promise<ConversationQueryResult> {
+                const limit = options.limit !== undefined ? Math.max(1, Math.floor(options.limit)) : 50;
+                const requestOptions: FetchChatsOptions = {
+                        limit,
+                        offset: options.offset,
+                        signal: options.signal
+                };
+                const response = await this.queryChats(requestOptions);
+                const metadata = this.normalizeChatQueryMetadata(response, {offset: options.offset, limit});
+                const conversations = response.data.map((chat) => this.convertChat(chat));
+                return {conversations, metadata};
         }
 
         private buildThreadMetadata(items: ConversationItem[]): ThreadFetchMetadata | undefined {
@@ -992,6 +1018,17 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 const key = buildConversationKey(conversation.members, conversation.service);
                 this.conversationGuidCache.set(key, conversation.guid);
                 return conversation;
+        }
+
+        private normalizeChatQueryMetadata(
+                response: ChatQueryResponse,
+                requested?: {offset?: number; limit?: number;}
+        ): ConversationQueryMetadata {
+                const count = response.metadata?.count ?? response.data.length;
+                const total = response.metadata?.total ?? count;
+                const offset = response.metadata?.offset ?? requested?.offset ?? 0;
+                const limit = response.metadata?.limit ?? requested?.limit;
+                return {count, total, offset, limit};
         }
 
         private async downloadAttachment(requestID: number, attachmentGUID: string) {
