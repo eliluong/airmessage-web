@@ -497,12 +497,27 @@ export default function Sidebar(props: {
                                                         placeholder={isPeopleMode ? "Search people" : "Search messages"}
                                                         size="small"
                                                         fullWidth
+                                                        sx={{
+                                                                "& .MuiOutlinedInput-root": {
+                                                                        borderRadius: 5,
+                                                                        overflow: "hidden",
+                                                                        alignItems: "center"
+                                                                }
+                                                        }}
                                                         InputProps={{
                                                                 sx: {
-                                                                        "&.MuiInputBase-adornedStart": {pl: 0.875}
+                                                                        "&.MuiInputBase-adornedStart": {pl: 0.75, alignItems: "center"}
                                                                 },
                                                                 startAdornment: (
-                                                                        <InputAdornment position="start" sx={{mr: 0.5}}>
+                                                                        <InputAdornment
+                                                                                position="start"
+                                                                                sx={{
+                                                                                        mr: 0.5,
+                                                                                        pl: 0.5,
+                                                                                        alignSelf: "center",
+                                                                                        display: "flex",
+                                                                                        alignItems: "center"
+                                                                                }}>
                                                                                 <ToggleButtonGroup
                                                                                         value={searchMode}
                                                                                         exclusive
@@ -511,10 +526,45 @@ export default function Sidebar(props: {
                                                                                         color="primary"
                                                                                         aria-label="Search mode"
                                                                                         sx={{
+                                                                                                borderRadius: 5,
+                                                                                                overflow: "hidden",
+                                                                                                border: (theme) => `1px solid ${theme.palette.divider}`,
+                                                                                                height: 34,
                                                                                                 "& .MuiToggleButton-root": {
                                                                                                         px: 0.75,
-                                                                                                        py: 0.25,
-                                                                                                        minWidth: 0
+                                                                                                        minWidth: 0,
+                                                                                                        height: "100%",
+                                                                                                        border: "none",
+                                                                                                        borderRadius: 0,
+                                                                                                        color: "text.secondary",
+                                                                                                        transition: (theme) => theme.transitions.create(["color", "background-color"], {
+                                                                                                                duration: theme.transitions.duration.shortest
+                                                                                                        }),
+                                                                                                        "&:hover": {
+                                                                                                                backgroundColor: (theme) => alpha(
+                                                                                                                        theme.palette.primary.main,
+                                                                                                                        theme.palette.mode === "dark" ? 0.12 : 0.08
+                                                                                                                )
+                                                                                                        },
+                                                                                                        "&.Mui-selected": {
+                                                                                                                color: "primary.main",
+                                                                                                                backgroundColor: (theme) => alpha(
+                                                                                                                        theme.palette.primary.main,
+                                                                                                                        theme.palette.mode === "dark" ? 0.18 : 0.12
+                                                                                                                )
+                                                                                                        },
+                                                                                                        "&.Mui-selected:hover": {
+                                                                                                                backgroundColor: (theme) => alpha(
+                                                                                                                        theme.palette.primary.main,
+                                                                                                                        theme.palette.mode === "dark" ? 0.24 : 0.16
+                                                                                                                )
+                                                                                                        },
+                                                                                                        "&.Mui-focusVisible": {
+                                                                                                                boxShadow: (theme) => `0 0 0 2px ${alpha(
+                                                                                                                        theme.palette.primary.main,
+                                                                                                                        theme.palette.mode === "dark" ? 0.35 : 0.2
+                                                                                                                )}`
+                                                                                                        }
                                                                                                 }
                                                                                         }}>
                                                                                         <ToggleButton value="people" title="People search">
