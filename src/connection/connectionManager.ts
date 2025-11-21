@@ -753,10 +753,9 @@ export async function fetchConversationScanTotals(signal?: AbortSignal): Promise
         if(dataProxy.proxyType !== "BlueBubbles") {
                 return Promise.reject(new Error("Conversation scanning is only available when connected to BlueBubbles."));
         }
-        if(!communicationsManager?.fetchConversationQueryTotals) {
-                return Promise.reject(new Error("The active connection does not support conversation scanning."));
-        }
-        return communicationsManager.fetchConversationQueryTotals(signal);
+
+        const count = await fetchChatCount(signal);
+        return {count, total: count, offset: 0};
 }
 
 export async function fetchConversationScanPage(options: ConversationQueryOptions): Promise<ConversationScanPageResult> {
