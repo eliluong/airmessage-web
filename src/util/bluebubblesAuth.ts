@@ -54,7 +54,7 @@ export class MissingPrivateApiError extends BlueBubblesAuthError {
         }
 }
 
-function normalizeServerUrl(serverUrl: string): string {
+export function normalizeServerUrl(serverUrl: string): string {
         const trimmed = serverUrl.trim();
         if(trimmed.length === 0) {
                 throw new BlueBubblesAuthError("A server URL is required.");
@@ -62,6 +62,12 @@ function normalizeServerUrl(serverUrl: string): string {
         const url = new URL(trimmed);
         if(url.protocol !== "https:" && url.protocol !== "http:") {
                 throw new BlueBubblesAuthError("The server URL must start with http:// or https://.");
+        }
+        if(url.protocol === "https:" && url.port) {
+                const portNumber = Number(url.port);
+                if(Number.isInteger(portNumber) && (portNumber === 80 || portNumber === 8080)) {
+                        url.port = "";
+                }
         }
         return url.toString().replace(/\/$/, "");
 }

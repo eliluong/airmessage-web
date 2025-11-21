@@ -14,6 +14,7 @@ import {
         InvalidCertificateError,
         MissingPrivateApiError,
         loginBlueBubblesDevice,
+        normalizeServerUrl,
         refreshBlueBubblesToken,
         registerBlueBubblesDevice,
         shouldRefreshToken
@@ -59,16 +60,26 @@ export default function SignInGate() {
                         getSecureLS(SecureStorageKey.BlueBubblesLegacyAuth)
                 ]);
 
+                let normalizedServerUrl: string | undefined;
+                if(serverUrl) {
+                        try {
+                                normalizedServerUrl = normalizeServerUrl(serverUrl);
+                        } catch(error) {
+                                console.warn("Ignoring invalid stored BlueBubbles server URL", error);
+                                normalizedServerUrl = serverUrl.trim();
+                        }
+                }
+
                 setInitialValues({
-                        serverUrl: serverUrl ?? "",
+                        serverUrl: normalizedServerUrl ?? serverUrl ?? "",
                         password: "",
                         deviceName: deviceName ?? ""
                 });
 
-                if(serverUrl && token) {
+                if(normalizedServerUrl && token) {
                         const parsedExpiry = expiresAt !== undefined ? Number(expiresAt) : undefined;
                         const storedSession: BlueBubblesSessionState = {
-                                serverUrl,
+                                serverUrl: normalizedServerUrl,
                                 accessToken: token,
                                 refreshToken: refreshToken ?? undefined,
                                 expiresAt: Number.isFinite(parsedExpiry) ? parsedExpiry : undefined,
@@ -114,7 +125,7 @@ export default function SignInGate() {
                 credentials: BlueBubblesCredentialValues,
                 authResult: BlueBubblesAuthResult
         ) => {
-                const sanitizedServerUrl = credentials.serverUrl.trim();
+                const sanitizedServerUrl = normalizeServerUrl(credentials.serverUrl);
                 const sanitizedDevice = credentials.deviceName?.trim() ?? undefined;
                 const nextSession: BlueBubblesSessionState = {
                         serverUrl: sanitizedServerUrl,
