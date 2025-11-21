@@ -1012,6 +1012,7 @@ export default function DetailThread({conversation, focusTarget}: {
 					width="100%"
 					padding={2}>
 					<MessageInput
+						conversationID={conversation.localID}
 						placeholder={mapServiceName(conversation.service)}
 						message={messageInput}
                                                 onMessageChange={setMessageInput}
