@@ -431,15 +431,6 @@ export default function Sidebar(props: {
                                                                 ),
                                                         }}
                                                 />
-                                                {contactSearchLoading && contactSearchProgress && (
-                                                        <Stack direction="row" alignItems="center" spacing={1} mt={0.5}>
-                                                                <Typography variant="caption" color="text.secondary">
-                                                                        {contactSearchProgress.total !== undefined
-                                                                                ? `Scanning ${Math.min(contactSearchProgress.scanned, contactSearchProgress.total)} / ${contactSearchProgress.total}`
-                                                                                : `Scanning ${contactSearchProgress.scanned} chats`}
-                                                                </Typography>
-                                                        </Stack>
-                                                )}
                                         </Box>
                                         <List
                                                 className={styles.sidebarList}

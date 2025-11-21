@@ -135,14 +135,24 @@ export interface MessageQueryResponse {
         };
 }
 
+export interface ChatQueryMetadata {
+        count: number;
+        total: number;
+        offset?: number;
+        limit?: number;
+}
+
 export interface ChatQueryResponse {
         data: ChatResponse[];
-        metadata?: {
-                count: number;
-                total: number;
-                offset?: number;
-                limit?: number;
-        };
+        metadata?: ChatQueryMetadata;
+}
+
+export interface ChatQueryPageResponse extends ChatQueryResponse {
+        metadata: ChatQueryMetadata & {offset: number;};
+}
+
+export interface ChatCountResponse {
+        data: number;
 }
 
 export interface SingleChatResponse {
