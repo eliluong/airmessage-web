@@ -26,11 +26,11 @@ import ConnectionBanner from "./ConnectionBanner";
 import {ConnectionErrorCode, FaceTimeLinkErrorCode} from "../../../data/stateCodes";
 import {
         AddRounded,
-        ArrowBackRounded,
+        ChatRounded,
         ClearRounded,
         Contacts,
         MoreVertRounded,
-        SearchRounded,
+        PeopleAltRounded,
         Update,
         VideoCallOutlined
 } from "@mui/icons-material";
@@ -57,16 +57,18 @@ import {usePersonName} from "shared/util/hookUtils";
 import {useLiveLastUpdateStatusTime} from "../../../util/dateUtils";
 import useConversationContactSearch from "shared/state/useConversationContactSearch";
 
+type SidebarSearchMode = "people" | "messages";
 type SearchTimeRange = "all" | "week" | "month" | "year";
 
 const SEARCH_TIME_RANGES: ReadonlyArray<{value: SearchTimeRange; label: string; offsetMs?: number}> = [
-        {value: "week", label: "7 days", offsetMs: 7 * 24 * 60 * 60 * 1000},
-        {value: "month", label: "30 days", offsetMs: 30 * 24 * 60 * 60 * 1000},
-        {value: "year", label: "365 days", offsetMs: 365 * 24 * 60 * 60 * 1000},
+        {value: "week", label: "Week", offsetMs: 7 * 24 * 60 * 60 * 1000},
+        {value: "month", label: "Month", offsetMs: 30 * 24 * 60 * 60 * 1000},
+        {value: "year", label: "Year", offsetMs: 365 * 24 * 60 * 60 * 1000},
         {value: "all", label: "All time"},
 ];
 
-export const DEFAULT_SEARCH_TIME_RANGE: SearchTimeRange = "month";
+export const DEFAULT_SEARCH_TIME_RANGE: SearchTimeRange = "all";
+const CONTACT_SEARCH_DEBOUNCE_MS = 225;
 
 export default function Sidebar(props: {
         conversations: Conversation[] | undefined;
@@ -129,8 +131,10 @@ export default function Sidebar(props: {
 	const isFaceTimeSupported = useIsFaceTimeSupported();
 	
         const [isFaceTimeLinkLoading, setFaceTimeLinkLoading] = useState(false);
-        const [isSearchMode, setIsSearchMode] = useState(false);
-        const [contactQuery, setContactQuery] = useState("");
+        const [searchMode, setSearchMode] = useState<SidebarSearchMode>("people");
+        const [searchQuery, setSearchQuery] = useState("");
+        const searchInputRef = useRef<HTMLInputElement | null>(null);
+        const contactSearchTimeoutRef = useRef<number | undefined>(undefined);
         const {
                 results: contactSearchResults,
                 loading: contactSearchLoading,
@@ -147,17 +151,17 @@ export default function Sidebar(props: {
                 loading: searchLoading,
                 error: searchError,
                 cacheKey: searchCacheKey,
-                search
-        } = useMessageSearch({debounceMs: 350});
-        const [searchQuery, setSearchQuery] = useState("");
+                search,
+                cancel
+        } = useMessageSearch();
         const [searchTimeRange, setSearchTimeRange] = useState<SearchTimeRange>(DEFAULT_SEARCH_TIME_RANGE);
-        const searchOptions = useMemo(() => {
-                const trimmed = searchQuery.trim();
+        const buildSearchOptions = useCallback((value: string, range: SearchTimeRange) => {
+                const trimmed = value.trim();
                 if(trimmed.length === 0) {
                         return undefined;
                 }
 
-                const {startDate, endDate} = resolveSearchRange(searchTimeRange);
+                const {startDate, endDate} = resolveSearchRange(range);
                 return {
                         term: trimmed,
                         startDate,
@@ -165,7 +169,30 @@ export default function Sidebar(props: {
                         offset: undefined,
                         limit: undefined,
                 };
-        }, [searchQuery, searchTimeRange]);
+        }, []);
+        const trimmedQuery = searchQuery.trim();
+        const isPeopleMode = searchMode === "people";
+        const isMessageMode = searchMode === "messages";
+        const clearContactSearchTimeout = useCallback(() => {
+                if(contactSearchTimeoutRef.current !== undefined) {
+                        window.clearTimeout(contactSearchTimeoutRef.current);
+                        contactSearchTimeoutRef.current = undefined;
+                }
+        }, []);
+        const scheduleContactSearch = useCallback((value: string) => {
+                clearContactSearchTimeout();
+                contactSearchTimeoutRef.current = window.setTimeout(() => {
+                        runContactSearchRef.current(value);
+                        contactSearchTimeoutRef.current = undefined;
+                }, CONTACT_SEARCH_DEBOUNCE_MS);
+        }, [clearContactSearchTimeout]);
+        const runContactSearchImmediate = useCallback((value: string) => {
+                clearContactSearchTimeout();
+                runContactSearchRef.current(value);
+        }, [clearContactSearchTimeout]);
+        const triggerMessageSearch = useCallback((value: string, range: SearchTimeRange, immediate = false) => {
+                search(buildSearchOptions(value, range), immediate);
+        }, [buildSearchOptions, search]);
         const createFaceTimeLink = useCallback(async () => {
                 setFaceTimeLinkLoading(true);
 
@@ -216,45 +243,133 @@ export default function Sidebar(props: {
                 });
                 return map;
         }, [props.conversations, peopleState]);
+        const activateMessageMode = useCallback((immediate?: boolean) => {
+                if(searchMode !== "messages") {
+                        setSearchMode("messages");
+                }
+                clearContactSearchTimeout();
+                clearContactSearch();
+                triggerMessageSearch(searchQuery, searchTimeRange, immediate ?? trimmedQuery.length > 0);
+        }, [clearContactSearch, clearContactSearchTimeout, searchMode, searchQuery, searchTimeRange, triggerMessageSearch, trimmedQuery]);
 
-        const trimmedContactQuery = contactQuery.trim();
-        const isContactSearchActive = trimmedContactQuery.length > 0;
-        const displayedConversations = isContactSearchActive
-                ? contactSearchResults
-                : props.conversations ?? [];
-        useEffect(() => {
-                const handle = window.setTimeout(() => {
-                        runContactSearchRef.current(contactQuery);
-                }, 200);
-                return () => window.clearTimeout(handle);
-        }, [contactQuery]);
+        const activatePeopleMode = useCallback(() => {
+                if(searchMode !== "people") {
+                        setSearchMode("people");
+                }
+                cancel();
+                search(undefined);
+                clearContactSearchTimeout();
+                if(trimmedQuery.length > 0) {
+                        runContactSearchImmediate(searchQuery);
+                } else {
+                        clearContactSearch();
+                }
+        }, [cancel, clearContactSearch, clearContactSearchTimeout, runContactSearchImmediate, search, searchMode, searchQuery, trimmedQuery]);
 
-        const handleToggleSearchMode = useCallback(() => {
-                setIsSearchMode((current) => !current);
-        }, []);
+        const handleSearchModeChange = useCallback((event: React.MouseEvent<HTMLElement>, value: SidebarSearchMode | null) => {
+                if(value === null || value === searchMode) return;
+                if(value === "messages") {
+                        activateMessageMode(true);
+                } else {
+                        activatePeopleMode();
+                }
+        }, [activateMessageMode, activatePeopleMode, searchMode]);
 
-        const handleCloseSearchMode = useCallback(() => {
-                setIsSearchMode(false);
-        }, []);
+        const handleTimeRangeChange = useCallback((event: React.MouseEvent<HTMLElement>, value: SearchTimeRange | null) => {
+                if(value !== null) {
+                        setSearchTimeRange(value);
+                        if(isMessageMode) {
+                                triggerMessageSearch(searchQuery, value, true);
+                        }
+                }
+        }, [isMessageMode, searchQuery, triggerMessageSearch]);
 
-        useEffect(() => {
-                if(!isSearchMode) return;
-                search(searchOptions);
-        }, [isSearchMode, searchOptions, search]);
+        const handleSearchInputChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+                const value = event.target.value;
+                setSearchQuery(value);
+                if(searchMode === "people") {
+                        scheduleContactSearch(value);
+                } else {
+                        triggerMessageSearch(value, searchTimeRange);
+                }
+        }, [scheduleContactSearch, searchMode, searchTimeRange, triggerMessageSearch]);
 
-        useEffect(() => {
-                if(!isSearchMode) return;
+        const handleClearSearch = useCallback(() => {
+                setSearchQuery("");
+                clearContactSearchTimeout();
+                clearContactSearch();
+                cancel();
+                search(undefined);
+                searchInputRef.current?.focus();
+        }, [cancel, clearContactSearch, clearContactSearchTimeout, search]);
 
-                const handleKeyDown = (event: KeyboardEvent) => {
-                        if(event.key === "Escape") {
+        const handleSearchKeyDown = useCallback((event: React.KeyboardEvent<HTMLInputElement>) => {
+                if(event.key === "Enter") {
+                        if(isPeopleMode) {
+                                runContactSearchImmediate(searchQuery);
+                        } else {
+                                triggerMessageSearch(searchQuery, searchTimeRange, true);
+                        }
+                } else if(event.key === "Escape") {
+                        if(trimmedQuery.length > 0) {
                                 event.preventDefault();
-                                handleCloseSearchMode();
+                                handleClearSearch();
+                        } else {
+                                if(isMessageMode) {
+                                        activatePeopleMode();
+                                }
+                                event.currentTarget.blur();
+                        }
+                }
+        }, [activatePeopleMode, handleClearSearch, isMessageMode, isPeopleMode, runContactSearchImmediate, searchQuery, searchTimeRange, triggerMessageSearch, trimmedQuery]);
+
+        const focusSearchField = useCallback(() => {
+                searchInputRef.current?.focus();
+                searchInputRef.current?.select();
+        }, []);
+
+        useEffect(() => {
+                const handleKeyDown = (event: KeyboardEvent) => {
+                        const target = event.target as HTMLElement | null;
+                        const isEditable = target?.getAttribute("contenteditable") === "true"
+                                || (target instanceof HTMLInputElement)
+                                || (target instanceof HTMLTextAreaElement);
+                        const key = event.key.toLowerCase();
+
+                        if((event.ctrlKey || event.metaKey) && event.shiftKey && key === "m") {
+                                event.preventDefault();
+                                if(isPeopleMode) {
+                                        activateMessageMode(true);
+                                } else {
+                                        activatePeopleMode();
+                                }
+                                focusSearchField();
+                                return;
+                        }
+
+                        if(isEditable) return;
+
+                        if((event.ctrlKey || event.metaKey) && !event.shiftKey && key === "f") {
+                                event.preventDefault();
+                                focusSearchField();
+                                return;
+                        }
+
+                        if(!event.ctrlKey && !event.metaKey && event.key === "/") {
+                                event.preventDefault();
+                                focusSearchField();
                         }
                 };
 
                 window.addEventListener("keydown", handleKeyDown);
                 return () => window.removeEventListener("keydown", handleKeyDown);
-        }, [handleCloseSearchMode, isSearchMode]);
+        }, [activateMessageMode, activatePeopleMode, focusSearchField, isPeopleMode]);
+
+        const isContactSearchActive = isPeopleMode && trimmedQuery.length > 0;
+        const displayedConversations = isPeopleMode
+                ? (isContactSearchActive ? contactSearchResults : props.conversations ?? [])
+                : [];
+        useEffect(() => () => clearContactSearchTimeout(), [clearContactSearchTimeout]);
 
         const handleSearchResultSelected = useCallback((hit: MessageSearchHit) => {
                 props.onSearchResultSelected(hit);
@@ -268,14 +383,14 @@ export default function Sidebar(props: {
         }, []);
 
         const handleScroll = useCallback((event: React.UIEvent<HTMLUListElement>) => {
-                if(isContactSearchActive) return;
+                if(!isPeopleMode || isContactSearchActive) return;
                 const target = event.currentTarget;
                 if(scrollThrottleRef.current !== undefined) return;
                 scrollThrottleRef.current = window.setTimeout(() => {
                         scrollThrottleRef.current = undefined;
                         triggerLoadMore(target);
                 }, 150);
-        }, [isContactSearchActive, triggerLoadMore]);
+        }, [isContactSearchActive, isPeopleMode, triggerLoadMore]);
 
         useEffect(() => () => clearScrollThrottle(), [clearScrollThrottle]);
 
@@ -309,14 +424,6 @@ export default function Sidebar(props: {
                                                         <VideoCallOutlined />
                                                 </IconButton>
                                         )}
-
-                                        <IconButton
-                                                size="large"
-                                                color={isSearchMode ? "primary" : "default"}
-                                                onClick={handleToggleSearchMode}
-                                                disabled={props.conversations === undefined && !isSearchMode}>
-                                                <SearchRounded />
-                                        </IconButton>
 
                                         <IconButton
                                                 size="large"
@@ -373,20 +480,7 @@ export default function Sidebar(props: {
 					onClickButton={showRemoteUpdateDialog} />
 			)}
 			
-                        {isSearchMode ? (
-                                <SearchPanel
-                                        conversationTitleMap={conversationTitleMap}
-                                        query={searchQuery}
-                                        onQueryChange={setSearchQuery}
-                                        timeRange={searchTimeRange}
-                                        onTimeRangeChange={setSearchTimeRange}
-                                        loading={searchLoading}
-                                        results={searchResults}
-                                        error={searchError}
-                                        onResultSelected={handleSearchResultSelected}
-                                        onCancel={handleCloseSearchMode}
-                                        cacheKey={searchCacheKey} />
-                        ) : props.conversations !== undefined ? (
+                        {props.conversations !== undefined ? (
                                 <Box display="flex" flexDirection="column" flex={1} minHeight={0}>
                                         <Box
                                                 component="header"
@@ -396,34 +490,55 @@ export default function Sidebar(props: {
                                                         borderBottom: (theme) => `1px solid ${theme.palette.divider}`,
                                                 }}>
                                                 <TextField
-                                                        value={contactQuery}
-                                                        onChange={(event) => setContactQuery(event.target.value)}
-                                                        placeholder="Find people by name or number"
+                                                        inputRef={searchInputRef}
+                                                        value={searchQuery}
+                                                        onChange={handleSearchInputChange}
+                                                        onKeyDown={handleSearchKeyDown}
+                                                        placeholder={isPeopleMode ? "Search people" : "Search messages"}
                                                         size="small"
                                                         fullWidth
                                                         InputProps={{
+                                                                sx: {
+                                                                        "&.MuiInputBase-adornedStart": {pl: 0.875}
+                                                                },
                                                                 startAdornment: (
-                                                                        <InputAdornment position="start">
-                                                                                <SearchRounded fontSize="small" />
+                                                                        <InputAdornment position="start" sx={{mr: 0.5}}>
+                                                                                <ToggleButtonGroup
+                                                                                        value={searchMode}
+                                                                                        exclusive
+                                                                                        onChange={handleSearchModeChange}
+                                                                                        size="small"
+                                                                                        color="primary"
+                                                                                        aria-label="Search mode"
+                                                                                        sx={{
+                                                                                                "& .MuiToggleButton-root": {
+                                                                                                        px: 0.75,
+                                                                                                        py: 0.25,
+                                                                                                        minWidth: 0
+                                                                                                }
+                                                                                        }}>
+                                                                                        <ToggleButton value="people" title="People search">
+                                                                                                <PeopleAltRounded fontSize="small" />
+                                                                                        </ToggleButton>
+                                                                                        <ToggleButton value="messages" title="Message search">
+                                                                                                <ChatRounded fontSize="small" />
+                                                                                        </ToggleButton>
+                                                                                </ToggleButtonGroup>
                                                                         </InputAdornment>
                                                                 ),
                                                                 endAdornment: (
                                                                         <InputAdornment position="end">
-                                                                                {contactSearchLoading && (
+                                                                                {(isPeopleMode ? contactSearchLoading : searchLoading) && (
                                                                                         <CircularProgress
                                                                                                 size={16}
-                                                                                                sx={{mr: contactQuery.length > 0 ? 1 : 0}}
+                                                                                                sx={{mr: searchQuery.length > 0 ? 1 : 0}}
                                                                                         />
                                                                                 )}
-                                                                                {contactQuery.length > 0 && (
+                                                                                {searchQuery.length > 0 && (
                                                                                         <IconButton
-                                                                                                aria-label="Clear contact search"
+                                                                                                aria-label="Clear search"
                                                                                                 size="small"
-                                                                                                onClick={() => {
-                                                                                                        setContactQuery("");
-                                                                                                        clearContactSearch();
-                                                                                                }}
-                                                                                        >
+                                                                                                onClick={handleClearSearch}>
                                                                                                 <ClearRounded fontSize="small" />
                                                                                         </IconButton>
                                                                                 )}
@@ -432,40 +547,84 @@ export default function Sidebar(props: {
                                                         }}
                                                 />
                                         </Box>
-                                        <List
-                                                className={styles.sidebarList}
-                                                onScroll={isContactSearchActive ? undefined : handleScroll}
-                                                ref={listRef}>
-                                                <TransitionGroup>
-                                                        {displayedConversations.map((conversation) => (
-                                                                <Collapse key={conversation.localID}>
-                                                                        <ListConversation
-                                                                                conversation={conversation}
-                                                                                selected={conversation.localID === props.selectedConversation}
-                                                                                highlighted={conversation.unreadMessages}
-                                                                                onSelected={() => props.onConversationSelected(conversation.localID)} />
-                                                                </Collapse>
-                                                        ))}
-                                                </TransitionGroup>
-                                                {isContactSearchActive && contactSearchResults.length === 0 && (
-                                                        <Box textAlign="center" py={2} px={2}>
-                                                                <Typography variant="body2" color="textSecondary">
-                                                                        No conversations found
-                                                                </Typography>
-                                                        </Box>
-                                                )}
-                                                {!isContactSearchActive && props.hasMoreConversations && (
-                                                        <Box display="flex" justifyContent="center" py={1}>
-                                                                {isLoadingMore ? (
-                                                                        <CircularProgress size={20} />
-                                                                ) : (
-                                                                        <Typography variant="caption" color="textSecondary">
-                                                                                Scroll to load more conversations
+
+                                        <Collapse in={isMessageMode} timeout={180} unmountOnExit>
+                                                <Box
+                                                        sx={{
+                                                                borderBottom: (theme) => `1px solid ${theme.palette.divider}`,
+                                                                px: 1.5,
+                                                                py: 0.75
+                                                        }}>
+                                                        <ToggleButtonGroup
+                                                                value={searchTimeRange}
+                                                                exclusive
+                                                                onChange={handleTimeRangeChange}
+                                                                size="small"
+                                                                fullWidth>
+                                                                {SEARCH_TIME_RANGES.map(({value, label}) => (
+                                                                        <ToggleButton key={value} value={value} sx={{flex: 1}}>
+                                                                                {label}
+                                                                        </ToggleButton>
+                                                                ))}
+                                                        </ToggleButtonGroup>
+                                                </Box>
+                                        </Collapse>
+
+                                        {isPeopleMode && contactSearchLoading && contactSearchProgress && (
+                                                <Box sx={{px: 1.5, py: 0.75}}>
+                                                        <Typography variant="caption" color="textSecondary">
+                                                                Scanning {contactSearchProgress.scanned}
+                                                                {contactSearchProgress.total !== undefined ? ` / ${contactSearchProgress.total}` : ""} chats...
+                                                        </Typography>
+                                                </Box>
+                                        )}
+
+                                        {isMessageMode ? (
+                                                <MessageSearchResults
+                                                        conversationTitleMap={conversationTitleMap}
+                                                        query={searchQuery}
+                                                        loading={searchLoading}
+                                                        results={searchResults}
+                                                        error={searchError}
+                                                        onResultSelected={handleSearchResultSelected}
+                                                        cacheKey={searchCacheKey}
+                                                />
+                                        ) : (
+                                                <List
+                                                        className={styles.sidebarList}
+                                                        onScroll={isContactSearchActive ? undefined : handleScroll}
+                                                        ref={listRef}>
+                                                        <TransitionGroup>
+                                                                {displayedConversations.map((conversation) => (
+                                                                        <Collapse key={conversation.localID}>
+                                                                                <ListConversation
+                                                                                        conversation={conversation}
+                                                                                        selected={conversation.localID === props.selectedConversation}
+                                                                                        highlighted={conversation.unreadMessages}
+                                                                                        onSelected={() => props.onConversationSelected(conversation.localID)} />
+                                                                        </Collapse>
+                                                                ))}
+                                                        </TransitionGroup>
+                                                        {isContactSearchActive && displayedConversations.length === 0 && (
+                                                                <Box textAlign="center" py={2} px={2}>
+                                                                        <Typography variant="body2" color="textSecondary">
+                                                                                No conversations found
                                                                         </Typography>
-                                                                )}
-                                                        </Box>
-                                                )}
-                                        </List>
+                                                                </Box>
+                                                        )}
+                                                        {!isContactSearchActive && props.hasMoreConversations && (
+                                                                <Box display="flex" justifyContent="center" py={1}>
+                                                                        {isLoadingMore ? (
+                                                                                <CircularProgress size={20} />
+                                                                        ) : (
+                                                                                <Typography variant="caption" color="textSecondary">
+                                                                                        Scroll to load more conversations
+                                                                                </Typography>
+                                                                        )}
+                                                                </Box>
+                                                        )}
+                                                </List>
+                                        )}
                                 </Box>
                         ) : (
                                 <Box className={styles.sidebarListLoading}>
@@ -476,55 +635,31 @@ export default function Sidebar(props: {
 	);
 }
 
-interface SearchPanelProps {
+interface MessageSearchResultsProps {
         conversationTitleMap: Map<string, string>;
         query: string;
-        onQueryChange: (value: string) => void;
-        timeRange: SearchTimeRange;
-        onTimeRangeChange: (value: SearchTimeRange) => void;
         loading: boolean;
         results: MessageSearchHit[];
         error: Error | undefined;
         onResultSelected: (result: MessageSearchHit) => void;
-        onCancel: VoidFunction;
         cacheKey?: string;
 }
 
-function SearchPanel(props: SearchPanelProps) {
+function MessageSearchResults(props: MessageSearchResultsProps) {
         const {
                 conversationTitleMap,
                 query,
-                onQueryChange,
-                timeRange,
-                onTimeRangeChange,
                 loading,
                 results,
                 error,
                 onResultSelected,
-                onCancel,
                 cacheKey
         } = props;
 
-        const inputRef = useRef<HTMLInputElement | null>(null);
         const listRef = useRef<HTMLUListElement | null>(null);
         const scrollPersistHandleRef = useRef<number | undefined>(undefined);
 
-        const handleTimeRangeChange = useCallback((event: React.MouseEvent<HTMLElement>, value: SearchTimeRange | null) => {
-                if(value !== null) {
-                        onTimeRangeChange(value);
-                }
-        }, [onTimeRangeChange]);
-
-        const handleCancel = useCallback(() => {
-                onCancel();
-        }, [onCancel]);
-
         const hasQuery = query.trim().length > 0;
-
-        const handleClearQuery = useCallback(() => {
-                onQueryChange("");
-                inputRef.current?.focus();
-        }, [onQueryChange]);
 
         useLayoutEffect(() => {
                 if(!cacheKey) return;
@@ -570,106 +705,48 @@ function SearchPanel(props: SearchPanelProps) {
 
         return (
                 <Box display="flex" flexDirection="column" flex={1} minHeight={0}>
-                        <Box
-                                component="header"
-                                sx={{
-                                        paddingX: 1.5,
-                                        paddingY: 1,
-                                        borderBottom: (theme) => `1px solid ${theme.palette.divider}`,
-                                        display: "flex",
-                                        flexDirection: "column",
-                                        gap: 1
-                                }}>
-                                <Stack direction="row" spacing={1} alignItems="center">
-                                        <IconButton aria-label="Back to conversations" onClick={handleCancel}>
-                                                <ArrowBackRounded />
-                                        </IconButton>
-                                        <TextField
-                                                inputRef={inputRef}
-                                                value={query}
-                                                onChange={(event) => onQueryChange(event.target.value)}
-                                                placeholder="Search messages"
-                                                fullWidth
-                                                autoFocus
-                                                size="small"
-                                                InputProps={{
-                                                        startAdornment: (
-                                                                <InputAdornment position="start">
-                                                                        <SearchRounded fontSize="small" />
-                                                                </InputAdornment>
-                                                        ),
-                                                        endAdornment: hasQuery ? (
-                                                                <InputAdornment position="end">
-                                                                        <IconButton
-                                                                                aria-label="Clear search"
-                                                                                size="small"
-                                                                                onClick={handleClearQuery}>
-                                                                                <ClearRounded fontSize="small" />
-                                                                        </IconButton>
-                                                                </InputAdornment>
-                                                        ) : undefined
-                                                }}
-                                        />
-                                </Stack>
-
-                                <ToggleButtonGroup
-                                        value={timeRange}
-                                        exclusive
-                                        onChange={handleTimeRangeChange}
-                                        size="small"
-                                        fullWidth>
-                                        {SEARCH_TIME_RANGES.map(({value, label}) => (
-                                                <ToggleButton key={value} value={value}>
-                                                        {label}
-                                                </ToggleButton>
-                                        ))}
-                                </ToggleButtonGroup>
-                        </Box>
-
-                        <Box flex={1} minHeight={0} display="flex" flexDirection="column">
-                                {loading ? (
-                                        <Box sx={statusBoxSx}>
-                                                <CircularProgress />
-                                        </Box>
-                                ) : error ? (
-                                        <Box sx={statusBoxSx}>
-                                                <Typography color="error">{error.message}</Typography>
-                                        </Box>
-                                ) : !hasQuery ? (
-                                        <Box sx={statusBoxSx}>
-                                                <Typography color="textSecondary">Type to search your messages</Typography>
-                                        </Box>
-                                ) : results.length === 0 ? (
-                                        <Box sx={statusBoxSx}>
-                                                <Typography color="textSecondary">No results found</Typography>
-                                        </Box>
-                                ) : (
-                                        <List
-                                                className={styles.sidebarList}
-                                                disablePadding
-                                                sx={{paddingTop: 0}}
-                                                ref={listRef}
-                                                onScroll={handleListScroll}>
-                                                {results.map((hit) => {
-                                                        const key = String(hit.originalROWID);
-                                                        const titleKey = hit.conversationGuid ?? hit.message.chatGuid;
-                                                        const title = (titleKey ? conversationTitleMap.get(titleKey) : undefined)
-                                                                ?? conversationTitleMap.get(hit.message.chatGuid ?? "")
-                                                                ?? conversationTitleMap.get(hit.conversationGuid ?? "")
-                                                                ?? titleKey
-                                                                ?? "Unknown conversation";
-                                                        return (
-                                                                <SearchResultItem
-                                                                        key={key}
-                                                                        hit={hit}
-                                                                        title={title}
-                                                                        query={query}
-                                                                        onSelected={onResultSelected} />
-                                                        );
-                                                })}
-                                        </List>
-                                )}
-                        </Box>
+                        {loading ? (
+                                <Box sx={statusBoxSx}>
+                                        <CircularProgress />
+                                </Box>
+                        ) : error ? (
+                                <Box sx={statusBoxSx}>
+                                        <Typography color="error">{error.message}</Typography>
+                                </Box>
+                        ) : !hasQuery ? (
+                                <Box sx={statusBoxSx}>
+                                        <Typography color="textSecondary">Type to search your messages</Typography>
+                                </Box>
+                        ) : results.length === 0 ? (
+                                <Box sx={statusBoxSx}>
+                                        <Typography color="textSecondary">No results found</Typography>
+                                </Box>
+                        ) : (
+                                <List
+                                        className={styles.sidebarList}
+                                        disablePadding
+                                        sx={{paddingTop: 0}}
+                                        ref={listRef}
+                                        onScroll={handleListScroll}>
+                                        {results.map((hit) => {
+                                                const key = String(hit.originalROWID);
+                                                const titleKey = hit.conversationGuid ?? hit.message.chatGuid;
+                                                const title = (titleKey ? conversationTitleMap.get(titleKey) : undefined)
+                                                        ?? conversationTitleMap.get(hit.message.chatGuid ?? "")
+                                                        ?? conversationTitleMap.get(hit.conversationGuid ?? "")
+                                                        ?? titleKey
+                                                        ?? "Unknown conversation";
+                                                return (
+                                                        <SearchResultItem
+                                                                key={key}
+                                                                hit={hit}
+                                                                title={title}
+                                                                query={query}
+                                                                onSelected={onResultSelected} />
+                                                );
+                                        })}
+                                </List>
+                        )}
                 </Box>
         );
 }
