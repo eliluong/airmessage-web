@@ -129,6 +129,7 @@ export default function Sidebar(props: {
 	
         const [isFaceTimeLinkLoading, setFaceTimeLinkLoading] = useState(false);
         const [isSearchMode, setIsSearchMode] = useState(false);
+        const [contactQuery, setContactQuery] = useState("");
         const {
                 results: searchResults,
                 loading: searchLoading,
@@ -204,6 +205,32 @@ export default function Sidebar(props: {
                 return map;
         }, [props.conversations, peopleState]);
 
+        const trimmedContactQuery = contactQuery.trim();
+        const isContactSearchActive = trimmedContactQuery.length > 0;
+        const contactSearchResults = useMemo(() => {
+                if(props.conversations === undefined) return [] as Conversation[];
+                if(trimmedContactQuery.length === 0) return props.conversations;
+
+                const lowerQuery = trimmedContactQuery.toLowerCase();
+                return props.conversations.filter((conversation) => {
+                        const title = conversation.name && conversation.name.length > 0
+                                ? conversation.name
+                                : getMemberTitleSync(conversation.members, peopleState);
+
+                        if(title?.toLowerCase().includes(lowerQuery)) {
+                                return true;
+                        }
+
+                        if(conversation.members !== undefined) {
+                                return conversation.members.some((memberAddress) =>
+                                        memberAddress.toLowerCase().includes(lowerQuery)
+                                );
+                        }
+
+                        return false;
+                });
+        }, [peopleState, props.conversations, trimmedContactQuery]);
+
         const handleToggleSearchMode = useCallback(() => {
                 setIsSearchMode((current) => !current);
         }, []);
@@ -243,13 +270,14 @@ export default function Sidebar(props: {
         }, []);
 
         const handleScroll = useCallback((event: React.UIEvent<HTMLUListElement>) => {
+                if(isContactSearchActive) return;
                 const target = event.currentTarget;
                 if(scrollThrottleRef.current !== undefined) return;
                 scrollThrottleRef.current = window.setTimeout(() => {
                         scrollThrottleRef.current = undefined;
                         triggerLoadMore(target);
                 }, 150);
-        }, [triggerLoadMore]);
+        }, [isContactSearchActive, triggerLoadMore]);
 
         useEffect(() => () => clearScrollThrottle(), [clearScrollThrottle]);
 
@@ -347,7 +375,7 @@ export default function Sidebar(props: {
 					onClickButton={showRemoteUpdateDialog} />
 			)}
 			
-			{isSearchMode ? (
+                        {isSearchMode ? (
                                 <SearchPanel
                                         conversationTitleMap={conversationTitleMap}
                                         query={searchQuery}
@@ -360,36 +388,81 @@ export default function Sidebar(props: {
                                         onResultSelected={handleSearchResultSelected}
                                         onCancel={handleCloseSearchMode}
                                         cacheKey={searchCacheKey} />
-			) : props.conversations !== undefined ? (
-				<List className={styles.sidebarList} onScroll={handleScroll} ref={listRef}>
-					<TransitionGroup>
-						{props.conversations.map((conversation) => (
-							<Collapse key={conversation.localID}>
-								<ListConversation
-									conversation={conversation}
-									selected={conversation.localID === props.selectedConversation}
-									highlighted={conversation.unreadMessages}
-									onSelected={() => props.onConversationSelected(conversation.localID)} />
-							</Collapse>
-						))}
-					</TransitionGroup>
-					{props.hasMoreConversations && (
-						<Box display="flex" justifyContent="center" py={1}>
-							{isLoadingMore ? (
-								<CircularProgress size={20} />
-							) : (
-								<Typography variant="caption" color="textSecondary">
-									Scroll to load more conversations
-								</Typography>
-							)}
-						</Box>
-					)}
-				</List>
-			) : (
-				<Box className={styles.sidebarListLoading}>
-					{[...Array(16)].map((element, index) => <ConversationSkeleton key={`skeleton-${index}`} />)}
-				</Box>
-			)}
+                        ) : props.conversations !== undefined ? (
+                                <Box display="flex" flexDirection="column" flex={1} minHeight={0}>
+                                        <Box
+                                                component="header"
+                                                sx={{
+                                                        paddingX: 1.5,
+                                                        paddingY: 1,
+                                                        borderBottom: (theme) => `1px solid ${theme.palette.divider}`,
+                                                }}>
+                                                <TextField
+                                                        value={contactQuery}
+                                                        onChange={(event) => setContactQuery(event.target.value)}
+                                                        placeholder="Find people by name or number"
+                                                        size="small"
+                                                        fullWidth
+                                                        InputProps={{
+                                                                startAdornment: (
+                                                                        <InputAdornment position="start">
+                                                                                <SearchRounded fontSize="small" />
+                                                                        </InputAdornment>
+                                                                ),
+                                                                endAdornment: contactQuery.length > 0 ? (
+                                                                        <InputAdornment position="end">
+                                                                                <IconButton
+                                                                                        aria-label="Clear contact search"
+                                                                                        size="small"
+                                                                                        onClick={() => setContactQuery("")}
+                                                                                >
+                                                                                        <ClearRounded fontSize="small" />
+                                                                                </IconButton>
+                                                                        </InputAdornment>
+                                                                ) : undefined,
+                                                        }}
+                                                />
+                                        </Box>
+                                        <List
+                                                className={styles.sidebarList}
+                                                onScroll={isContactSearchActive ? undefined : handleScroll}
+                                                ref={listRef}>
+                                                <TransitionGroup>
+                                                        {(isContactSearchActive ? contactSearchResults : props.conversations).map((conversation) => (
+                                                                <Collapse key={conversation.localID}>
+                                                                        <ListConversation
+                                                                                conversation={conversation}
+                                                                                selected={conversation.localID === props.selectedConversation}
+                                                                                highlighted={conversation.unreadMessages}
+                                                                                onSelected={() => props.onConversationSelected(conversation.localID)} />
+                                                                </Collapse>
+                                                        ))}
+                                                </TransitionGroup>
+                                                {isContactSearchActive && contactSearchResults.length === 0 && (
+                                                        <Box textAlign="center" py={2} px={2}>
+                                                                <Typography variant="body2" color="textSecondary">
+                                                                        No conversations found
+                                                                </Typography>
+                                                        </Box>
+                                                )}
+                                                {!isContactSearchActive && props.hasMoreConversations && (
+                                                        <Box display="flex" justifyContent="center" py={1}>
+                                                                {isLoadingMore ? (
+                                                                        <CircularProgress size={20} />
+                                                                ) : (
+                                                                        <Typography variant="caption" color="textSecondary">
+                                                                                Scroll to load more conversations
+                                                                        </Typography>
+                                                                )}
+                                                        </Box>
+                                                )}
+                                        </List>
+                                </Box>
+                        ) : (
+                                <Box className={styles.sidebarListLoading}>
+                                        {[...Array(16)].map((element, index) => <ConversationSkeleton key={`skeleton-${index}`} />)}
+                                </Box>
+                        )}
 		</Stack>
 	);
 }
