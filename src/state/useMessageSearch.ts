@@ -17,7 +17,7 @@ interface UseMessageSearchState {
         options?: MessageSearchOptions;
         fromCache: boolean;
         stale: boolean;
-        search: (options: MessageSearchOptions | undefined) => void;
+        search: (options: MessageSearchOptions | undefined, immediate?: boolean) => void;
         cancel: () => void;
 }
 
@@ -27,7 +27,7 @@ function normalizeError(error: unknown): Error {
 }
 
 export default function useMessageSearch(config: UseMessageSearchConfig = {}): UseMessageSearchState {
-        const {debounceMs = 300} = config;
+        const {debounceMs = 250} = config;
         const [results, setResults] = useState<MessageSearchHit[]>([]);
         const [metadata, setMetadata] = useState<MessageSearchMetadata | undefined>(undefined);
         const [loading, setLoading] = useState(false);
@@ -40,6 +40,7 @@ export default function useMessageSearch(config: UseMessageSearchConfig = {}): U
         const [requestSequence, setRequestSequence] = useState(0);
         const debounceHandleRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
         const activeRequestRef = useRef(0);
+        const pendingImmediateRef = useRef(false);
 
         const clearPendingTimeout = useCallback(() => {
                 if(debounceHandleRef.current !== undefined) {
@@ -54,7 +55,8 @@ export default function useMessageSearch(config: UseMessageSearchConfig = {}): U
                 setLoading(false);
         }, [clearPendingTimeout]);
 
-        const search = useCallback((options: MessageSearchOptions | undefined) => {
+        const search = useCallback((options: MessageSearchOptions | undefined, immediate = false) => {
+                pendingImmediateRef.current = immediate;
                 setPendingOptions(options);
                 setRequestSequence((current) => current + 1);
         }, []);
@@ -63,6 +65,8 @@ export default function useMessageSearch(config: UseMessageSearchConfig = {}): U
                 clearPendingTimeout();
 
                 const options = pendingOptions;
+                const immediate = pendingImmediateRef.current;
+                pendingImmediateRef.current = false;
                 setActiveOptions(options);
 
                 if(!options || options.term.trim().length === 0) {
@@ -104,7 +108,7 @@ export default function useMessageSearch(config: UseMessageSearchConfig = {}): U
                         return;
                 }
 
-                debounceHandleRef.current = setTimeout(() => {
+                const performSearch = () => {
                         if(activeRequestRef.current !== requestId) return;
 
                         ConnectionManager.searchMessages(options)
@@ -134,7 +138,13 @@ export default function useMessageSearch(config: UseMessageSearchConfig = {}): U
                                                 setLoading(false);
                                         }
                                 });
-                }, debounceMs);
+                };
+
+                if(immediate || debounceMs <= 0) {
+                        performSearch();
+                } else {
+                        debounceHandleRef.current = setTimeout(performSearch, debounceMs);
+                }
 
                 return () => {
                         clearPendingTimeout();
