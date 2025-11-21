@@ -529,14 +529,15 @@ export default function Sidebar(props: {
                                                                                                 borderRadius: 5,
                                                                                                 overflow: "hidden",
                                                                                                 border: (theme) => `1px solid ${theme.palette.divider}`,
-                                                                                                height: 34,
+                                                                                                height: 28,
                                                                                                 "& .MuiToggleButton-root": {
-                                                                                                        px: 0.75,
+                                                                                                        px: 1.25,
                                                                                                         minWidth: 0,
                                                                                                         height: "100%",
                                                                                                         border: "none",
                                                                                                         borderRadius: 0,
                                                                                                         color: "text.secondary",
+                                                                                                        padding: "7px",
                                                                                                         transition: (theme) => theme.transitions.create(["color", "background-color"], {
                                                                                                                 duration: theme.transitions.duration.shortest
                                                                                                         }),
