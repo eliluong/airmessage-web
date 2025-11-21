@@ -1,13 +1,17 @@
-import React, {ChangeEvent, useCallback} from "react";
+import React, {ChangeEvent, useCallback, useEffect, useRef, useState} from "react";
 import {Box, IconButton, InputBase, Stack} from "@mui/material";
+import InsertEmoticonOutlinedIcon from "@mui/icons-material/InsertEmoticonOutlined";
 import type {IconButtonProps} from "@mui/material";
 import PushIcon from "../../icon/PushIcon";
-import {QueuedFile} from "../../../data/blocks";
+import ComposerEmojiPicker from "./ComposerEmojiPicker";
+import {LocalConversationID, QueuedFile} from "../../../data/blocks";
+import {insertEmojiAtSelection} from "shared/util/emojiUtils";
 import {QueuedAttachmentImage} from "./queue/QueuedAttachmentImage";
 import QueuedAttachmentGeneric from "./queue/QueuedAttachmentGeneric";
 import {QueuedAttachmentProps} from "./queue/QueuedAttachment";
 
 interface Props {
+        conversationID: LocalConversationID;
         placeholder: string;
         message: string;
         attachments: QueuedFile[];
@@ -20,6 +24,7 @@ interface Props {
 
 export default function MessageInput(props: Props) {
         const {
+                conversationID: propsConversationID,
                 onMessageChange: propsOnMessageChange,
                 onMessageSubmit: propsOnMessageSubmit,
                 message: propsMessage,
@@ -27,25 +32,79 @@ export default function MessageInput(props: Props) {
                 onAttachmentAdd: propsOnAttachmentAdd,
                 sendButtonColor = "primary"
         } = props;
-	
+
+	const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
+	const [emojiAnchorElement, setEmojiAnchorElement] = useState<HTMLElement | null>(null);
+	const inputRef = useRef<HTMLTextAreaElement | null>(null);
+
+	const closeEmojiPicker = useCallback(() => {
+		setIsEmojiPickerOpen(false);
+		setEmojiAnchorElement(null);
+		inputRef.current?.focus();
+	}, []);
+
+	useEffect(() => {
+		closeEmojiPicker();
+	}, [closeEmojiPicker, propsConversationID]);
+
+	const toggleEmojiPicker = useCallback((event: React.MouseEvent<HTMLElement>) => {
+		if(isEmojiPickerOpen) {
+			closeEmojiPicker();
+			return;
+		}
+
+		setEmojiAnchorElement(event.currentTarget);
+		setIsEmojiPickerOpen(true);
+	}, [closeEmojiPicker, isEmojiPickerOpen]);
+
 	const handleChange = useCallback((event: ChangeEvent<HTMLTextAreaElement>) => {
 		propsOnMessageChange(event.target.value);
 	}, [propsOnMessageChange]);
 	
 	const submitInput = useCallback(() => {
+		closeEmojiPicker();
 		propsOnMessageSubmit(propsMessage, propsAttachments);
-	}, [propsOnMessageSubmit, propsMessage, propsAttachments]);
+	}, [closeEmojiPicker, propsOnMessageSubmit, propsMessage, propsAttachments]);
 	
 	const handleKeyDown = useCallback((event: React.KeyboardEvent<HTMLElement>) => {
+		if(event.key === "Escape" && isEmojiPickerOpen) {
+			event.preventDefault();
+			closeEmojiPicker();
+			return;
+		}
+
 		if(!event.shiftKey && event.key === "Enter") {
 			event.preventDefault();
 			submitInput();
 		}
-	}, [submitInput]);
+	}, [closeEmojiPicker, isEmojiPickerOpen, submitInput]);
 	
         const handlePaste = useCallback((event: React.ClipboardEvent<HTMLElement>) => {
                 propsOnAttachmentAdd(Array.from(event.clipboardData.files));
         }, [propsOnAttachmentAdd]);
+
+	const handleEmojiSelected = useCallback((emoji: string) => {
+		const inputElement = inputRef.current;
+		const selectionStart = inputElement?.selectionStart ?? propsMessage.length;
+		const selectionEnd = inputElement?.selectionEnd ?? propsMessage.length;
+
+		const {value, newCaretPosition} = insertEmojiAtSelection(
+			propsMessage,
+			selectionStart,
+			selectionEnd,
+			emoji
+		);
+
+		propsOnMessageChange(value);
+
+		requestAnimationFrame(() => {
+			const target = inputRef.current;
+			if(!target) return;
+			const nextCaretPosition = Math.min(newCaretPosition, target.value.length);
+			target.focus();
+			target.setSelectionRange(nextCaretPosition, nextCaretPosition);
+		});
+	}, [propsMessage, propsOnMessageChange]);
 
         const isCustomSendButtonColor = typeof sendButtonColor === "string" && sendButtonColor.startsWith("#");
 	
@@ -90,7 +149,7 @@ export default function MessageInput(props: Props) {
 				</Stack>
 			}
 			
-			<Stack direction="row">
+			<Stack direction="row" alignItems="flex-end">
 				<InputBase
 					sx={{
 						typography: "body2",
@@ -101,11 +160,26 @@ export default function MessageInput(props: Props) {
 					multiline
 					fullWidth
 					autoFocus
+					inputRef={inputRef}
 					placeholder={props.placeholder}
 					value={props.message}
 					onChange={handleChange}
 					onKeyDown={handleKeyDown}
 					onPaste={handlePaste} />
+				<IconButton
+					sx={{
+						width: "40px",
+						height: "40px",
+						flexShrink: 0,
+						alignSelf: "flex-end"
+					}}
+					size="small"
+					aria-label="Insert emoji"
+					aria-haspopup="dialog"
+					aria-expanded={isEmojiPickerOpen}
+					onClick={toggleEmojiPicker}>
+					<InsertEmoticonOutlinedIcon />
+				</IconButton>
                                 <IconButton
                                         sx={{
                                                 width: "40px",
@@ -121,6 +195,12 @@ export default function MessageInput(props: Props) {
 					<PushIcon />
 				</IconButton>
 			</Stack>
+			<ComposerEmojiPicker
+				open={isEmojiPickerOpen}
+				anchorElement={emojiAnchorElement}
+				onClose={closeEmojiPicker}
+				onEmojiSelected={handleEmojiSelected}
+			/>
 		</Box>
 	);
 }

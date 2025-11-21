@@ -7,13 +7,6 @@ export interface EmojiAnalysis {
 
 const emojiPattern = emojiRegex();
 
-/**
- * Analyze a text message for emoji-only content and emoji count.
- *
- * A message is considered emoji-only if removing all emoji clusters,
- * whitespace, variation selectors, and zero-width joiners leaves
- * no remaining characters.
- */
 export function analyseEmojiText(text: string | null | undefined): EmojiAnalysis {
 	const value = text ?? "";
 	const matches = [...value.matchAll(emojiPattern)];
@@ -28,4 +21,23 @@ export function analyseEmojiText(text: string | null | undefined): EmojiAnalysis
 	const isEmojiOnly = emojiCount > 0 && stripped.length === 0;
 
 	return {emojiCount, isEmojiOnly};
+}
+
+export function insertEmojiAtSelection(
+        value: string,
+        selectionStart: number,
+        selectionEnd: number,
+        emoji: string
+): {value: string; newCaretPosition: number} {
+        const normalizedStart = Math.min(Math.max(selectionStart, 0), value.length);
+        const normalizedEnd = Math.min(Math.max(selectionEnd, normalizedStart), value.length);
+
+        const prefix = value.slice(0, normalizedStart);
+        const suffix = value.slice(normalizedEnd);
+        const nextValue = `${prefix}${emoji}${suffix}`;
+
+        return {
+                value: nextValue,
+                newCaretPosition: prefix.length + emoji.length
+        };
 }
