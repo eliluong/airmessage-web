@@ -508,16 +508,16 @@ export default function Sidebar(props: {
                                                                 sx: {
                                                                         "&.MuiInputBase-adornedStart": {pl: 0.75, alignItems: "center"}
                                                                 },
-                                                                startAdornment: (
-                                                                        <InputAdornment
-                                                                                position="start"
-                                                                                sx={{
-                                                                                        mr: 0.5,
-                                                                                        pl: 0.5,
-                                                                                        alignSelf: "center",
-                                                                                        display: "flex",
-                                                                                        alignItems: "center"
-                                                                                }}>
+                                                                                        startAdornment: (
+                                                                                                <InputAdornment
+                                                                                                        position="start"
+                                                                                                        sx={{
+                                                                                                                mr: 1,
+                                                                                                                pl: 0.5,
+                                                                                                                alignSelf: "center",
+                                                                                                                display: "flex",
+                                                                                                                alignItems: "center"
+                                                                                                        }}>
                                                                                 <ToggleButtonGroup
                                                                                         value={searchMode}
                                                                                         exclusive
@@ -526,39 +526,74 @@ export default function Sidebar(props: {
                                                                                         color="primary"
                                                                                         aria-label="Search mode"
                                                                                         sx={{
-                                                                                                borderRadius: 5,
+                                                                                                position: "relative",
+                                                                                                height: 30,
+                                                                                                padding: "2px 1px",
+                                                                                                borderRadius: 999,
                                                                                                 overflow: "hidden",
-                                                                                                border: (theme) => `1px solid ${theme.palette.divider}`,
-                                                                                                height: 28,
+                                                                                                backgroundColor: (theme) => alpha(
+                                                                                                        theme.palette.text.primary,
+                                                                                                        theme.palette.mode === "dark" ? 0.2 : 0.08
+                                                                                                ),
+                                                                                                border: "none",
+                                                                                                "&::before": {
+                                                                                                        content: '""',
+                                                                                                        position: "absolute",
+                                                                                                        top: 2,
+                                                                                                        bottom: 2,
+                                                                                                        left: 1,
+                                                                                                        width: "calc(50% - 1px)",
+                                                                                                        borderRadius: 999,
+                                                                                                        backgroundColor: (theme) => theme.palette.background.paper,
+                                                                                                        boxShadow: (theme) => theme.shadows[1],
+                                                                                                        transform: searchMode === "people" ? "translateX(0)" : "translateX(100%)",
+                                                                                                        transition: (theme) => theme.transitions.create("transform", {
+                                                                                                                duration: theme.transitions.duration.shortest,
+                                                                                                                easing: theme.transitions.easing.easeOut
+                                                                                                        })
+                                                                                                },
+                                                                                                "& .MuiToggleButtonGroup-grouped": {
+                                                                                                        margin: 0,
+                                                                                                        border: "none",
+                                                                                                        borderRadius: 999
+                                                                                                },
+                                                                                                "& .MuiToggleButtonGroup-grouped:not(:first-of-type)": {
+                                                                                                        border: "none",
+                                                                                                        borderLeft: "none",
+                                                                                                        margin: 0,
+                                                                                                        marginLeft: 0
+                                                                                                },
+                                                                                                "& .MuiToggleButtonGroup-grouped:not(:last-of-type)": {
+                                                                                                        border: "none",
+                                                                                                        borderRight: "none",
+                                                                                                        marginRight: 0
+                                                                                                },
                                                                                                 "& .MuiToggleButton-root": {
-                                                                                                        px: 1.25,
+                                                                                                        zIndex: 1,
+                                                                                                        flex: 1,
                                                                                                         minWidth: 0,
                                                                                                         height: "100%",
                                                                                                         border: "none",
-                                                                                                        borderRadius: 0,
+                                                                                                        borderRadius: 999,
                                                                                                         color: "text.secondary",
-                                                                                                        padding: "7px",
-                                                                                                        transition: (theme) => theme.transitions.create(["color", "background-color"], {
+                                                                                                        padding: "4px 8px",
+                                                                                                        outline: "none",
+                                                                                                        transition: (theme) => theme.transitions.create("color", {
                                                                                                                 duration: theme.transitions.duration.shortest
                                                                                                         }),
+                                                                                                        "& .MuiTouchRipple-root": {
+                                                                                                                display: "none"
+                                                                                                        },
                                                                                                         "&:hover": {
-                                                                                                                backgroundColor: (theme) => alpha(
-                                                                                                                        theme.palette.primary.main,
-                                                                                                                        theme.palette.mode === "dark" ? 0.12 : 0.08
-                                                                                                                )
+                                                                                                                backgroundColor: "transparent !important",
+                                                                                                                color: "text.primary"
                                                                                                         },
                                                                                                         "&.Mui-selected": {
                                                                                                                 color: "primary.main",
-                                                                                                                backgroundColor: (theme) => alpha(
-                                                                                                                        theme.palette.primary.main,
-                                                                                                                        theme.palette.mode === "dark" ? 0.18 : 0.12
-                                                                                                                )
+                                                                                                                backgroundColor: "transparent !important"
                                                                                                         },
                                                                                                         "&.Mui-selected:hover": {
-                                                                                                                backgroundColor: (theme) => alpha(
-                                                                                                                        theme.palette.primary.main,
-                                                                                                                        theme.palette.mode === "dark" ? 0.24 : 0.16
-                                                                                                                )
+                                                                                                                color: "primary.main"
                                                                                                         },
                                                                                                         "&.Mui-focusVisible": {
                                                                                                                 boxShadow: (theme) => `0 0 0 2px ${alpha(
@@ -568,10 +603,10 @@ export default function Sidebar(props: {
                                                                                                         }
                                                                                                 }
                                                                                         }}>
-                                                                                        <ToggleButton value="people" title="People search">
+                                                                                        <ToggleButton value="people" title="People search" disableRipple>
                                                                                                 <PeopleAltRounded fontSize="small" />
                                                                                         </ToggleButton>
-                                                                                        <ToggleButton value="messages" title="Message search">
+                                                                                        <ToggleButton value="messages" title="Message search" disableRipple>
                                                                                                 <ChatRounded fontSize="small" />
                                                                                         </ToggleButton>
                                                                                 </ToggleButtonGroup>
