@@ -634,7 +634,7 @@ export default function Sidebar(props: {
                                                 />
                                         </Box>
 
-                                        <Collapse in={isMessageMode} timeout={180} unmountOnExit>
+                                        {isMessageMode && (
                                                 <Box
                                                         sx={{
                                                                 borderBottom: (theme) => `1px solid ${theme.palette.divider}`,
@@ -654,7 +654,7 @@ export default function Sidebar(props: {
                                                                 ))}
                                                         </ToggleButtonGroup>
                                                 </Box>
-                                        </Collapse>
+                                        )}
 
                                         {isPeopleMode && contactSearchLoading && contactSearchProgress && (
                                                 <Box sx={{px: 1.5, py: 0.75}}>
