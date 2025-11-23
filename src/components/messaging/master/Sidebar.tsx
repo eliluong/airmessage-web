@@ -69,6 +69,7 @@ const SEARCH_TIME_RANGES: ReadonlyArray<{value: SearchTimeRange; label: string; 
 
 export const DEFAULT_SEARCH_TIME_RANGE: SearchTimeRange = "all";
 const CONTACT_SEARCH_DEBOUNCE_MS = 225;
+const SEARCH_FIELD_HEIGHT = 40;
 
 export default function Sidebar(props: {
         conversations: Conversation[] | undefined;
@@ -501,12 +502,21 @@ export default function Sidebar(props: {
                                                                 "& .MuiOutlinedInput-root": {
                                                                         borderRadius: 5,
                                                                         overflow: "hidden",
-                                                                        alignItems: "center"
+                                                                        alignItems: "stretch",
+                                                                        height: SEARCH_FIELD_HEIGHT
                                                                 }
                                                         }}
                                                         InputProps={{
                                                                 sx: {
-                                                                        "&.MuiInputBase-adornedStart": {pl: 0.75, alignItems: "center"}
+                                                                        "&.MuiInputBase-adornedStart": {
+                                                                                pl: 0.75,
+                                                                                alignItems: "stretch",
+                                                                                height: SEARCH_FIELD_HEIGHT
+                                                                        },
+                                                                        "& .MuiInputAdornment-root": {
+                                                                                height: "100%",
+                                                                                maxHeight: "none"
+                                                                        }
                                                                 },
                                                                                         startAdornment: (
                                                                                                 <InputAdornment
@@ -515,7 +525,6 @@ export default function Sidebar(props: {
                                                                                                                 mr: 1,
                                                                                                                 pl: 0.5,
                                                                                                                 py: 0,
-                                                                                                                alignSelf: "stretch",
                                                                                                                 display: "flex",
                                                                                                                 alignItems: "stretch",
                                                                                                                 height: "100%",
