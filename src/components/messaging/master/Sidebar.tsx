@@ -514,9 +514,12 @@ export default function Sidebar(props: {
                                                                                                         sx={{
                                                                                                                 mr: 1,
                                                                                                                 pl: 0.5,
-                                                                                                                alignSelf: "center",
+                                                                                                                py: 0,
+                                                                                                                alignSelf: "stretch",
                                                                                                                 display: "flex",
-                                                                                                                alignItems: "center"
+                                                                                                                alignItems: "stretch",
+                                                                                                                height: "100%",
+                                                                                                                maxHeight: "none"
                                                                                                         }}>
                                                                                 <ToggleButtonGroup
                                                                                         value={searchMode}
@@ -527,7 +530,7 @@ export default function Sidebar(props: {
                                                                                         aria-label="Search mode"
                                                                                         sx={{
                                                                                                 position: "relative",
-                                                                                                height: 30,
+                                                                                                height: "100%",
                                                                                                 padding: "2px 1px",
                                                                                                 borderRadius: 999,
                                                                                                 overflow: "hidden",
