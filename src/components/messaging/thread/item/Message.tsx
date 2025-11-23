@@ -32,8 +32,9 @@ import MessageBubbleImage from "shared/components/messaging/thread/item/bubble/M
 import MessageBubbleDownloadable from "shared/components/messaging/thread/item/bubble/MessageBubbleDownloadable";
 import {messageErrorToDisplay} from "shared/util/languageUtils";
 import {groupArray} from "shared/util/arrayUtils";
-import {isAttachmentPreviewable} from "shared/util/conversationUtils";
+import {isAttachmentPreviewable, isInlinePlayableVideo} from "shared/util/conversationUtils";
 import type {MessageItemWithEdits} from "shared/components/messaging/thread/hooks/useEditedMessageGroups";
+import MessageBubbleVideo from "shared/components/messaging/thread/item/bubble/MessageBubbleVideo";
 
 enum MessageDialog {
 	Error,
@@ -285,7 +286,22 @@ anchorTop: !!displayedText || props.flow.anchorTop || i > 0,
 anchorBottom: props.flow.anchorBottom || i + 1 < attachmentArray.length
 };
 			
-			if(attachmentData.data !== undefined && isAttachmentPreviewable(attachmentData.type)) {
+			if(isInlinePlayableVideo(attachmentData.type, attachmentData.name)) {
+				return (
+					<MessageBubbleVideo
+						key={componentKey}
+						flow={flow}
+						data={attachmentData.data}
+						name={attachmentData.name}
+						type={attachmentData.type}
+						size={attachment.size}
+						guid={attachment.guid}
+						onDataAvailable={(data) => handleAttachmentData(i, false, data)}
+						stickers={stickers}
+						tapbacks={tapbacks}
+					/>
+				);
+			} else if(attachmentData.data !== undefined && isAttachmentPreviewable(attachmentData.type, attachmentData.name)) {
 				return (
 					<MessageBubbleImage
 						key={componentKey}
@@ -306,7 +322,7 @@ anchorBottom: props.flow.anchorBottom || i + 1 < attachmentArray.length
 						type={attachmentData.type}
 						size={attachment.size}
 						guid={attachment.guid!}
-						onDataAvailable={(data) => handleAttachmentData(i, !isAttachmentPreviewable(attachmentData.type), data)}
+						onDataAvailable={(data) => handleAttachmentData(i, !isAttachmentPreviewable(attachmentData.type, attachmentData.name), data)}
 						onDataClicked={(data) => downloadAttachmentFile(i, data)}
 						stickers={stickers}
 						tapbacks={tapbacks} />
