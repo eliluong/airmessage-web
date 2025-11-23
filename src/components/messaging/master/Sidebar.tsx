@@ -509,7 +509,7 @@ export default function Sidebar(props: {
                                                         InputProps={{
                                                                 sx: {
                                                                         "&.MuiInputBase-adornedStart": {
-                                                                                pl: 0.75,
+                                                                                pl: 0,
                                                                                 alignItems: "stretch",
                                                                                 height: SEARCH_FIELD_HEIGHT
                                                                         },
@@ -523,7 +523,7 @@ export default function Sidebar(props: {
                                                                                                         position="start"
                                                                                                         sx={{
                                                                                                                 mr: 1,
-                                                                                                                pl: 0.5,
+                                                                                                                pl: 0,
                                                                                                                 py: 0,
                                                                                                                 display: "flex",
                                                                                                                 alignItems: "stretch",
