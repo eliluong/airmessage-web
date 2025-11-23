@@ -13,6 +13,7 @@ import FileDownloadResult from "shared/data/fileDownloadResult";
 import {coerceBlobToMp4} from "shared/util/attachmentPreview";
 import AttachmentLightboxVideo from "./AttachmentLightboxVideo";
 import PaletteSpecifier, {accessPaletteColor} from "shared/data/paletteSpecifier";
+import {useUnsubscribeContainer} from "shared/util/hookUtils";
 
 const VideoButton = styled(ButtonBase, {
 	shouldForwardProp: (prop) =>
@@ -80,19 +81,25 @@ export default function MessageBubbleVideo(props: {
 	} = props;
 	const displaySnackbar = useContext(SnackbarContext);
 	const [isDownloading, setIsDownloading] = useState(false);
+	const [sizeAvailable, setSizeAvailable] = useState<number>(size);
+	const [sizeDownloaded, setSizeDownloaded] = useState<number | undefined>(undefined);
 	const [lightboxOpen, setLightboxOpen] = useState(false);
 	const [videoUrls, setVideoUrls] = useState<{mp4?: string; original?: string}>({});
 	const [activeSource, setActiveSource] = useState<"mp4" | "original">("mp4");
 	const [downloadOnly, setDownloadOnly] = useState(size > INLINE_SIZE_LIMIT_BYTES);
 	const downloadResultRef = useRef<FileDownloadResult | undefined>(undefined);
+	const attachmentSubscriptionContainer = useUnsubscribeContainer([guid]);
 
 	const nameDisplay = useMemo(() => name ?? "Video file", [name]);
 
 	const subtitle = useMemo(() => {
-		if(isDownloading) return "Loading…";
+		if(isDownloading) {
+			const downloaded = sizeDownloaded ?? 0;
+			return `${formatFileSize(downloaded)} of ${formatFileSize(sizeAvailable)}`;
+		}
 		if(downloadOnly) return "Tap to download";
 		return "Tap to play";
-	}, [isDownloading, downloadOnly]);
+	}, [isDownloading, downloadOnly, sizeAvailable, sizeDownloaded]);
 
 	useEffect(() => {
 		return () => {
@@ -104,6 +111,8 @@ export default function MessageBubbleVideo(props: {
 	useEffect(() => {
 		// Reset state when attachment identity changes
 		setIsDownloading(false);
+		setSizeAvailable(size);
+		setSizeDownloaded(undefined);
 		setLightboxOpen(false);
 		setDownloadOnly(size > INLINE_SIZE_LIMIT_BYTES);
 		downloadResultRef.current = undefined;
@@ -128,45 +137,49 @@ export default function MessageBubbleVideo(props: {
 			downloadName: name,
 			downloadType: type
 		};
-	}, [data, name, type]);
+		setSizeAvailable(originalBlob.size || size);
+	}, [data, name, type, size]);
+
+	const fetchAttachmentWithProgress = useCallback(async (): Promise<FileDownloadResult> => {
+		if(!guid) throw new Error("Attachment unavailable");
+		setIsDownloading(true);
+		setSizeDownloaded(0);
+		const downloadProgress = ConnectionManager.fetchAttachment(guid);
+		downloadProgress.emitter.subscribe((progressEvent) => {
+			if(progressEvent.type === "size") {
+				setSizeAvailable(progressEvent.value);
+			} else {
+				setSizeDownloaded(progressEvent.value);
+			}
+		}, attachmentSubscriptionContainer);
+
+		try {
+			const download = await downloadProgress.promise;
+			downloadResultRef.current = download;
+			onDataAvailable?.(download);
+			return download;
+		} finally {
+			setIsDownloading(false);
+			setSizeDownloaded(undefined);
+		}
+	}, [attachmentSubscriptionContainer, guid, onDataAvailable]);
 
 	const triggerDownload = useCallback(async (event?: React.MouseEvent) => {
 		event?.stopPropagation();
 		try {
-			if(downloadResultRef.current) {
-				const result = downloadResultRef.current;
-				downloadBlob(
-					result.data,
-					result.downloadType ?? result.data.type ?? type,
-					result.downloadName ?? name ?? "attachment.mov"
-				);
-				return;
-			}
-
-			if(!guid) {
-				setDownloadOnly(true);
-				displaySnackbar?.({message: "Attachment is unavailable for download."});
-				return;
-			}
-
-			setIsDownloading(true);
-			const download = await ConnectionManager.fetchAttachment(guid).promise;
-			downloadResultRef.current = download;
-			onDataAvailable?.(download);
+			const result = downloadResultRef.current ?? await fetchAttachmentWithProgress();
 			downloadBlob(
-				download.data,
-				download.downloadType ?? download.data.type ?? type,
-				download.downloadName ?? name ?? "attachment.mov"
+				result.data,
+				result.downloadType ?? result.data.type ?? type,
+				result.downloadName ?? name ?? "attachment.mov"
 			);
 		} catch(error) {
 			const message = typeof error === "number"
 				? attachmentRequestErrorCodeToDisplay(error as AttachmentRequestErrorCode)
 				: (error as Error)?.message ?? "Unknown error";
 			displaySnackbar?.({message: `Failed to download attachment: ${message}`});
-		} finally {
-			setIsDownloading(false);
 		}
-	}, [displaySnackbar, guid, name, onDataAvailable, type]);
+	}, [displaySnackbar, fetchAttachmentWithProgress, name, type]);
 
 	const ensureVideoUrl = useCallback(async () => {
 		if(videoUrls.mp4) return videoUrls.mp4;
@@ -204,26 +217,18 @@ export default function MessageBubbleVideo(props: {
 			throw new Error("Attachment unavailable");
 		}
 
-		setIsDownloading(true);
-		try {
-			const downloadProgress = ConnectionManager.fetchAttachment(guid);
-			const download = await downloadProgress.promise;
-			downloadResultRef.current = download;
-			onDataAvailable?.(download);
-			const mp4 = coerceBlobToMp4(download.data);
-			const originalUrl = URL.createObjectURL(download.data);
-			const url = URL.createObjectURL(mp4);
-			setVideoUrls((previous) => {
-				if(previous.mp4) URL.revokeObjectURL(previous.mp4);
-				if(previous.original) URL.revokeObjectURL(previous.original);
-				return {mp4: url, original: originalUrl};
-			});
-			setActiveSource("mp4");
-			return url;
-		} finally {
-			setIsDownloading(false);
-		}
-	}, [data, downloadOnly, guid, onDataAvailable, videoUrls]);
+		const download = await fetchAttachmentWithProgress();
+		const mp4 = coerceBlobToMp4(download.data);
+		const originalUrl = URL.createObjectURL(download.data);
+		const url = URL.createObjectURL(mp4);
+		setVideoUrls((previous) => {
+			if(previous.mp4) URL.revokeObjectURL(previous.mp4);
+			if(previous.original) URL.revokeObjectURL(previous.original);
+			return {mp4: url, original: originalUrl};
+		});
+		setActiveSource("mp4");
+		return url;
+	}, [data, downloadOnly, fetchAttachmentWithProgress, guid, onDataAvailable, videoUrls]);
 
 	const handleClick = useCallback(async () => {
 		if(downloadOnly) {
@@ -286,7 +291,12 @@ export default function MessageBubbleVideo(props: {
 						<CircularProgress
 							sx={{color: flow.color}}
 							size={24}
-							variant="indeterminate"
+							variant={sizeAvailable > 0 && sizeDownloaded !== undefined ? "determinate" : "indeterminate"}
+							value={
+								sizeAvailable > 0 && sizeDownloaded !== undefined
+									? (sizeDownloaded / sizeAvailable) * 100
+									: undefined
+							}
 						/>
 					) : downloadOnly ? (
 						<GetAppRounded />
