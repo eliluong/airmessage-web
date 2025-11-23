@@ -81,10 +81,11 @@ export default function MessageBubbleVideo(props: {
 	} = props;
 	const displaySnackbar = useContext(SnackbarContext);
 	const [isDownloading, setIsDownloading] = useState(false);
-	const [sizeAvailable, setSizeAvailable] = useState<number>(size);
-	const [sizeDownloaded, setSizeDownloaded] = useState<number | undefined>(undefined);
-	const [lightboxOpen, setLightboxOpen] = useState(false);
-	const [videoUrls, setVideoUrls] = useState<{mp4?: string; original?: string}>({});
+const [sizeAvailable, setSizeAvailable] = useState<number>(size);
+const [sizeDownloaded, setSizeDownloaded] = useState<number | undefined>(undefined);
+const [lightboxOpen, setLightboxOpen] = useState(false);
+const [videoUrls, setVideoUrls] = useState<{mp4?: string; original?: string}>({});
+const videoUrlsRef = useRef<{mp4?: string; original?: string}>({});
 	const [activeSource, setActiveSource] = useState<"mp4" | "original">("mp4");
 	const [downloadOnly, setDownloadOnly] = useState(size > INLINE_SIZE_LIMIT_BYTES);
 	const downloadResultRef = useRef<FileDownloadResult | undefined>(undefined);
@@ -101,44 +102,53 @@ export default function MessageBubbleVideo(props: {
 		return "Tap to play";
 	}, [isDownloading, downloadOnly, sizeAvailable, sizeDownloaded]);
 
-	useEffect(() => {
-		return () => {
-			if(videoUrls.mp4) URL.revokeObjectURL(videoUrls.mp4);
-			if(videoUrls.original) URL.revokeObjectURL(videoUrls.original);
-		};
-	}, [videoUrls]);
+const revokeUrls = useCallback((urls: {mp4?: string; original?: string}) => {
+	if(urls.mp4) URL.revokeObjectURL(urls.mp4);
+	if(urls.original) URL.revokeObjectURL(urls.original);
+}, []);
+
+	const setAndStoreUrls = useCallback((urls: {mp4?: string; original?: string}) => {
+		revokeUrls(videoUrlsRef.current);
+		videoUrlsRef.current = urls;
+		setVideoUrls(urls);
+	}, [revokeUrls]);
+
+useEffect(() => {
+	return () => {
+		revokeUrls(videoUrlsRef.current);
+	};
+}, [revokeUrls]);
 
 	useEffect(() => {
 		// Reset state when attachment identity changes
-		setIsDownloading(false);
-		setSizeAvailable(size);
-		setSizeDownloaded(undefined);
-		setLightboxOpen(false);
-		setDownloadOnly(size > INLINE_SIZE_LIMIT_BYTES);
-		downloadResultRef.current = undefined;
-		setVideoUrls({});
-		setActiveSource("mp4");
-	}, [guid, size, name, type]);
+		revokeUrls(videoUrlsRef.current);
+		videoUrlsRef.current = {};
+	setIsDownloading(false);
+	setSizeAvailable(size);
+	setSizeDownloaded(undefined);
+	setLightboxOpen(false);
+	setDownloadOnly(size > INLINE_SIZE_LIMIT_BYTES);
+	downloadResultRef.current = undefined;
+	setAndStoreUrls({});
+	setActiveSource("mp4");
+}, [guid, size, name, type, revokeUrls, setAndStoreUrls]);
 
-	useEffect(() => {
-		if(!data) return;
-		const mp4 = coerceBlobToMp4(data);
-		const originalBlob = data instanceof Blob ? data : new Blob([data], {type});
-		const mp4Url = URL.createObjectURL(mp4);
-		const originalUrl = URL.createObjectURL(originalBlob);
-		setVideoUrls((previous) => {
-			if(previous.mp4) URL.revokeObjectURL(previous.mp4);
-			if(previous.original) URL.revokeObjectURL(previous.original);
-			return {mp4: mp4Url, original: originalUrl};
-		});
-		setActiveSource("mp4");
-		downloadResultRef.current = {
-			data,
-			downloadName: name,
-			downloadType: type
-		};
-		setSizeAvailable(originalBlob.size || size);
-	}, [data, name, type, size]);
+useEffect(() => {
+	if(!data) return;
+	const mp4 = coerceBlobToMp4(data);
+	const originalBlob = data instanceof Blob ? data : new Blob([data], {type});
+	const mp4Url = URL.createObjectURL(mp4);
+	const originalUrl = URL.createObjectURL(originalBlob);
+	const newUrls = {mp4: mp4Url, original: originalUrl};
+	setAndStoreUrls(newUrls);
+	setActiveSource("mp4");
+	downloadResultRef.current = {
+		data,
+		downloadName: name,
+		downloadType: type
+	};
+	setSizeAvailable(originalBlob.size || size);
+}, [data, name, type, size, setAndStoreUrls]);
 
 	const fetchAttachmentWithProgress = useCallback(async (): Promise<FileDownloadResult> => {
 		if(!guid) throw new Error("Attachment unavailable");
@@ -190,11 +200,7 @@ export default function MessageBubbleVideo(props: {
 			const originalBlob = downloadResultRef.current.data;
 			const originalUrl = URL.createObjectURL(originalBlob);
 			const url = URL.createObjectURL(mp4);
-			setVideoUrls((previous) => {
-				if(previous.mp4) URL.revokeObjectURL(previous.mp4);
-				if(previous.original) URL.revokeObjectURL(previous.original);
-				return {mp4: url, original: originalUrl};
-			});
+			setAndStoreUrls({mp4: url, original: originalUrl});
 			setActiveSource("mp4");
 			return url;
 		}
@@ -204,11 +210,7 @@ export default function MessageBubbleVideo(props: {
 			const originalBlob = data instanceof Blob ? data : new Blob([data], {type});
 			const originalUrl = URL.createObjectURL(originalBlob);
 			const url = URL.createObjectURL(mp4);
-			setVideoUrls((previous) => {
-				if(previous.mp4) URL.revokeObjectURL(previous.mp4);
-				if(previous.original) URL.revokeObjectURL(previous.original);
-				return {mp4: url, original: originalUrl};
-			});
+			setAndStoreUrls({mp4: url, original: originalUrl});
 			setActiveSource("mp4");
 			return url;
 		}
@@ -221,14 +223,10 @@ export default function MessageBubbleVideo(props: {
 		const mp4 = coerceBlobToMp4(download.data);
 		const originalUrl = URL.createObjectURL(download.data);
 		const url = URL.createObjectURL(mp4);
-		setVideoUrls((previous) => {
-			if(previous.mp4) URL.revokeObjectURL(previous.mp4);
-			if(previous.original) URL.revokeObjectURL(previous.original);
-			return {mp4: url, original: originalUrl};
-		});
+		setAndStoreUrls({mp4: url, original: originalUrl});
 		setActiveSource("mp4");
 		return url;
-	}, [data, downloadOnly, fetchAttachmentWithProgress, guid, onDataAvailable, videoUrls]);
+	}, [data, downloadOnly, fetchAttachmentWithProgress, guid, setAndStoreUrls]);
 
 	const handleClick = useCallback(async () => {
 		if(downloadOnly) {
