@@ -656,15 +656,6 @@ export default function Sidebar(props: {
                                                 </Box>
                                         )}
 
-                                        {isPeopleMode && contactSearchLoading && contactSearchProgress && (
-                                                <Box sx={{px: 1.5, py: 0.75}}>
-                                                        <Typography variant="caption" color="textSecondary">
-                                                                Scanning {contactSearchProgress.scanned}
-                                                                {contactSearchProgress.total !== undefined ? ` / ${contactSearchProgress.total}` : ""} chats...
-                                                        </Typography>
-                                                </Box>
-                                        )}
-
                                         {isMessageMode ? (
                                                 <MessageSearchResults
                                                         conversationTitleMap={conversationTitleMap}
