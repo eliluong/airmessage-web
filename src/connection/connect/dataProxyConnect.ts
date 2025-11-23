@@ -1,4 +1,5 @@
 import DataProxy from "shared/connection/dataProxy";
+import {normalizeServerUrl} from "shared/util/bluebubblesAuth";
 
 import * as CloseFrame from "./webSocketCloseEventCodes";
 import * as NHT from "./nht";
@@ -9,8 +10,8 @@ import {decryptData, encryptData, isCryptoPasswordAvailable} from "shared/util/e
 import TaskQueue from "shared/util/taskQueue";
 import {getBlueBubblesAuth} from "shared/connection/connectionManager";
 
-function buildWebSocketURL(serverUrl: string, accessToken: string): URL {
-        const url = new URL(serverUrl);
+export function buildWebSocketURL(serverUrl: string, accessToken: string): URL {
+        const url = new URL(normalizeServerUrl(serverUrl));
         url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
         const normalizedPath = url.pathname.endsWith("/") ? url.pathname.slice(0, -1) : url.pathname;
         url.pathname = `${normalizedPath}/api/v1/socket`;

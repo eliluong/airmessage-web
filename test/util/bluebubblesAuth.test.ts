@@ -81,4 +81,24 @@ describe("legacy BlueBubbles authentication", () => {
                         legacyPasswordAuth: true
                 })).toBe(false);
         });
+
+        test("https server URLs drop insecure ports", async () => {
+                const fetchMock = jest.fn().mockResolvedValue({
+                        ok: true,
+                        status: 200,
+                        statusText: "OK",
+                        json: jest.fn().mockResolvedValue({accessToken: "token"})
+                } as unknown as Response);
+                (globalThis as typeof globalThis & {fetch: typeof fetch}).fetch = fetchMock as unknown as typeof fetch;
+
+                const {loginBlueBubblesDevice} = await import("../../src/util/bluebubblesAuth");
+                await loginBlueBubblesDevice({
+                        serverUrl: "https://example.com:8080/",
+                        password: "secret"
+                });
+
+                expect(fetchMock).toHaveBeenCalledTimes(1);
+                const requestUrl = fetchMock.mock.calls[0][0] as string;
+                expect(requestUrl).toBe("https://example.com/api/v1/auth/login");
+        });
 });

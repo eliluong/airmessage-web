@@ -22,11 +22,19 @@ module.exports = (env) => ({
                 host: "0.0.0.0",
                 allowedHosts: "all",
                 port: 8080,
+                client: {
+                        webSocketURL:
+                                // Allow browsers served through a reverse proxy to re-use the
+                                // current page's protocol + port instead of the dev server's
+                                // local values. This ensures the HMR connection can succeed
+                                // when TLS terminates in front of webpack-dev-server.
+                                "auto://0.0.0.0:0/ws"
+                },
                 https: env.secure ? {
                         key: fs.readFileSync("webpack.key"),
                         cert: fs.readFileSync("webpack.crt"),
                 } : undefined
-	},
+        },
 	output: {
 		path: path.resolve(__dirname, "build"),
 		filename: "index.js",
