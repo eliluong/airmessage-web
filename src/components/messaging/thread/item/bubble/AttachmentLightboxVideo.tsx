@@ -76,10 +76,11 @@ export default function AttachmentLightboxVideo({
 				</Toolbar>
 
 				<Box
-					flexGrow={1}
-					paddingLeft={4}
-					paddingRight={4}
-					paddingBottom={4}
+					flex="1 1 0"
+					minHeight={0}
+					paddingLeft={2}
+					paddingRight={2}
+					paddingBottom={2}
 					display="flex"
 					alignItems="center"
 					justifyContent="center"
@@ -91,7 +92,13 @@ export default function AttachmentLightboxVideo({
 						autoPlay
 						playsInline
 						preload="auto"
-						style={{maxWidth: "100%", maxHeight: "100%"}}
+						style={{
+							maxWidth: "100%",
+							maxHeight: "100%",
+							width: "100%",
+							height: "100%",
+							objectFit: "contain"
+						}}
 						onError={onPlaybackError}>
 						<source src={src} type={type} />
 					</video>
