@@ -29,7 +29,7 @@ import {Close, InsertDriveFileOutlined} from "@mui/icons-material";
 import {useTheme} from "@mui/material/styles";
 import * as ConnectionManager from "shared/connection/connectionManager";
 import {formatFileSize} from "shared/util/languageUtils";
-import {formatAddress, isAttachmentPreviewable} from "shared/util/conversationUtils";
+import {formatAddress, isImageAttachmentPreviewable} from "shared/util/conversationUtils";
 import {downloadBlob} from "shared/util/browserUtils";
 import {SnackbarContext} from "shared/components/control/SnackbarProvider";
 import FileDownloadResult from "shared/data/fileDownloadResult";
@@ -374,7 +374,7 @@ export default function ConversationMediaDrawer({
 
         const handleTileClick = useCallback(async (item: ConversationAttachmentEntry) => {
                 const guid = item.guid;
-                if(!guid || !isAttachmentPreviewable(item.mimeType)) {
+                if(!guid || !isImageAttachmentPreviewable(item.mimeType)) {
                         snackbar?.({message: "Preview isn\'t available for this attachment."});
                         return;
                 }
@@ -460,7 +460,7 @@ export default function ConversationMediaDrawer({
                 const abortController = new AbortController();
                 const guids: string[] = [];
                 for(const item of mediaItems) {
-                        if(item.guid && isAttachmentPreviewable(item.mimeType)) {
+                        if(item.guid && isImageAttachmentPreviewable(item.mimeType)) {
                                 guids.push(item.guid);
                         }
                 }

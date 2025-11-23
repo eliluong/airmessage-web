@@ -1,6 +1,6 @@
 import * as ConnectionManager from "shared/connection/connectionManager";
 import {ConversationAttachmentEntry} from "shared/data/attachment";
-import {isAttachmentPreviewable} from "shared/util/conversationUtils";
+import {isImageAttachmentPreviewable} from "shared/util/conversationUtils";
 import {
         hasMediaThumbnailCacheEntry,
         storeMediaThumbnailBlob
@@ -31,7 +31,7 @@ export async function warmConversationMediaThumbnails(
         for(const item of items) {
                 const guid = item.guid;
                 if(!guid) continue;
-                if(!isAttachmentPreviewable(item.mimeType)) continue;
+                if(!isImageAttachmentPreviewable(item.mimeType)) continue;
                 if(seen.has(guid)) continue;
                 if(hasMediaThumbnailCacheEntry(guid)) continue;
                 seen.add(guid);

@@ -55,8 +55,40 @@ export function mimeTypeToPreview(type: string): string {
         else return "Attachment file";
 }
 
-export function isAttachmentPreviewable(type: string): boolean {
-        return type.startsWith("image/");
+export function isVideoMimeType(mimeType?: string | null): boolean {
+	if(!mimeType) return false;
+	return mimeType.toLowerCase().startsWith("video/");
+}
+
+/**
+ * Returns true for video attachments we should attempt inline playback for.
+ * Covers common browser-playable containers/codecs.
+ */
+export function isInlinePlayableVideo(
+	mimeType?: string | null,
+	fileName?: string | null
+): boolean {
+	const type = (mimeType ?? "").toLowerCase();
+	const name = (fileName ?? "").toLowerCase();
+
+	if(type.startsWith("video/mp4") || name.endsWith(".mp4")) {
+		return true;
+	}
+	if(type.startsWith("video/quicktime") || name.endsWith(".mov")) {
+		return true;
+	}
+
+	return false;
+}
+
+export function isImageAttachmentPreviewable(type?: string | null): boolean {
+	return (type ?? "").startsWith("image/");
+}
+
+export function isAttachmentPreviewable(type?: string | null, fileName?: string | null): boolean {
+	if(isImageAttachmentPreviewable(type)) return true;
+	if(isInlinePlayableVideo(type, fileName)) return true;
+	return false;
 }
 
 export function isConversationItemMessage(item: ConversationItem): item is MessageItem {
