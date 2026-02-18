@@ -12,8 +12,9 @@
 - 2026-02-18 [USER] Observed: Runtime reaches realtime `connected` with `serverVersion: 1.9.7` and no sustained periodic polling.
 - 2026-02-18 [USER] Goal: Proceed with Phase 6.
 - 2026-02-18 [CODE] Completed: Phase 6 code/test/doc closure implemented (new mixed socket/poll edge tests + roadmap updates).
-- 2026-02-18 [CODE] Now: Realtime migration is documented complete through Phase 6 with residual operational unknowns explicitly tracked.
-- 2026-02-18 [CODE] Next: Optional production soak/manual validation for long-session sleep/wake + cloud tunnel reconnect behavior.
+- 2026-02-18 [USER] Goal: Analyze remaining `/chat/query` + `/message/query` traffic and propose non-REST alternatives.
+- 2026-02-18 [CODE] Now: Remaining requests map to chat bootstrap, thread fetch/paging, and media drawer filtering; realtime socket path is ingress-only (`new-message`/`updated-message`) with REST hydration fallback.
+- 2026-02-18 [CODE] Next: Present feasibility split: (A) no-server-change reduction of REST volume, (B) server-backed socket query parity for full replacement.
 - 2026-02-18 [ASSUMPTION] Frequency of encrypted realtime payloads (`encrypted: true`) across deployments is UNCONFIRMED.
 
 ## Invariants / Constraints
@@ -30,34 +31,36 @@
 - 2026-02-18 [CODE] D016 ACTIVE: Polling mode is socket-health-driven (interval off when connected; on when degraded/unsupported) with queued catch-up.
 - 2026-02-18 [CODE] D017 ACTIVE: Socket auth/routing compatibility prefers persisted `socketGuid` for query `guid` (fallback `accessToken`) and resolves socket target as `origin + <basePath>/socket.io`.
 - 2026-02-18 [CODE] D018 ACTIVE: Phase 6 closure requires explicit documentation of remaining realtime risks (no silent “fully done” claims when behavior is UNCONFIRMED).
+- 2026-02-18 [CODE] D019 ACTIVE: Query-style bootstrap/history/media retrieval remains REST-backed until server provides a documented, versioned socket query contract with `where`/pagination parity.
 
 ## Done (recent)
-- 2026-02-18 [CODE] Added regression test covering realtime partial-payload hydration miss fallback into catch-up polling (`bluebubblesCommunicationsManager.test.ts`).
-- 2026-02-18 [CODE] Added regression test covering reconnect-triggered catch-up queueing when channel degradation occurs during an in-flight poll.
-- 2026-02-18 [CODE] Updated `BLUEBUBBLES_REALTIME_IMPLEMENTATION_PLAN.md` to mark Phase 6 complete and record validation/results.
-- 2026-02-18 [CODE] Updated `project.md` realtime roadmap entry from “in progress” to “Phase 1-6 complete” with residual unknowns called out.
-- 2026-02-18 [TOOL] `npm test -- --runInBand test/connection/bluebubbles/bluebubblesCommunicationsManager.test.ts` passed (38 tests).
-- 2026-02-18 [TOOL] `npm test -- --runInBand` passed (14 suites, 92 tests).
-- 2026-02-18 [TOOL] `npm run build` passed (webpack success; warnings only).
+- 2026-02-18 [TOOL] Mapped reported network calls to concrete client callsites: chat bootstrap (`fetchChats`), thread latest/paging (`fetchThread`), and media drawer (`fetchConversationMedia`).
+- 2026-02-18 [TOOL] Audited native BlueBubbles app transport usage: message/chat queries still use REST (`http.chats`, `http.messages`, `http.chatMessages`), while socket is primarily push ingress + typing/settings emits.
+- 2026-02-18 [TOOL] Confirmed public BlueBubbles docs emphasize REST API + webhooks for integrations; no current public socket query contract documented.
+- 2026-02-18 [TOOL] Confirmed BlueBubbles server README still lists legacy socket handlers (`get-chats`, `get-chat-messages`) as available, indicating potential but undocumented query path.
+- 2026-02-18 [CODE] Updated `BLUEBUBBLES_REALTIME_IMPLEMENTATION_PLAN.md` and `project.md` to record Phase 6 completion and residual realtime unknowns.
+- 2026-02-18 [TOOL] `npm test -- --runInBand` passed after Phase 6 updates (14 suites, 92 tests).
+- 2026-02-18 [TOOL] `npm run build` passed after Phase 6 updates (webpack success; warnings only).
 
 ## Open Questions
 - 2026-02-18 [ASSUMPTION] For all target server versions, is configured password always valid as socket `guid` when token-auth endpoints are present? UNCONFIRMED.
 - 2026-02-18 [ASSUMPTION] Intermittent cloud tunnel reconnect behavior under longer sessions remains UNCONFIRMED.
 - 2026-02-18 [ASSUMPTION] Real-world frequency of encrypted socket payloads (`encrypted: true`) across target deployments remains UNCONFIRMED.
+- 2026-02-18 [ASSUMPTION] Are legacy socket query handlers (`get-chats`, `get-chat-messages`) stable/supported across all target server versions (including 1.9.7) for production usage? UNCONFIRMED.
 
 ## Working set
 - 2026-02-18 [CODE] `src/connection/bluebubbles/api.ts`
 - 2026-02-18 [CODE] `src/connection/bluebubbles/realtimeChannel.ts`
-- 2026-02-18 [CODE] `src/connection/bluebubbles/realtimePayload.ts`
 - 2026-02-18 [CODE] `src/connection/bluebubbles/bluebubblesCommunicationsManager.ts`
-- 2026-02-18 [CODE] `src/components/SignInGate.tsx`
 - 2026-02-18 [CODE] `src/components/messaging/master/Messaging.tsx`
-- 2026-02-18 [CODE] `src/util/bluebubblesAuth.ts`
-- 2026-02-18 [CODE] `test/connection/bluebubbles/bluebubblesCommunicationsManager.test.ts`
-- 2026-02-18 [CODE] `test/connection/bluebubbles/realtimeChannel.test.ts`
-- 2026-02-18 [CODE] `test/connection/bluebubbles/api.test.ts`
-- 2026-02-18 [CODE] `BLUEBUBBLES_REALTIME_IMPLEMENTATION_PLAN.md`
-- 2026-02-18 [CODE] `project.md`
+- 2026-02-18 [CODE] `src/components/messaging/thread/DetailThread.tsx`
+- 2026-02-18 [CODE] `src/state/useConversationMedia.ts`
+- 2026-02-18 [CODE] `src/state/conversationState.ts`
+- 2026-02-18 [CODE] `src/connection/connectionManager.ts`
+- 2026-02-18 [CODE] `/home/xilex/Downloads/node/bluebubbles-app/lib/services/network/socket_service.dart`
+- 2026-02-18 [CODE] `/home/xilex/Downloads/node/bluebubbles-app/lib/services/network/http_service.dart`
+- 2026-02-18 [CODE] `/home/xilex/Downloads/node/bluebubbles-app/lib/services/ui/chat/chat_manager.dart`
+- 2026-02-18 [CODE] `/home/xilex/Downloads/node/bluebubbles-app/lib/services/ui/message/messages_service.dart`
 
 ## Receipts
 - 2026-02-18 [TOOL] Static trace: interval polling is disabled when realtime state is `connected` in `bluebubblesCommunicationsManager.ts`.
@@ -72,3 +75,6 @@
 - 2026-02-18 [TOOL] `npm test -- --runInBand test/connection/bluebubbles/bluebubblesCommunicationsManager.test.ts` passed after adding Phase 6 edge-case coverage (38 tests).
 - 2026-02-18 [TOOL] `npm test -- --runInBand` passed after Phase 6 updates (14 suites, 92 tests).
 - 2026-02-18 [TOOL] `npm run build` passed after Phase 6 updates (webpack success; warnings only).
+- 2026-02-18 [TOOL] Static trace: reported request payloads align with `fetchChats` (`with: participants,lastmessage`, default `limit: 1000`), `fetchThread` (`limit: 50`, `ROWID` anchor paging), and `fetchConversationMedia` (`attachment.mimeType LIKE image/%`, `limit: 30`).
+- 2026-02-18 [TOOL] Static trace: native app currently performs chat/message queries via REST (`http.chats`, `http.chatMessages`, `http.messages`) and only uses socket emits for typing + limited settings commands.
+- 2026-02-18 [TOOL] External docs trace: integration docs advertise REST + webhooks; server README documents legacy socket query handlers (`get-chats`, `get-chat-messages`) but support level across modern versions is UNCONFIRMED.
