@@ -72,6 +72,7 @@ const TAPBACK_REMOVE_OFFSET = 3000;
 const TEXT_TAPBACK_CACHE_LIMIT = 50;
 const REACTION_GUID_CACHE_LIMIT = 5000;
 const EMITTED_MESSAGE_CACHE_LIMIT = 5000;
+const MESSAGE_IDENTITY_ALIAS_CACHE_LIMIT = 5000;
 const LINK_SCAN_QUERY_LIMIT = 1000;
 const MIN_REALTIME_SERVER_VERSION = [1, 6, 0];
 
@@ -146,6 +147,7 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
         private readonly realtimeUnsubscribeCallbacks: Array<() => void> = [];
         private realtimeEventQueue: Promise<void> = Promise.resolve();
         private readonly emittedMessageFingerprints = new Map<string, string>();
+        private readonly messageIdentityAliases = new Map<string, string>();
 
         constructor(dataProxy: DataProxy, auth: BlueBubblesAuthState, private readonly options: {onError?: (error: Error) => void} = {}) {
                 super(dataProxy);
@@ -484,6 +486,7 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 this.lastRowId = undefined;
                 this.lastMessageTimestamp = undefined;
                 this.emittedMessageFingerprints.clear();
+                this.messageIdentityAliases.clear();
                 this.realtimeEventQueue = Promise.resolve();
                 this.teardownRealtimeChannel();
                 try {
@@ -815,12 +818,91 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 return deduped;
         }
 
+        private registerMessageIdentityAliases(message: MessageResponse): void {
+                const normalizedGuid = normalizeMessageGuid(message.guid);
+                const normalizedTempGuid = normalizeMessageGuid(message.tempGuid);
+                const guidCandidates = new Set<string>();
+
+                if(message.guid) {
+                        guidCandidates.add(`message:guid:${message.guid}`);
+                }
+                if(normalizedGuid) {
+                        guidCandidates.add(`message:guid:${normalizedGuid}`);
+                }
+                if(message.tempGuid) {
+                        guidCandidates.add(`message:guid:${message.tempGuid}`);
+                }
+                if(normalizedTempGuid) {
+                        guidCandidates.add(`message:guid:${normalizedTempGuid}`);
+                }
+
+                const serverKey = Number.isFinite(message.originalROWID)
+                        ? `message:server:${message.originalROWID}`
+                        : undefined;
+                const canonicalGuidKey = normalizedGuid
+                        ? `message:guid:${normalizedGuid}`
+                        : (message.guid ? `message:guid:${message.guid}` : undefined);
+                const canonicalKey = serverKey ?? canonicalGuidKey;
+                if(!canonicalKey) return;
+
+                for(const candidate of guidCandidates) {
+                        if(candidate === canonicalKey) continue;
+                        this.recordMessageIdentityAlias(candidate, canonicalKey);
+                }
+        }
+
+        private recordMessageIdentityAlias(aliasKey: string, canonicalKey: string): void {
+                const resolvedAlias = this.resolveMessageIdentityKey(aliasKey);
+                const resolvedCanonical = this.resolveMessageIdentityKey(canonicalKey);
+                if(resolvedAlias === resolvedCanonical) return;
+
+                this.messageIdentityAliases.set(aliasKey, resolvedCanonical);
+                if(resolvedAlias !== aliasKey) {
+                        this.messageIdentityAliases.set(resolvedAlias, resolvedCanonical);
+                }
+
+                const aliasFingerprint = this.emittedMessageFingerprints.get(aliasKey)
+                        ?? this.emittedMessageFingerprints.get(resolvedAlias);
+                if(aliasFingerprint !== undefined && !this.emittedMessageFingerprints.has(resolvedCanonical)) {
+                        this.emittedMessageFingerprints.set(resolvedCanonical, aliasFingerprint);
+                }
+
+                this.emittedMessageFingerprints.delete(aliasKey);
+                if(resolvedAlias !== aliasKey) {
+                        this.emittedMessageFingerprints.delete(resolvedAlias);
+                }
+
+                while(this.messageIdentityAliases.size > MESSAGE_IDENTITY_ALIAS_CACHE_LIMIT) {
+                        const oldestAliasKey = this.messageIdentityAliases.keys().next().value;
+                        if(oldestAliasKey === undefined) break;
+                        this.messageIdentityAliases.delete(oldestAliasKey);
+                }
+        }
+
+        private resolveMessageIdentityKey(key: string): string {
+                let current = key;
+                const visited = new Set<string>();
+
+                while(true) {
+                        if(visited.has(current)) return current;
+                        visited.add(current);
+
+                        const next = this.messageIdentityAliases.get(current);
+                        if(!next || next === current) return current;
+                        current = next;
+                }
+        }
+
         private buildConversationItemFingerprintKey(item: ConversationItem): string | undefined {
                 switch(item.itemType) {
                         case ConversationItemType.Message: {
                                 const message = item as MessageItem;
-                                if(message.guid) return `message:guid:${message.guid}`;
-                                if(message.serverID !== undefined) return `message:server:${message.serverID}`;
+                                if(message.serverID !== undefined) {
+                                        return this.resolveMessageIdentityKey(`message:server:${message.serverID}`);
+                                }
+                                if(message.guid) {
+                                        return this.resolveMessageIdentityKey(`message:guid:${message.guid}`);
+                                }
                                 return undefined;
                         }
                         case ConversationItemType.ParticipantAction:
@@ -1121,6 +1203,7 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 const pendingReactions: PendingReaction[] = [];
                 const modifiers: TapbackItem[] = [];
                 for(const message of messages) {
+                        this.registerMessageIdentityAliases(message);
                         const service = getMessageService(message);
                         logBlueBubblesDebug("Message", {
                                 guid: message.guid,

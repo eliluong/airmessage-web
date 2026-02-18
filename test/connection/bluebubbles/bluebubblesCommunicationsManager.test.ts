@@ -5,7 +5,7 @@ import DataProxy from "../../../src/connection/dataProxy";
 import * as blueBubblesApi from "../../../src/connection/bluebubbles/api";
 import * as debugLogging from "../../../src/connection/bluebubbles/debugLogging";
 import type {BlueBubblesAuthState} from "../../../src/connection/bluebubbles/session";
-import type {ChatResponse, HandleResponse, MessageResponse, ServerMetadataResponse} from "../../../src/connection/bluebubbles/types";
+import type {AttachmentResponse, ChatResponse, HandleResponse, MessageResponse, ServerMetadataResponse} from "../../../src/connection/bluebubbles/types";
 import {__testables} from "../../../src/connection/bluebubbles/bluebubblesCommunicationsManager";
 
 describe("mapTapback", () => {
@@ -827,5 +827,236 @@ describe("realtime channel lifecycle", () => {
 
                 await (manager as unknown as {initialize(): Promise<void>}).initialize();
                 expect(realtimeConnectSpy).not.toHaveBeenCalled();
+        });
+});
+
+describe("outbound and attachment stability", () => {
+        class DummyProxy extends DataProxy {
+                public override readonly proxyType = "dummy";
+                public override start(): void {/* no-op */}
+                public override stop(): void {/* no-op */}
+                public override send(_data: ArrayBuffer, _encrypt: boolean): void {/* no-op */}
+        }
+
+        const auth: BlueBubblesAuthState = {serverUrl: "https://example.com", accessToken: "guid-token"};
+        const chatGuid = "chat-guid";
+        const createListener = () => ({
+                onMessageUpdate: jest.fn(),
+                onModifierUpdate: jest.fn(),
+                onSendMessageResponse: jest.fn(),
+                onFileRequestStart: jest.fn(),
+                onFileRequestData: jest.fn(),
+                onFileRequestComplete: jest.fn(),
+                onFileRequestFail: jest.fn()
+        });
+
+        const createOutgoingMessage = (rowId: number, overrides: Partial<MessageResponse> = {}): MessageResponse => ({
+                originalROWID: rowId,
+                guid: `outgoing-${rowId}`,
+                tempGuid: `web-temp-${rowId}`,
+                text: "hello",
+                handleId: 1,
+                otherHandle: 0,
+                chats: [
+                        {
+                                originalROWID: 1,
+                                guid: chatGuid,
+                                participants: [],
+                                style: 0,
+                                chatIdentifier: chatGuid,
+                                isArchived: false,
+                                displayName: ""
+                        } as ChatResponse
+                ],
+                attachments: [],
+                subject: "",
+                error: 0,
+                dateCreated: rowId * 1000,
+                dateRead: null,
+                dateDelivered: null,
+                isFromMe: true,
+                isArchived: false,
+                itemType: 0,
+                groupTitle: null,
+                groupActionType: 0,
+                balloonBundleId: null,
+                associatedMessageGuid: null,
+                associatedMessageType: null,
+                expressiveSendStyleId: null,
+                handle: {
+                        originalROWID: 1,
+                        address: "me",
+                        service: "iMessage"
+                } as HandleResponse,
+                ...overrides
+        } as MessageResponse);
+
+        const createAttachment = (): AttachmentResponse => ({
+                originalROWID: 10,
+                guid: "attachment-guid",
+                blurhash: undefined,
+                uti: "public.jpeg",
+                mimeType: "image/jpeg",
+                totalBytes: 4,
+                transferName: "photo.jpg"
+        } as AttachmentResponse);
+
+        const flushAsync = async () => {
+                await new Promise((resolve) => setTimeout(resolve, 0));
+        };
+
+        afterEach(() => {
+                jest.restoreAllMocks();
+        });
+
+        it("keeps sendMessage on the REST path and resolves outbound callbacks", async () => {
+                const manager = new BlueBubblesCommunicationsManager(new DummyProxy(), auth);
+                const listener = createListener();
+                (manager as unknown as {listener: unknown}).listener = listener;
+
+                const responseMessage = createOutgoingMessage(501, {guid: "outgoing-guid"});
+                const sendSpy = jest.spyOn(blueBubblesApi, "sendTextMessage").mockResolvedValue({data: responseMessage});
+
+                const sent = manager.sendMessage(77, {type: "linked", guid: chatGuid}, "hello");
+                expect(sent).toBe(true);
+
+                await flushAsync();
+                await flushAsync();
+
+                expect(sendSpy).toHaveBeenCalledTimes(1);
+                expect(sendSpy.mock.calls[0][1]).toEqual(expect.objectContaining({
+                        chatGuid,
+                        message: "hello",
+                        tempGuid: expect.stringMatching(/^web-\d+-77$/)
+                }));
+                expect(listener.onMessageUpdate).toHaveBeenCalledTimes(1);
+                expect(listener.onSendMessageResponse).toHaveBeenCalledWith(77, undefined);
+        });
+
+        it("keeps sendFile on the REST upload path and preserves upload progress + completion", async () => {
+                const manager = new BlueBubblesCommunicationsManager(new DummyProxy(), auth);
+                const listener = createListener();
+                (manager as unknown as {listener: unknown}).listener = listener;
+
+                const responseMessage = createOutgoingMessage(502, {
+                        guid: "file-guid",
+                        text: "",
+                        attachments: [createAttachment()]
+                });
+
+                class MockXMLHttpRequest {
+                        public static nextResponseBody: unknown;
+
+                        public responseType = "";
+                        public response: unknown;
+                        public responseText = "";
+                        public status = 0;
+                        private readonly listeners = new Map<string, Array<(event?: unknown) => void>>();
+                        private uploadProgressListener: ((event: {lengthComputable: boolean; loaded: number}) => void) | undefined;
+                        public readonly upload = {
+                                addEventListener: (event: string, listener: (event: {lengthComputable: boolean; loaded: number}) => void) => {
+                                        if(event === "progress") {
+                                                this.uploadProgressListener = listener;
+                                        }
+                                }
+                        };
+
+                        public open(_method: string, _url: string, _async: boolean): void {/* no-op */}
+                        public setRequestHeader(_name: string, _value: string): void {/* no-op */}
+
+                        public addEventListener(event: string, listener: (event?: unknown) => void): void {
+                                const listeners = this.listeners.get(event) ?? [];
+                                listeners.push(listener);
+                                this.listeners.set(event, listeners);
+                        }
+
+                        public send(_payload: unknown): void {
+                                this.uploadProgressListener?.({lengthComputable: true, loaded: 4});
+                                this.status = 200;
+                                this.response = MockXMLHttpRequest.nextResponseBody;
+                                const loadListeners = this.listeners.get("load") ?? [];
+                                for(const listener of loadListeners) {
+                                        listener();
+                                }
+                        }
+                }
+
+                const previousXhr = global.XMLHttpRequest;
+                MockXMLHttpRequest.nextResponseBody = {data: responseMessage};
+                (global as unknown as {XMLHttpRequest: typeof XMLHttpRequest}).XMLHttpRequest =
+                        MockXMLHttpRequest as unknown as typeof XMLHttpRequest;
+
+                const progressCallback = jest.fn();
+                try {
+                        const guid = await manager.sendFile(
+                                78,
+                                {type: "linked", guid: chatGuid},
+                                new File(["data"], "photo.jpg", {type: "image/jpeg"}),
+                                progressCallback
+                        );
+
+                        expect(guid).toBe("file-guid");
+                        expect(progressCallback).toHaveBeenCalledWith(4);
+                        expect(listener.onMessageUpdate).toHaveBeenCalledTimes(1);
+                        expect(listener.onSendMessageResponse).toHaveBeenCalledWith(78, undefined);
+                } finally {
+                        (global as unknown as {XMLHttpRequest: typeof XMLHttpRequest}).XMLHttpRequest = previousXhr;
+                }
+        });
+
+        it("preserves attachment download streaming callbacks", async () => {
+                const manager = new BlueBubblesCommunicationsManager(new DummyProxy(), auth);
+                const listener = createListener();
+                (manager as unknown as {listener: unknown}).listener = listener;
+
+                const chunk = new Uint8Array([1, 2, 3, 4]);
+                const reader = {
+                        read: jest.fn()
+                                .mockResolvedValueOnce({done: false, value: chunk})
+                                .mockResolvedValueOnce({done: true, value: undefined})
+                };
+                const response = {
+                        headers: {
+                                get: (name: string) => {
+                                        if(name === "content-length") return "4";
+                                        if(name === "content-type") return "image/jpeg";
+                                        return null;
+                                }
+                        },
+                        body: {
+                                getReader: () => reader
+                        }
+                } as unknown as Response;
+
+                jest.spyOn(blueBubblesApi, "downloadAttachment").mockResolvedValue(response);
+                manager.requestAttachmentDownload(79, "attachment-guid");
+
+                await flushAsync();
+                await flushAsync();
+
+                expect(listener.onFileRequestStart).toHaveBeenCalledWith(
+                        79,
+                        undefined,
+                        "image/jpeg",
+                        4,
+                        expect.anything()
+                );
+                expect(listener.onFileRequestData).toHaveBeenCalledTimes(1);
+                expect(listener.onFileRequestData.mock.calls[0][1]).toBeInstanceOf(ArrayBuffer);
+                expect(listener.onFileRequestComplete).toHaveBeenCalledWith(79);
+                expect(listener.onFileRequestFail).not.toHaveBeenCalled();
+        });
+
+        it("preserves attachment thumbnail fetch behavior", async () => {
+                const manager = new BlueBubblesCommunicationsManager(new DummyProxy(), auth);
+                const thumbnailBlob = new Blob(["thumb"], {type: "image/jpeg"});
+                const thumbnailResponse = {
+                        blob: jest.fn().mockResolvedValue(thumbnailBlob)
+                } as unknown as Response;
+                const thumbnailSpy = jest.spyOn(blueBubblesApi, "downloadAttachmentThumbnail").mockResolvedValue(thumbnailResponse);
+
+                const blob = await manager.fetchAttachmentThumbnail("attachment-guid");
+                expect(blob).toBe(thumbnailBlob);
+                expect(thumbnailSpy).toHaveBeenCalledWith(auth, "attachment-guid", {signal: undefined});
         });
 });

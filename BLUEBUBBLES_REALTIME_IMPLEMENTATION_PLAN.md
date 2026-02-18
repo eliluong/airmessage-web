@@ -89,18 +89,24 @@ Replace interval-only polling with a socket-driven realtime channel while preser
 - [x] No duplicate conversation items/modifiers under mixed socket/poll conditions.
 
 ## Phase 3: Outbound And Attachment Stability
+### Status
+- Completed on 2026-02-18.
+
 ### Goals
 - Keep outbound behavior stable while moving inbound updates to socket.
 
-### Tasks
-- Preserve existing REST send paths for `sendMessage` and `sendFile`.
-- Validate temp-guid reconciliation still resolves correctly when socket confirmations arrive.
-- Preserve existing attachment download and thumbnail paths.
-- Ensure outgoing attachment completion and inbound attachment messages remain consistent.
+### Delivered
+- Kept existing REST send paths in place for `sendMessage` and `sendFile`; no socket-based outbound send path was introduced.
+- Hardened outbound reconciliation in thread state to merge confirmed message updates by identity (`serverID` / `guid`) even after initial confirmation, fixing temp-guid-to-final-guid transitions under mixed realtime/poll timing.
+- Updated transport duplicate identity handling to prefer stable `serverID` fingerprint keys for message emission dedupe and to track GUID/temp-guid aliases during reconciliation.
+- Preserved existing attachment download and thumbnail fetch paths (`requestAttachmentDownload`, `fetchAttachmentThumbnail`) without API contract changes.
+- Added Phase 3 coverage in:
+  - `test/connection/bluebubbles/bluebubblesCommunicationsManager.test.ts` (REST outbound send, upload progress/completion, attachment download stream callbacks, thumbnail fetch).
+  - `test/components/messaging/thread/DetailThread.test.tsx` (confirmed message merge by `serverID` with guid transition).
 
 ### Exit Criteria
-- Sending messages and attachments behaves the same or better than current baseline.
-- No regressions in upload progress, completion, or error handling.
+- [x] Sending messages and attachments behaves the same or better than current baseline.
+- [x] No regressions in upload progress, completion, or error handling.
 
 ## Phase 4: Tapback And Modifier Consistency
 ### Goals
