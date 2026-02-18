@@ -125,33 +125,35 @@ Replace interval-only polling with a socket-driven realtime channel while preser
 - [x] No duplicate tapback chips or repeated notification sounds.
 
 ## Phase 5: Fallback, Catch-Up, And Resilience
+### Status
+- Completed on 2026-02-18.
+
 ### Goals
 - Make socket primary and polling secondary without losing reliability.
 
-### Tasks
-- Define socket-healthy behavior (reduce/disable interval poll while healthy).
-- Define degraded behavior (resume periodic poll when socket fails).
-- Keep explicit catch-up triggers (`requestRetrievalID` / `requestRetrievalTime`) active.
-- On reconnect, run immediate catch-up poll cycle before returning to steady-state.
-- Maintain existing debug telemetry for cursor movement and cycle summaries.
+### Delivered
+- Added polling mode synchronization in `BlueBubblesCommunicationsManager` so interval polling is suspended when realtime socket state is healthy (`connected`) and resumed when degraded (`idle`/`connecting`/`disconnected`/`error`) or when realtime is unsupported.
+- Kept explicit catch-up triggers active (`requestRetrievalID` / `requestRetrievalTime`) while preserving cursor priming behavior.
+- Added resilient catch-up queueing (`pendingCatchupPoll`) so catch-up requests raised during an in-flight poll execute immediately after that cycle finishes.
+- Kept reconnect behavior deterministic by continuing immediate catch-up on realtime state transitions (`connected`, `disconnected`, `error`) before steady-state polling mode is re-applied.
+- Added Phase 5 regression coverage in `test/connection/bluebubbles/bluebubblesCommunicationsManager.test.ts` for healthy/degraded polling mode switching and queued catch-up execution.
 
 ### Exit Criteria
-- Offline/online transitions recover without page reload.
-- Missed-message recovery remains deterministic with socket interruptions.
+- [x] Offline/online transitions recover without page reload.
+- [x] Missed-message recovery remains deterministic with socket interruptions.
 
 ## Phase 6: QA, Rollout, And Documentation
 ### Goals
 - Validate behavior and land with clear operational guidance.
 
 ### Tasks
-- Unit tests for socket event mapping, dedupe, cursor advancement, and fallback switching.
-- Integration tests for mixed socket + poll scenarios and reconnect catch-up.
+- Extend integration tests for mixed socket + poll scenarios and reconnect catch-up edge cases.
 - Manual validation matrix:
 - normal inbound/outbound text.
 - normal inbound/outbound attachments.
 - received tapbacks.
 - browser sleep/wake and temporary network loss.
-- Update migration docs (`project.md`) with implementation status and follow-up work.
+- Finalize migration docs (`project.md`) with implementation status and follow-up work.
 
 ### Exit Criteria
 - Test suite passes.

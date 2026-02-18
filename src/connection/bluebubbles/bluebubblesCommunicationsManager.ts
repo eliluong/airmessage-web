@@ -145,6 +145,7 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
         private realtimeChannelState: BlueBubblesRealtimeConnectionState = "idle";
         private readonly realtimeUnsubscribeCallbacks: Array<() => void> = [];
         private realtimeEventQueue: Promise<void> = Promise.resolve();
+        private pendingCatchupPoll = false;
         private readonly emittedMessageFingerprints = new Map<string, string>();
         private readonly messageIdentityAliases = new Map<string, string>();
 
@@ -487,6 +488,7 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 this.emittedMessageFingerprints.clear();
                 this.messageIdentityAliases.clear();
                 this.realtimeEventQueue = Promise.resolve();
+                this.pendingCatchupPoll = false;
                 this.teardownRealtimeChannel();
                 try {
                         this.metadata = await fetchServerMetadata(this.auth);
@@ -521,11 +523,9 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 this.isClosed = true;
                 this.hasStartedPolling = false;
                 this.realtimeEventQueue = Promise.resolve();
+                this.pendingCatchupPoll = false;
                 this.teardownRealtimeChannel();
-                if(this.pollTimer) {
-                        clearInterval(this.pollTimer);
-                        this.pollTimer = undefined;
-                }
+                this.stopPolling();
         }
 
         private handleFatalError(error: unknown) {
@@ -543,8 +543,32 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 }, POLL_INTERVAL_MS);
         }
 
+        private stopPolling() {
+                if(!this.pollTimer) return;
+                clearInterval(this.pollTimer);
+                this.pollTimer = undefined;
+        }
+
+        private shouldUseIntervalPolling(): boolean {
+                if(!this.hasStartedPolling || this.isClosed) return false;
+                if(!this.isRealtimeSupported()) return true;
+                return this.realtimeChannelState !== "connected";
+        }
+
+        private synchronizePollingMode() {
+                if(this.shouldUseIntervalPolling()) {
+                        this.startPolling();
+                        return;
+                }
+                this.stopPolling();
+        }
+
         private requestPollCatchup() {
                 this.ensurePollingStarted();
+                if(this.pollInFlight) {
+                        this.pendingCatchupPoll = true;
+                        return;
+                }
                 this.pollUpdates("catchup").catch((error) => console.warn("Failed to poll BlueBubbles updates", error));
         }
 
@@ -590,6 +614,7 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 logBlueBubblesDebug("Realtime channel state", {state, details});
 
                 if(!this.hasStartedPolling) return;
+                this.synchronizePollingMode();
                 if(state === "connected" || state === "disconnected" || state === "error") {
                         this.requestPollCatchup();
                 }
@@ -600,6 +625,7 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 console.warn("[BlueBubbles] Realtime channel error", error);
                 this.options.onError?.(error);
                 if(this.hasStartedPolling) {
+                        this.synchronizePollingMode();
                         this.requestPollCatchup();
                 }
         }
@@ -1037,6 +1063,11 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                                 });
                         }
                         this.pollInFlight = false;
+                        const shouldRunQueuedCatchup = this.pendingCatchupPoll;
+                        this.pendingCatchupPoll = false;
+                        if(shouldRunQueuedCatchup && !this.isClosed) {
+                                this.pollUpdates("catchup").catch((error) => console.warn("Failed to poll BlueBubbles updates", error));
+                        }
                 }
         }
 
@@ -1055,7 +1086,7 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
         private ensurePollingStarted() {
                 if(this.hasStartedPolling) return;
                 this.hasStartedPolling = true;
-                this.startPolling();
+                this.synchronizePollingMode();
         }
 
         private async fetchConversationInfo(chatGUIDs: string[]) {

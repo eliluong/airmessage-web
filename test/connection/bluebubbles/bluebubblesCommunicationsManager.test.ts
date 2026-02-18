@@ -5,7 +5,14 @@ import DataProxy from "../../../src/connection/dataProxy";
 import * as blueBubblesApi from "../../../src/connection/bluebubbles/api";
 import * as debugLogging from "../../../src/connection/bluebubbles/debugLogging";
 import type {BlueBubblesAuthState} from "../../../src/connection/bluebubbles/session";
-import type {AttachmentResponse, ChatResponse, HandleResponse, MessageResponse, ServerMetadataResponse} from "../../../src/connection/bluebubbles/types";
+import type {
+        AttachmentResponse,
+        ChatResponse,
+        HandleResponse,
+        MessageQueryResponse,
+        MessageResponse,
+        ServerMetadataResponse
+} from "../../../src/connection/bluebubbles/types";
 import {__testables} from "../../../src/connection/bluebubbles/bluebubblesCommunicationsManager";
 
 describe("mapTapback", () => {
@@ -914,6 +921,88 @@ describe("realtime channel lifecycle", () => {
 
                 await (manager as unknown as {initialize(): Promise<void>}).initialize();
                 expect(realtimeConnectSpy).not.toHaveBeenCalled();
+        });
+});
+
+describe("phase 5 fallback and resilience", () => {
+        class DummyProxy extends DataProxy {
+                public override readonly proxyType = "dummy";
+                public override start(): void {/* no-op */}
+                public override stop(): void {/* no-op */}
+                public override send(_data: ArrayBuffer, _encrypt: boolean): void {/* no-op */}
+        }
+
+        const auth: BlueBubblesAuthState = {serverUrl: "", accessToken: "guid-token"};
+
+        const createMetadata = (serverVersion: string): ServerMetadataResponse => ({
+                computer_id: "computer",
+                os_version: "14.0",
+                server_version: serverVersion,
+                private_api: true,
+                helper_connected: true,
+                proxy_service: "none",
+                detected_icloud: "",
+                detected_imessage: "",
+                macos_time_sync: null,
+                local_ipv4s: [],
+                local_ipv6s: [],
+                features: {
+                        private_api: true,
+                        helper_connected: true
+                }
+        });
+
+        const flushMicrotasks = async () => {
+                await Promise.resolve();
+                await Promise.resolve();
+        };
+
+        afterEach(() => {
+                jest.restoreAllMocks();
+                jest.useRealTimers();
+        });
+
+        it("suspends interval polling while realtime is healthy and resumes it when degraded", () => {
+                jest.useFakeTimers();
+                const manager = new BlueBubblesCommunicationsManager(new DummyProxy(), auth);
+                (manager as unknown as {metadata: ServerMetadataResponse}).metadata = createMetadata("1.6.0");
+                (manager as unknown as {realtimeChannelState: "connected"}).realtimeChannelState = "connected";
+                (manager as unknown as {pollInFlight: boolean}).pollInFlight = true;
+
+                (manager as unknown as {ensurePollingStarted(): void}).ensurePollingStarted();
+                expect((manager as unknown as {pollTimer: ReturnType<typeof setInterval> | undefined}).pollTimer).toBeUndefined();
+
+                (manager as unknown as {handleRealtimeChannelStateChange(state: "disconnected"): void}).handleRealtimeChannelStateChange("disconnected");
+                expect((manager as unknown as {pollTimer: ReturnType<typeof setInterval> | undefined}).pollTimer).toBeDefined();
+
+                (manager as unknown as {handleRealtimeChannelStateChange(state: "connected"): void}).handleRealtimeChannelStateChange("connected");
+                expect((manager as unknown as {pollTimer: ReturnType<typeof setInterval> | undefined}).pollTimer).toBeUndefined();
+        });
+
+        it("queues a catch-up poll when an existing poll cycle is still in flight", async () => {
+                const manager = new BlueBubblesCommunicationsManager(new DummyProxy(), auth);
+                (manager as unknown as {hasStartedPolling: boolean}).hasStartedPolling = true;
+
+                let resolveFirstQuery: ((value: {data: MessageResponse[]}) => void) | undefined;
+                const firstQuery = new Promise<{data: MessageResponse[]}>((resolve) => {
+                        resolveFirstQuery = resolve;
+                });
+
+                const querySpy = jest.spyOn(blueBubblesApi, "queryMessages")
+                        .mockImplementationOnce(() => firstQuery as Promise<MessageQueryResponse>)
+                        .mockResolvedValueOnce({data: []});
+
+                const initialPollPromise = (manager as unknown as {pollUpdates(source: "interval"): Promise<void>}).pollUpdates("interval");
+                (manager as unknown as {requestPollCatchup(): void}).requestPollCatchup();
+
+                expect((manager as unknown as {pendingCatchupPoll: boolean}).pendingCatchupPoll).toBe(true);
+
+                resolveFirstQuery?.({data: []});
+                await initialPollPromise;
+                await flushMicrotasks();
+
+                expect(querySpy).toHaveBeenCalledTimes(2);
+                expect((manager as unknown as {pendingCatchupPoll: boolean}).pendingCatchupPoll).toBe(false);
         });
 });
 
