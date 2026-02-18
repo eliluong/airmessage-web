@@ -315,6 +315,148 @@ describe("processMessages SMS tapbacks", () => {
         });
 });
 
+describe("processMessages iMessage emoji tapbacks", () => {
+        class DummyProxy extends DataProxy {
+                public override readonly proxyType = "dummy";
+                public override start(): void {/* no-op */}
+                public override stop(): void {/* no-op */}
+                public override send(_data: ArrayBuffer, _encrypt: boolean): void {/* no-op */}
+        }
+
+        const auth: BlueBubblesAuthState = {serverUrl: "", accessToken: ""};
+        const chatGuid = "imessage-chat-guid";
+        const baseMessageGuid = "E2BB8654-24D6-4931-BA43-10D1CADF3E6D";
+        const baseText = "Hello friends, my wife sarah and I are both turning 40 soon this year.";
+
+        const createChat = (): ChatResponse => ({
+                originalROWID: 1,
+                guid: chatGuid,
+                participants: [],
+                style: 0,
+                chatIdentifier: chatGuid,
+                isArchived: false,
+                displayName: ""
+        } as ChatResponse);
+
+        const createHandle = (address: string): HandleResponse => ({
+                originalROWID: 1,
+                address,
+                service: "iMessage"
+        } as HandleResponse);
+
+        const createBaseMessage = (overrides: Partial<MessageResponse> = {}): MessageResponse => ({
+                originalROWID: 1,
+                guid: baseMessageGuid,
+                text: baseText,
+                handleId: 1,
+                otherHandle: 0,
+                chats: [createChat()],
+                attachments: [],
+                subject: "",
+                error: 0,
+                dateCreated: 1_000,
+                dateRead: null,
+                dateDelivered: null,
+                isFromMe: false,
+                isArchived: false,
+                itemType: 0,
+                groupTitle: null,
+                groupActionType: 0,
+                balloonBundleId: null,
+                associatedMessageGuid: null,
+                associatedMessageType: null,
+                expressiveSendStyleId: null,
+                handle: createHandle("friend@example.com"),
+                ...overrides
+        } as MessageResponse);
+
+        const createEmojiReaction = (overrides: Partial<MessageResponse> = {}): MessageResponse => ({
+                originalROWID: 2,
+                guid: "A305D551-2F28-4BB4-8D7A-95B5C2869568",
+                text: `Reacted 🎊 to “${baseText}”`,
+                handleId: 2,
+                otherHandle: 0,
+                chats: [createChat()],
+                attachments: [],
+                subject: "",
+                error: 0,
+                dateCreated: 1_100,
+                dateRead: null,
+                dateDelivered: null,
+                isFromMe: false,
+                isArchived: false,
+                itemType: 0,
+                groupTitle: null,
+                groupActionType: 0,
+                balloonBundleId: null,
+                associatedMessageGuid: null,
+                associatedMessageType: null,
+                expressiveSendStyleId: null,
+                handle: createHandle("friend@example.com"),
+                ...overrides
+        } as MessageResponse);
+
+        const createManager = () => new BlueBubblesCommunicationsManager(new DummyProxy(), auth);
+
+        it("parses iMessage emoji reactions and attaches them to the target message", () => {
+                const manager = createManager();
+                const baseMessage = createBaseMessage();
+                const reaction = createEmojiReaction();
+
+                const {items, modifiers} = (manager as unknown as {processMessages(messages: MessageResponse[]): {items: unknown[]; modifiers: unknown[]}}).processMessages([baseMessage, reaction]);
+
+                expect(modifiers).toHaveLength(1);
+                const tapback = modifiers[0] as unknown as {tapbackType: TapbackType; tapbackEmoji?: string; messageGuid: string; isAddition: boolean};
+                expect(tapback.tapbackType).toBe(TapbackType.Emoji);
+                expect(tapback.tapbackEmoji).toBe("🎊");
+                expect(tapback.messageGuid).toBe(baseMessageGuid);
+                expect(tapback.isAddition).toBe(true);
+
+                const itemGuids = (items as Array<{guid?: string}>).map((item) => item.guid).filter((guid): guid is string => Boolean(guid));
+                expect(itemGuids).toContain(baseMessageGuid);
+                expect(itemGuids).not.toContain(reaction.guid);
+        });
+
+        it("falls back to the text-reaction cache when emoji target text is not in the same batch", () => {
+                const manager = createManager();
+                const baseMessage = createBaseMessage();
+                const reaction = createEmojiReaction({dateCreated: 1_200});
+
+                (manager as unknown as {processMessages(messages: MessageResponse[]): {items: unknown[]; modifiers: unknown[]}}).processMessages([baseMessage]);
+                const {modifiers} = (manager as unknown as {processMessages(messages: MessageResponse[]): {items: unknown[]; modifiers: unknown[]}}).processMessages([reaction]);
+
+                expect(modifiers).toHaveLength(1);
+                const tapback = modifiers[0] as unknown as {messageGuid: string; tapbackType: TapbackType; tapbackEmoji?: string};
+                expect(tapback.messageGuid).toBe(baseMessageGuid);
+                expect(tapback.tapbackType).toBe(TapbackType.Emoji);
+                expect(tapback.tapbackEmoji).toBe("🎊");
+        });
+
+        it("parses emoji reaction removals", () => {
+                const manager = createManager();
+                const baseMessage = createBaseMessage();
+                const reaction = createEmojiReaction({
+                        guid: "REACT-ADD",
+                        dateCreated: 1_100
+                });
+                const removal = createEmojiReaction({
+                        guid: "REACT-REMOVE",
+                        dateCreated: 1_200,
+                        text: `Removed reaction 🎊 from “${baseText}”`
+                });
+
+                (manager as unknown as {processMessages(messages: MessageResponse[]): {items: unknown[]; modifiers: unknown[]}}).processMessages([baseMessage, reaction]);
+                const {modifiers} = (manager as unknown as {processMessages(messages: MessageResponse[]): {items: unknown[]; modifiers: unknown[]}}).processMessages([removal]);
+
+                expect(modifiers).toHaveLength(1);
+                const tapback = modifiers[0] as unknown as {messageGuid: string; tapbackType: TapbackType; tapbackEmoji?: string; isAddition: boolean};
+                expect(tapback.messageGuid).toBe(baseMessageGuid);
+                expect(tapback.tapbackType).toBe(TapbackType.Emoji);
+                expect(tapback.tapbackEmoji).toBe("🎊");
+                expect(tapback.isAddition).toBe(false);
+        });
+});
+
 describe("polling catch-up", () => {
         class DummyProxy extends DataProxy {
                 public override readonly proxyType = "dummy";

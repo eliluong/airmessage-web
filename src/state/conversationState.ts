@@ -433,7 +433,7 @@ export default function useConversationState(activeConversationID: LocalConversa
                                 for(const modifier of modifierArray) {
                                         if(!isModifierTapback(modifier) || !modifier.isAddition) continue;
 
-                                        const cacheKey = `${modifier.messageGuid}|${modifier.sender}|${modifier.tapbackType}`;
+                                        const cacheKey = `${modifier.messageGuid}|${modifier.sender}|${modifier.tapbackType}|${modifier.tapbackEmoji ?? ""}`;
                                         const cachedExpiry = tapbackSoundCache.get(cacheKey);
                                         if(cachedExpiry === undefined || cachedExpiry <= now) {
                                                 shouldPlay = true;
