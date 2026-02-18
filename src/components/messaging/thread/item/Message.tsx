@@ -55,17 +55,19 @@ type TimestampPosition = {
         anchor: "left" | "right";
 };
 
-export default function Message(props: {
-message: MessageItemWithEdits;
-isGroupChat: boolean;
-service: string;
-flow: MessageFlow;
-showStatus?: boolean;
-}) {
-	const [dialogState, setDialogState] = useState<MessageDialog | undefined>(undefined);
-	const closeDialog = useCallback(() => setDialogState(undefined), [setDialogState]);
-	const openDialogError = useCallback(() => setDialogState(MessageDialog.Error), [setDialogState]);
-	const openDialogRawError = useCallback(() => setDialogState(MessageDialog.RawError), [setDialogState]);
+type MessageProps = {
+        message: MessageItemWithEdits;
+        isGroupChat: boolean;
+        service: string;
+        flow: MessageFlow;
+        showStatus?: boolean;
+};
+
+function MessageView(props: MessageProps) {
+		const [dialogState, setDialogState] = useState<MessageDialog | undefined>(undefined);
+		const closeDialog = useCallback(() => setDialogState(undefined), [setDialogState]);
+		const openDialogError = useCallback(() => setDialogState(MessageDialog.Error), [setDialogState]);
+		const openDialogRawError = useCallback(() => setDialogState(MessageDialog.RawError), [setDialogState]);
 	
 	/**
 	 * Copies the message error detail to the clipboard,
@@ -603,7 +605,20 @@ amLinked={props.flow.anchorTop}
 			</React.Fragment>}
 		</Dialog>
 	</>);
+	}
+
+function areMessagePropsEqual(previous: MessageProps, next: MessageProps): boolean {
+        return previous.message === next.message
+                && previous.isGroupChat === next.isGroupChat
+                && previous.service === next.service
+                && previous.showStatus === next.showStatus
+                && previous.flow.anchorTop === next.flow.anchorTop
+                && previous.flow.anchorBottom === next.flow.anchorBottom
+                && previous.flow.showDivider === next.flow.showDivider;
 }
+
+const Message = React.memo(MessageView, areMessagePropsEqual);
+export default Message;
 
 /**
  * Gets a human-readable status string for the given message item,
