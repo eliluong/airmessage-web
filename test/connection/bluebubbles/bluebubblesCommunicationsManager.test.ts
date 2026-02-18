@@ -456,6 +456,31 @@ describe("processMessages iMessage emoji tapbacks", () => {
                 expect(tapback.tapbackEmoji).toBe("🎊");
                 expect(tapback.isAddition).toBe(false);
         });
+
+        it("processes same-guid emoji reaction updates when the payload changes", () => {
+                const manager = createManager();
+                const baseMessage = createBaseMessage();
+                const reaction = createEmojiReaction({
+                        guid: "REACT-SAME",
+                        dateCreated: 1_100,
+                        text: `Reacted 🎊 to “${baseText}”`
+                });
+                const removal = createEmojiReaction({
+                        guid: "REACT-SAME",
+                        dateCreated: 1_200,
+                        text: `Removed reaction 🎊 from “${baseText}”`
+                });
+
+                (manager as unknown as {processMessages(messages: MessageResponse[]): {items: unknown[]; modifiers: unknown[]}}).processMessages([baseMessage, reaction]);
+                const {modifiers} = (manager as unknown as {processMessages(messages: MessageResponse[]): {items: unknown[]; modifiers: unknown[]}}).processMessages([removal]);
+
+                expect(modifiers).toHaveLength(1);
+                const tapback = modifiers[0] as unknown as {isAddition: boolean; tapbackType: TapbackType; tapbackEmoji?: string; messageGuid: string};
+                expect(tapback.messageGuid).toBe(baseMessageGuid);
+                expect(tapback.tapbackType).toBe(TapbackType.Emoji);
+                expect(tapback.tapbackEmoji).toBe("🎊");
+                expect(tapback.isAddition).toBe(false);
+        });
 });
 
 describe("polling catch-up", () => {
@@ -763,6 +788,68 @@ describe("realtime message ingestion", () => {
                         .ingestRealtimeEvent("updated-message", updated);
 
                 expect(listener.onMessageUpdate).toHaveBeenCalledTimes(2);
+        });
+
+        it("emits modifier updates when a same-guid tapback changes from add to remove", async () => {
+                const manager = new BlueBubblesCommunicationsManager(new DummyProxy(), auth);
+                const listener = createListener();
+                (manager as unknown as {listener: unknown}).listener = listener;
+
+                const addition = createRealtimeMessage(400, {
+                        guid: "reaction-guid",
+                        text: "",
+                        associatedMessageGuid: "p:0/target-guid",
+                        associatedMessageType: "2001"
+                });
+                const removal = createRealtimeMessage(400, {
+                        guid: "reaction-guid",
+                        text: "",
+                        associatedMessageGuid: "p:0/target-guid",
+                        associatedMessageType: "3001"
+                });
+
+                await (manager as unknown as {ingestRealtimeEvent(eventName: "new-message", payload: unknown): Promise<void>})
+                        .ingestRealtimeEvent("new-message", addition);
+                await (manager as unknown as {ingestRealtimeEvent(eventName: "updated-message", payload: unknown): Promise<void>})
+                        .ingestRealtimeEvent("updated-message", removal);
+
+                expect(listener.onModifierUpdate).toHaveBeenCalledTimes(2);
+                expect(listener.onModifierUpdate.mock.calls[0][0][0]).toEqual(expect.objectContaining({
+                        messageGuid: "target-guid",
+                        tapbackType: TapbackType.Like,
+                        isAddition: true
+                }));
+                expect(listener.onModifierUpdate.mock.calls[1][0][0]).toEqual(expect.objectContaining({
+                        messageGuid: "target-guid",
+                        tapbackType: TapbackType.Like,
+                        isAddition: false
+                }));
+        });
+
+        it("suppresses duplicate modifier emissions when the same tapback arrives from realtime and polling", async () => {
+                const manager = new BlueBubblesCommunicationsManager(new DummyProxy(), auth);
+                const listener = createListener();
+                (manager as unknown as {listener: unknown}).listener = listener;
+
+                const reaction = createRealtimeMessage(410, {
+                        guid: "reaction-overlap-guid",
+                        text: "",
+                        associatedMessageGuid: "p:0/target-guid",
+                        associatedMessageType: "2001"
+                });
+
+                await (manager as unknown as {ingestRealtimeEvent(eventName: "new-message", payload: unknown): Promise<void>})
+                        .ingestRealtimeEvent("new-message", reaction);
+
+                (manager as unknown as {lastRowId: number}).lastRowId = 409;
+                const querySpy = jest.spyOn(blueBubblesApi, "queryMessages")
+                        .mockResolvedValueOnce({data: [reaction]})
+                        .mockResolvedValueOnce({data: []});
+
+                await (manager as unknown as {pollUpdates(): Promise<void>}).pollUpdates();
+
+                expect(querySpy).toHaveBeenCalledTimes(1);
+                expect(listener.onModifierUpdate).toHaveBeenCalledTimes(1);
         });
 });
 

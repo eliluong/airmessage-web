@@ -137,8 +137,7 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
         private lastMessageTimestamp: number | undefined;
         private readonly tapbackCache = new Map<string, TapbackItem[]>();
         private readonly textTapbackCache = new Map<string, TextTapbackCacheEntry>();
-        private readonly reactionGuidQueue: string[] = [];
-        private readonly reactionGuidSet = new Set<string>();
+        private readonly reactionFingerprintCache = new Map<string, string>();
         private supportsDeliveredReceipts = false;
         private supportsReadReceipts = false;
         private readonly conversationGuidCache = new Map<string, string>();
@@ -1224,9 +1223,6 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                                 : undefined;
                         const textTapback = smsTapback ?? emojiTapback;
                         if(textTapback) {
-                                if(this.hasSeenReaction(message.guid)) {
-                                        continue;
-                                }
                                 const targetGuid = this.resolveTextTapbackTargetGuid(message, textTapback, messages);
                                 if(targetGuid) {
                                         const tapback: TapbackItem = {
@@ -1238,7 +1234,10 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                                                 tapbackType: textTapback.tapbackType,
                                                 tapbackEmoji: textTapback.tapbackEmoji
                                         } as TapbackItem;
-                                        this.markReactionSeen(message.guid);
+                                        if(this.hasSeenReaction(message.guid, tapback)) {
+                                                continue;
+                                        }
+                                        this.markReactionSeen(message.guid, tapback);
                                         pendingReactions.push({messageGuid: targetGuid, tapback});
                                         modifiers.push(tapback);
                                         continue;
@@ -1252,11 +1251,11 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                                 });
                         }
                         if(isReactionMessage(message)) {
-                                if(this.hasSeenReaction(message.guid)) {
-                                        continue;
-                                }
                                 const tapback = mapTapback(message);
                                 if(tapback) {
+                                        if(this.hasSeenReaction(message.guid, tapback)) {
+                                                continue;
+                                        }
                                         logBlueBubblesDebug("Tapback", {
                                                 messageGuid: message.guid,
                                                 associatedMessageGuid: message.associatedMessageGuid,
@@ -1265,7 +1264,7 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                                                 isAddition: tapback.isAddition,
                                                 sender: tapback.sender
                                         });
-                                        this.markReactionSeen(message.guid);
+                                        this.markReactionSeen(message.guid, tapback);
                                         pendingReactions.push({messageGuid: tapback.messageGuid, tapback});
                                         modifiers.push(tapback);
                                 }
@@ -1309,20 +1308,35 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 return {items, modifiers};
         }
 
-        private hasSeenReaction(guid: string | undefined): boolean {
-                return guid !== undefined && this.reactionGuidSet.has(guid);
+        private hasSeenReaction(guid: string | undefined, tapback: TapbackItem): boolean {
+                if(!guid) return false;
+                return this.reactionFingerprintCache.get(guid) === this.buildTapbackFingerprint(tapback);
         }
 
-        private markReactionSeen(guid: string | undefined): void {
-                if(!guid || this.reactionGuidSet.has(guid)) return;
-
-                this.reactionGuidSet.add(guid);
-                this.reactionGuidQueue.push(guid);
-
-                if(this.reactionGuidQueue.length > REACTION_GUID_CACHE_LIMIT) {
-                        const oldest = this.reactionGuidQueue.shift();
-                        if(oldest) this.reactionGuidSet.delete(oldest);
+        private markReactionSeen(guid: string | undefined, tapback: TapbackItem): void {
+                if(!guid) return;
+                const fingerprint = this.buildTapbackFingerprint(tapback);
+                if(this.reactionFingerprintCache.has(guid)) {
+                        this.reactionFingerprintCache.delete(guid);
                 }
+                this.reactionFingerprintCache.set(guid, fingerprint);
+
+                while(this.reactionFingerprintCache.size > REACTION_GUID_CACHE_LIMIT) {
+                        const oldestKey = this.reactionFingerprintCache.keys().next().value;
+                        if(oldestKey === undefined) break;
+                        this.reactionFingerprintCache.delete(oldestKey);
+                }
+        }
+
+        private buildTapbackFingerprint(tapback: TapbackItem): string {
+                return [
+                        tapback.messageGuid,
+                        tapback.sender,
+                        tapback.tapbackType,
+                        tapback.tapbackEmoji ?? "",
+                        tapback.messageIndex,
+                        tapback.isAddition ? "add" : "remove"
+                ].join("|");
         }
 
         private convertMessage(message: MessageResponse): ConversationItem | undefined {

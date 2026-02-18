@@ -14,8 +14,10 @@
 - 2026-02-18 [CODE] Completed: Phase 2 direct socket ingestion landed (`new-message` / `updated-message` parsing, optional decrypt, partial GUID hydration, cursor updates, and overlap dedupe).
 - 2026-02-18 [USER] Goal: Phase 2 is implemented/validated; proceed with Phase 3 and update migration docs.
 - 2026-02-18 [CODE] Completed: Phase 3 outbound/attachment stability landed (thread-level confirmed-message identity merge, transport identity hardening for temp-guid/serverID transitions, and outbound+attachment regression coverage).
-- 2026-02-18 [CODE] Now: Realtime Phases 1-3 are complete; inbound path is socket-first with polling fallback/reconnect catch-up, outbound remains REST.
-- 2026-02-18 [CODE] Next: Execute Phase 4 tapback/modifier consistency validation.
+- 2026-02-18 [USER] Goal: Phases 0-3 implemented/validated; proceed with Phase 4 and update migration docs.
+- 2026-02-18 [CODE] Completed: Phase 4 tapback/modifier consistency landed (reaction GUID+fingerprint dedupe, same-GUID updated-message add/remove support, and overlap modifier regression coverage).
+- 2026-02-18 [CODE] Now: Realtime Phases 1-4 are complete; inbound path is socket-first with polling fallback/reconnect catch-up, outbound remains REST.
+- 2026-02-18 [CODE] Next: Execute Phase 5 fallback/catch-up resilience tuning (socket-healthy polling reduction + degraded-mode recovery rules).
 - 2026-02-18 [CODE] Phase 0 outcome: socket auth uses query `guid` credential; bearer auth is not required for handshake.
 - 2026-02-18 [CODE] Phase 0 outcome: existing `BlueBubblesAuthState.accessToken` is the socket `guid` source; no new credential persistence key is required.
 - 2026-02-18 [CODE] Phase 0 outcome: message events are `new-message` and `updated-message`; payload may be raw message or an envelope containing `data` plus optional `encrypted`/`partial` metadata.
@@ -41,21 +43,23 @@
 - 2026-02-18 [CODE] D012 ACTIVE: Duplicate suppression is fingerprint-based at message emission time to suppress socket/poll overlap while still allowing material message updates.
 - 2026-02-18 [CODE] D013 ACTIVE: Thread-level message reconciliation merges server updates by identity (`serverID`/`guid`) even after initial confirmation, preventing temp-guid/final-guid split messages.
 - 2026-02-18 [CODE] D014 ACTIVE: Message emission identity now prefers `serverID` keys and records GUID/temp-guid aliases to stabilize dedupe/reconciliation under mixed realtime+poll timing.
+- 2026-02-18 [CODE] D015 ACTIVE: Tapback dedupe keys reaction events by reaction GUID + tapback fingerprint so duplicate payloads are suppressed without dropping same-GUID add/remove updated-message transitions.
 
 ## Done (recent)
-- 2026-02-18 [CODE] Updated `DetailThread` message update reconciliation to merge by identity (`serverID`/`guid`) beyond the unconfirmed-only path.
-- 2026-02-18 [CODE] Hardened BlueBubbles transport emission identity handling (serverID-priority fingerprint keys + GUID/temp-guid alias tracking).
-- 2026-02-18 [CODE] Added Phase 3 outbound/attachment stability coverage in `test/connection/bluebubbles/bluebubblesCommunicationsManager.test.ts`.
-- 2026-02-18 [CODE] Added confirmed-guid-transition regression coverage in `test/components/messaging/thread/DetailThread.test.tsx`.
-- 2026-02-18 [TOOL] `npm test -- --runInBand test/components/messaging/thread/DetailThread.test.tsx test/connection/bluebubbles/bluebubblesCommunicationsManager.test.ts` passed (33 tests).
-- 2026-02-18 [TOOL] `npm test -- --runInBand` passed after Phase 3 work (13 suites, 79 tests).
-- 2026-02-18 [TOOL] `npm run build` passed after Phase 3 work (non-blocking webpack/service-worker warnings only).
+- 2026-02-18 [CODE] Updated BlueBubbles reaction dedupe to fingerprint by logical tapback state while keyed by reaction GUID.
+- 2026-02-18 [CODE] Added same-GUID emoji tapback update regression coverage in `test/connection/bluebubbles/bluebubblesCommunicationsManager.test.ts`.
+- 2026-02-18 [CODE] Added realtime/poll overlap modifier dedupe regression coverage in `test/connection/bluebubbles/bluebubblesCommunicationsManager.test.ts`.
+- 2026-02-18 [CODE] Updated `BLUEBUBBLES_REALTIME_IMPLEMENTATION_PLAN.md` + `project.md` for Phase 4 completion and Phase 5/6 focus.
+- 2026-02-18 [TOOL] `npm test -- --runInBand test/connection/bluebubbles/bluebubblesCommunicationsManager.test.ts` passed (34 tests).
+- 2026-02-18 [TOOL] `npm test -- --runInBand` passed after Phase 4 work (13 suites, 82 tests).
+- 2026-02-18 [TOOL] `npm run build` passed after Phase 4 work (webpack success; non-blocking size/precache warnings only).
 
 ## Open Questions
 - 2026-02-17 [ASSUMPTION] Does every target BlueBubbles server version guarantee `message.ROWID` monotonicity across relevant queries? UNCONFIRMED.
 - 2026-02-18 [ASSUMPTION] Does deployed runtime profile still show perceptible scroll judder after the recent fix? UNCONFIRMED pending manual QA.
 - 2026-02-18 [ASSUMPTION] Do all server/device combinations use currently parsed emoji-reaction prefix patterns (`Reacted <emoji> to`, `Removed ... <emoji> from`)? UNCONFIRMED pending live captures.
 - 2026-02-18 [ASSUMPTION] For target deployments, how often are socket events delivered with `encrypted: true` requiring client-side decrypt before hydration? UNCONFIRMED.
+- 2026-02-18 [ASSUMPTION] How frequently do deployed servers emit same-GUID tapback state transitions via `updated-message` (add -> remove) versus distinct reaction rows? UNCONFIRMED.
 
 ## Working set
 - 2026-02-18 [CODE] `src/connection/bluebubbles/bluebubblesCommunicationsManager.ts`
@@ -94,3 +98,7 @@
 - 2026-02-18 [TOOL] `npm test -- --runInBand` passed after Phase 3 changes (13 suites, 79 tests).
 - 2026-02-18 [TOOL] `npm run build` passed after Phase 3 changes (webpack success; non-blocking size/precache warnings only).
 - 2026-02-18 [CODE] Updated `BLUEBUBBLES_REALTIME_IMPLEMENTATION_PLAN.md` + `project.md` + `CONTINUITY.md` to mark Phase 3 completion and Phase 4 next steps.
+- 2026-02-18 [TOOL] `npm test -- --runInBand test/connection/bluebubbles/bluebubblesCommunicationsManager.test.ts` passed after Phase 4 changes (34 tests).
+- 2026-02-18 [TOOL] `npm test -- --runInBand` passed after Phase 4 changes (13 suites, 82 tests).
+- 2026-02-18 [TOOL] `npm run build` passed after Phase 4 changes (webpack success; non-blocking warnings only).
+- 2026-02-18 [CODE] Updated `BLUEBUBBLES_REALTIME_IMPLEMENTATION_PLAN.md` + `project.md` + `CONTINUITY.md` to mark Phase 4 completion and Phase 5 next steps.

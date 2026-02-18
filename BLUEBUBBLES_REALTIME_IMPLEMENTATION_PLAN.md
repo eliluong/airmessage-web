@@ -109,17 +109,20 @@ Replace interval-only polling with a socket-driven realtime channel while preser
 - [x] No regressions in upload progress, completion, or error handling.
 
 ## Phase 4: Tapback And Modifier Consistency
+### Status
+- Completed on 2026-02-18.
+
 ### Goals
 - Ensure received tapbacks continue to work across realtime and fallback paths.
 
-### Tasks
-- Route reaction-bearing `updated-message` events through existing modifier generation.
-- Preserve current emoji/text tapback parsing behavior.
-- Ensure modifier dedupe avoids repeated sound/playback side effects.
+### Delivered
+- Updated tapback dedupe to key reaction events by reaction GUID plus tapback fingerprint (`messageGuid`/sender/type/emoji/index/add-vs-remove), so exact duplicates are suppressed while same-GUID `updated-message` transitions (add -> remove) still emit modifiers.
+- Preserved existing emoji/SMS text tapback parsing behavior and added regression coverage for same-GUID emoji text reaction updates.
+- Added realtime overlap coverage proving duplicate modifiers are suppressed when the same tapback arrives from socket first and polling second.
 
 ### Exit Criteria
-- Received tapbacks display correctly in thread bubbles.
-- No duplicate tapback chips or repeated notification sounds.
+- [x] Received tapbacks display correctly in thread bubbles.
+- [x] No duplicate tapback chips or repeated notification sounds.
 
 ## Phase 5: Fallback, Catch-Up, And Resilience
 ### Goals
