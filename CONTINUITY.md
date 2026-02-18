@@ -10,8 +10,10 @@
 - 2026-02-18 [USER] Goal: Plan and execute Phase 0 for socket-first realtime migration.
 - 2026-02-18 [USER] Constraint: Scope is core message/attachment/tapback-receive only; exclude typing indicators, unsend/edit, and tapback sending; URL+password sign-in only.
 - 2026-02-18 [CODE] Completed: Phase 1 realtime channel foundation landed (`socket.io-client`, `realtimeChannel.ts`, manager lifecycle wiring, and `>=1.6.0` server gating).
-- 2026-02-18 [CODE] Now: Realtime channel health and event hooks trigger immediate polling catch-up; direct socket payload ingestion is not implemented yet.
-- 2026-02-18 [CODE] Next: Implement Phase 2 direct socket message ingestion (`new-message` / `updated-message`) with payload normalization/hydration and dedupe.
+- 2026-02-18 [USER] Goal: Execute Phase 2 realtime socket ingestion and update migration documentation.
+- 2026-02-18 [CODE] Completed: Phase 2 direct socket ingestion landed (`new-message` / `updated-message` parsing, optional decrypt, partial GUID hydration, cursor updates, and overlap dedupe).
+- 2026-02-18 [CODE] Now: Realtime events are processed directly through `processMessages(...)`; polling remains fallback and reconnect catch-up.
+- 2026-02-18 [CODE] Next: Execute Phase 3 outbound/attachment stability validation under mixed socket + poll timing.
 - 2026-02-18 [CODE] Phase 0 outcome: socket auth uses query `guid` credential; bearer auth is not required for handshake.
 - 2026-02-18 [CODE] Phase 0 outcome: existing `BlueBubblesAuthState.accessToken` is the socket `guid` source; no new credential persistence key is required.
 - 2026-02-18 [CODE] Phase 0 outcome: message events are `new-message` and `updated-message`; payload may be raw message or an envelope containing `data` plus optional `encrypted`/`partial` metadata.
@@ -32,16 +34,18 @@
 - 2026-02-18 [CODE] D007 ACTIVE: Socket auth uses query param `guid` sourced from `BlueBubblesAuthState.accessToken`; do not add separate raw-password persistence.
 - 2026-02-18 [CODE] D008 ACTIVE: Enable socket-first realtime only for server versions `>= 1.6.0`; keep polling-only mode below that floor.
 - 2026-02-18 [CODE] D009 ACTIVE: Hydrate socket payloads by GUID conditionally (partial/incomplete payloads only), not always-on.
-- 2026-02-18 [CODE] D010 ACTIVE: Phase 1 uses socket events as realtime health/catch-up triggers while polling remains active fallback; direct socket payload ingestion is deferred to Phase 2.
+- 2026-02-18 [CODE] D010 SUPERSEDED: Phase 1 socket event handling used hint-triggered catch-up polling only.
+- 2026-02-18 [CODE] D011 ACTIVE: Realtime payload normalization/decryption lives in `src/connection/bluebubbles/realtimePayload.ts` and supports raw/envelope + `JSON_STRING`/`BASE64` + CryptoJS AES envelope decrypt.
+- 2026-02-18 [CODE] D012 ACTIVE: Duplicate suppression is fingerprint-based at message emission time to suppress socket/poll overlap while still allowing material message updates.
 
 ## Done (recent)
-- 2026-02-18 [USER] User confirmed local dependency install for `socket.io-client` to unblock Phase 1 implementation.
-- 2026-02-18 [CODE] Added `src/connection/bluebubbles/realtimeChannel.ts` with socket lifecycle, reconnection, event subscribe/unsubscribe, and health/error callbacks.
-- 2026-02-18 [CODE] Integrated realtime channel setup/teardown into `BlueBubblesCommunicationsManager` with `>=1.6.0` gating.
-- 2026-02-18 [CODE] Added realtime hint hooks (`new-message`, `updated-message`, channel state/error) that trigger immediate poll catch-up while preserving polling fallback.
-- 2026-02-18 [CODE] Added unit tests in `test/connection/bluebubbles/realtimeChannel.test.ts` and lifecycle tests in `test/connection/bluebubbles/bluebubblesCommunicationsManager.test.ts`.
-- 2026-02-18 [TOOL] `npm test -- --runInBand` passed (12 suites, 65 tests) after Phase 1 changes.
-- 2026-02-18 [TOOL] `npm run build` passed after Phase 1 changes (non-blocking asset-size/service-worker warnings only).
+- 2026-02-18 [CODE] Added `src/connection/bluebubbles/realtimePayload.ts` for socket payload envelope parsing, encoding normalization, and CryptoJS AES-compatible decryption.
+- 2026-02-18 [CODE] Replaced Phase 1 realtime hint polling hooks with queued direct socket ingestion in `BlueBubblesCommunicationsManager`.
+- 2026-02-18 [CODE] Added conditional GUID hydration for partial/incomplete realtime payloads using `/message/query`.
+- 2026-02-18 [CODE] Added emission-time message fingerprint dedupe to suppress socket+poll overlap duplicates.
+- 2026-02-18 [CODE] Added `test/connection/bluebubbles/realtimePayload.test.ts` and expanded realtime ingestion coverage in `test/connection/bluebubbles/bluebubblesCommunicationsManager.test.ts`.
+- 2026-02-18 [TOOL] `npm test -- --runInBand` passed after Phase 2 implementation (13 suites, 74 tests).
+- 2026-02-18 [TOOL] `npm run build` passed after Phase 2 implementation (non-blocking webpack/service-worker warnings only).
 
 ## Open Questions
 - 2026-02-17 [ASSUMPTION] Does every target BlueBubbles server version guarantee `message.ROWID` monotonicity across relevant queries? UNCONFIRMED.
@@ -50,21 +54,20 @@
 - 2026-02-18 [ASSUMPTION] For target deployments, how often are socket events delivered with `encrypted: true` requiring client-side decrypt before hydration? UNCONFIRMED.
 
 ## Working set
-- 2026-02-18 [CODE] `src/connection/bluebubbles/realtimeChannel.ts`
 - 2026-02-18 [CODE] `src/connection/bluebubbles/bluebubblesCommunicationsManager.ts`
-- 2026-02-18 [CODE] `test/connection/bluebubbles/realtimeChannel.test.ts`
+- 2026-02-18 [CODE] `src/connection/bluebubbles/realtimePayload.ts`
 - 2026-02-18 [CODE] `test/connection/bluebubbles/bluebubblesCommunicationsManager.test.ts`
+- 2026-02-18 [CODE] `test/connection/bluebubbles/realtimePayload.test.ts`
+- 2026-02-18 [CODE] `test/connection/bluebubbles/realtimeChannel.test.ts`
+- 2026-02-18 [CODE] `src/connection/bluebubbles/realtimeChannel.ts`
 - 2026-02-18 [CODE] `src/connection/bluebubbles/api.ts`
 - 2026-02-18 [CODE] `src/connection/bluebubbles/session.ts`
 - 2026-02-18 [CODE] `src/connection/bluebubbles/types.ts`
 - 2026-02-18 [CODE] `BLUEBUBBLES_REALTIME_IMPLEMENTATION_PLAN.md`
 - 2026-02-18 [CODE] `project.md`
 - 2026-02-18 [CODE] `CONTINUITY.md`
-- 2026-02-18 [CODE] `package.json`
-- 2026-02-18 [CODE] `package-lock.json`
 
 ## Receipts
-- 2026-02-17 [TOOL] `npm run build` passed (webpack compile success; non-blocking asset-size warnings).
 - 2026-02-17 [TOOL] `npm test -- --runInBand test/connection/bluebubbles/bluebubblesCommunicationsManager.test.ts` passed.
 - 2026-02-17 [TOOL] `npm test -- --runInBand` passed (11 suites, 57 tests).
 - 2026-02-18 [TOOL] `npm run build` passed after scroll/lazy-load fix (non-blocking webpack asset/perf warnings only).
@@ -80,3 +83,6 @@
 - 2026-02-18 [TOOL] `npm test -- --runInBand test/connection/bluebubbles/realtimeChannel.test.ts test/connection/bluebubbles/bluebubblesCommunicationsManager.test.ts` passed (25 tests).
 - 2026-02-18 [TOOL] `npm test -- --runInBand` passed (12 suites, 65 tests).
 - 2026-02-18 [TOOL] `npm run build` passed after realtime-channel integration (non-blocking warnings only).
+- 2026-02-18 [TOOL] `npm test -- --runInBand test/connection/bluebubbles/realtimePayload.test.ts test/connection/bluebubbles/bluebubblesCommunicationsManager.test.ts` passed (31 tests).
+- 2026-02-18 [TOOL] `npm test -- --runInBand` passed after Phase 2 implementation (13 suites, 74 tests).
+- 2026-02-18 [TOOL] `npm run build` passed after Phase 2 implementation (webpack success; non-blocking size/precache warnings only).

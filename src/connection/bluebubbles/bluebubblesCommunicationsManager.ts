@@ -59,6 +59,10 @@ import BlueBubblesRealtimeChannel, {
         BlueBubblesRealtimeConnectionState,
         BlueBubblesRealtimeEventName
 } from "./realtimeChannel";
+import {
+        needsRealtimeHydration,
+        parseBlueBubblesRealtimePayload
+} from "./realtimePayload";
 import {compareVersions} from "../../util/versionUtils";
 
 const POLL_INTERVAL_MS = 5000;
@@ -67,6 +71,7 @@ const TAPBACK_ADD_OFFSET = 2000;
 const TAPBACK_REMOVE_OFFSET = 3000;
 const TEXT_TAPBACK_CACHE_LIMIT = 50;
 const REACTION_GUID_CACHE_LIMIT = 5000;
+const EMITTED_MESSAGE_CACHE_LIMIT = 5000;
 const LINK_SCAN_QUERY_LIMIT = 1000;
 const MIN_REALTIME_SERVER_VERSION = [1, 6, 0];
 
@@ -139,6 +144,8 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
         private realtimeChannel: BlueBubblesRealtimeChannel | undefined;
         private realtimeChannelState: BlueBubblesRealtimeConnectionState = "idle";
         private readonly realtimeUnsubscribeCallbacks: Array<() => void> = [];
+        private realtimeEventQueue: Promise<void> = Promise.resolve();
+        private readonly emittedMessageFingerprints = new Map<string, string>();
 
         constructor(dataProxy: DataProxy, auth: BlueBubblesAuthState, private readonly options: {onError?: (error: Error) => void} = {}) {
                 super(dataProxy);
@@ -402,9 +409,7 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
 
                         const response = await uploadAttachmentWithProgress(this.auth, payload, progressCallback);
                         const {items, modifiers} = this.processMessages([response.data]);
-                        if(items.length > 0) {
-                                this.listener?.onMessageUpdate(items);
-                        }
+                        this.emitMessageItems(items, false);
                         if(modifiers.length > 0) {
                                 this.listener?.onModifierUpdate(modifiers);
                         }
@@ -478,6 +483,8 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 this.realtimeChannelState = "idle";
                 this.lastRowId = undefined;
                 this.lastMessageTimestamp = undefined;
+                this.emittedMessageFingerprints.clear();
+                this.realtimeEventQueue = Promise.resolve();
                 this.teardownRealtimeChannel();
                 try {
                         this.metadata = await fetchServerMetadata(this.auth);
@@ -511,6 +518,7 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
         private teardown() {
                 this.isClosed = true;
                 this.hasStartedPolling = false;
+                this.realtimeEventQueue = Promise.resolve();
                 this.teardownRealtimeChannel();
                 if(this.pollTimer) {
                         clearInterval(this.pollTimer);
@@ -552,8 +560,8 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                         onError: (error) => this.handleRealtimeChannelError(error)
                 });
                 this.realtimeChannel = channel;
-                this.realtimeUnsubscribeCallbacks.push(channel.subscribe("new-message", (payload) => this.handleRealtimeEventHint("new-message", payload)));
-                this.realtimeUnsubscribeCallbacks.push(channel.subscribe("updated-message", (payload) => this.handleRealtimeEventHint("updated-message", payload)));
+                this.realtimeUnsubscribeCallbacks.push(channel.subscribe("new-message", (payload) => this.queueRealtimeEvent("new-message", payload)));
+                this.realtimeUnsubscribeCallbacks.push(channel.subscribe("updated-message", (payload) => this.queueRealtimeEvent("updated-message", payload)));
                 channel.connect();
         }
 
@@ -594,11 +602,129 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 }
         }
 
-        private handleRealtimeEventHint(eventName: BlueBubblesRealtimeEventName, _payload: unknown): void {
-                logBlueBubblesDebug("Realtime message hint", {
+        private queueRealtimeEvent(eventName: BlueBubblesRealtimeEventName, payload: unknown): void {
+                this.realtimeEventQueue = this.realtimeEventQueue
+                        .then(() => this.ingestRealtimeEvent(eventName, payload))
+                        .catch((error) => {
+                                this.handleRealtimeEventError(eventName, payload, error);
+                        });
+        }
+
+        private async ingestRealtimeEvent(eventName: BlueBubblesRealtimeEventName, payload: unknown): Promise<void> {
+                if(this.isClosed) return;
+
+                const parsed = await parseBlueBubblesRealtimePayload(payload, this.auth.accessToken);
+                const resolvedMessages: MessageResponse[] = [];
+
+                for(const candidate of parsed.messages) {
+                        const resolved = await this.resolveRealtimeMessageCandidate(candidate, parsed.partial);
+                        if(resolved) {
+                                resolvedMessages.push(resolved);
+                        }
+                }
+
+                if(resolvedMessages.length === 0) {
+                        logBlueBubblesDebug("Realtime message event skipped", {
+                                eventName,
+                                channelState: this.realtimeChannelState,
+                                source: parsed.source,
+                                encoding: parsed.encoding,
+                                partial: parsed.partial,
+                                encrypted: parsed.encrypted,
+                                reason: "no-resolved-messages"
+                        });
+                        if(this.hasStartedPolling) {
+                                this.requestPollCatchup();
+                        }
+                        return;
+                }
+
+                this.listener?.onPacket();
+
+                const sorted = resolvedMessages.slice().sort((a, b) => a.dateCreated - b.dateCreated);
+                this.updatePollCursor(sorted);
+                const {items, modifiers} = this.processMessages(sorted);
+                const emittedItems = this.emitMessageItems(items, true);
+                if(modifiers.length > 0) {
+                        this.listener?.onModifierUpdate(modifiers);
+                }
+
+                logBlueBubblesDebug("Realtime message event", {
                         eventName,
-                        channelState: this.realtimeChannelState
+                        channelState: this.realtimeChannelState,
+                        source: parsed.source,
+                        encoding: parsed.encoding,
+                        partial: parsed.partial,
+                        encrypted: parsed.encrypted,
+                        receivedMessages: parsed.messages.length,
+                        resolvedMessages: resolvedMessages.length,
+                        emittedItems,
+                        emittedModifiers: modifiers.length,
+                        lastRowId: this.lastRowId,
+                        lastTimestamp: this.lastMessageTimestamp
                 });
+        }
+
+        private async resolveRealtimeMessageCandidate(
+                candidate: Partial<MessageResponse>,
+                envelopePartial: boolean
+        ): Promise<MessageResponse | undefined> {
+                if(!needsRealtimeHydration(candidate, envelopePartial)) {
+                        return candidate as MessageResponse;
+                }
+
+                const guidCandidates = new Set<string>();
+                const rawGuid = typeof candidate.guid === "string" ? candidate.guid.trim() : undefined;
+                const normalizedGuid = normalizeMessageGuid(rawGuid);
+                if(rawGuid) guidCandidates.add(rawGuid);
+                if(normalizedGuid) guidCandidates.add(normalizedGuid);
+
+                if(guidCandidates.size === 0) {
+                        console.warn("[BlueBubbles] Realtime message requires hydration but no GUID was provided", {
+                                candidate
+                        });
+                        return undefined;
+                }
+
+                for(const guid of guidCandidates) {
+                        const hydrated = await this.fetchMessageByGuid(guid);
+                        if(hydrated) {
+                                return hydrated;
+                        }
+                }
+
+                console.warn("[BlueBubbles] Failed to hydrate realtime message by GUID", {
+                        guidCandidates: Array.from(guidCandidates)
+                });
+                return undefined;
+        }
+
+        private async fetchMessageByGuid(guid: string): Promise<MessageResponse | undefined> {
+                const response = await queryMessages(this.auth, {
+                        sort: "DESC",
+                        limit: 1,
+                        with: ["attachments", "chat", "handle", "message.attributedbody", "message.messageSummaryInfo", "message.payloadData"],
+                        where: [
+                                {
+                                        statement: "message.guid = :guid",
+                                        args: {guid}
+                                }
+                        ]
+                });
+                const message = response.data?.[0];
+                if(!message) return undefined;
+                return message;
+        }
+
+        private handleRealtimeEventError(eventName: BlueBubblesRealtimeEventName, payload: unknown, error: unknown): void {
+                if(this.isClosed) return;
+                const normalizedError = error instanceof Error ? error : new Error(String(error));
+                console.warn("[BlueBubbles] Realtime message ingestion failed", {
+                        eventName,
+                        payload,
+                        error: normalizedError
+                });
+                this.options.onError?.(normalizedError);
                 if(this.hasStartedPolling) {
                         this.requestPollCatchup();
                 }
@@ -648,6 +774,119 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 return didAdvance;
         }
 
+        private emitMessageItems(items: ConversationItem[], newestFirst: boolean): number {
+                const deduped = this.filterDuplicateConversationItems(items);
+                if(deduped.length === 0) return 0;
+
+                const ordered = newestFirst ? deduped.slice().reverse() : deduped;
+                this.listener?.onMessageUpdate(ordered);
+                return deduped.length;
+        }
+
+        private filterDuplicateConversationItems(items: ConversationItem[]): ConversationItem[] {
+                const deduped: ConversationItem[] = [];
+
+                for(const item of items) {
+                        const key = this.buildConversationItemFingerprintKey(item);
+                        if(!key) {
+                                deduped.push(item);
+                                continue;
+                        }
+
+                        const fingerprint = this.buildConversationItemFingerprint(item);
+                        const previousFingerprint = this.emittedMessageFingerprints.get(key);
+                        if(previousFingerprint === fingerprint) {
+                                continue;
+                        }
+
+                        if(this.emittedMessageFingerprints.has(key)) {
+                                this.emittedMessageFingerprints.delete(key);
+                        }
+                        this.emittedMessageFingerprints.set(key, fingerprint);
+                        while(this.emittedMessageFingerprints.size > EMITTED_MESSAGE_CACHE_LIMIT) {
+                                const oldestKey = this.emittedMessageFingerprints.keys().next().value;
+                                if(oldestKey === undefined) break;
+                                this.emittedMessageFingerprints.delete(oldestKey);
+                        }
+
+                        deduped.push(item);
+                }
+
+                return deduped;
+        }
+
+        private buildConversationItemFingerprintKey(item: ConversationItem): string | undefined {
+                switch(item.itemType) {
+                        case ConversationItemType.Message: {
+                                const message = item as MessageItem;
+                                if(message.guid) return `message:guid:${message.guid}`;
+                                if(message.serverID !== undefined) return `message:server:${message.serverID}`;
+                                return undefined;
+                        }
+                        case ConversationItemType.ParticipantAction:
+                                if(item.guid) return `participant:${item.guid}`;
+                                if(item.serverID !== undefined) return `participant:server:${item.serverID}`;
+                                return undefined;
+                        case ConversationItemType.ChatRenameAction:
+                                if(item.guid) return `rename:${item.guid}`;
+                                if(item.serverID !== undefined) return `rename:server:${item.serverID}`;
+                                return undefined;
+                        default:
+                                return undefined;
+                }
+        }
+
+        private buildConversationItemFingerprint(item: ConversationItem): string {
+                switch(item.itemType) {
+                        case ConversationItemType.Message: {
+                                const message = item as MessageItem;
+                                const attachmentFingerprint = message.attachments
+                                        .map((attachment) => `${attachment.guid}:${attachment.name}:${attachment.type}:${attachment.size ?? ""}`)
+                                        .join("|");
+                                const tapbackFingerprint = message.tapbacks
+                                        .map((tapback) => `${tapback.sender}:${tapback.tapbackType}:${tapback.tapbackEmoji ?? ""}:${tapback.isAddition ? "add" : "remove"}`)
+                                        .sort()
+                                        .join("|");
+                                return [
+                                        message.serverID ?? "",
+                                        message.guid ?? "",
+                                        message.chatGuid ?? "",
+                                        message.date.getTime(),
+                                        message.sender ?? "",
+                                        message.text ?? "",
+                                        message.subject ?? "",
+                                        message.sendStyle ?? "",
+                                        message.status ?? "",
+                                        message.statusDate?.getTime() ?? "",
+                                        message.error?.code ?? "",
+                                        message.error?.detail ?? "",
+                                        attachmentFingerprint,
+                                        tapbackFingerprint
+                                ].join("::");
+                        }
+                        case ConversationItemType.ParticipantAction:
+                                return [
+                                        item.serverID ?? "",
+                                        item.guid ?? "",
+                                        item.chatGuid ?? "",
+                                        item.date.getTime(),
+                                        item.type,
+                                        item.user ?? "",
+                                        item.target ?? ""
+                                ].join("::");
+                        case ConversationItemType.ChatRenameAction:
+                                return [
+                                        item.serverID ?? "",
+                                        item.guid ?? "",
+                                        item.chatGuid ?? "",
+                                        item.date.getTime(),
+                                        item.user ?? "",
+                                        item.chatName ?? ""
+                                ].join("::");
+                }
+                return "";
+        }
+
         private async pollUpdates(source: "interval" | "catchup" = "interval") {
                 if(this.pollInFlight) return;
                 this.pollInFlight = true;
@@ -676,12 +915,8 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                                 const sorted = responseData.slice().sort((a, b) => a.dateCreated - b.dateCreated);
                                 const cursorAdvanced = this.updatePollCursor(sorted);
                                 const {items, modifiers} = this.processMessages(sorted);
-                                totalItems += items.length;
+                                totalItems += this.emitMessageItems(items, true);
                                 totalModifiers += modifiers.length;
-                                if(items.length > 0) {
-                                        const newestFirstItems = items.slice().reverse();
-                                        this.listener?.onMessageUpdate(newestFirstItems);
-                                }
                                 if(modifiers.length > 0) {
                                         this.listener?.onModifierUpdate(modifiers);
                                 }
@@ -852,9 +1087,7 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 };
                 const response: MessageSendResponse = await sendTextMessage(this.auth, payload);
                 const {items, modifiers} = this.processMessages([response.data]);
-                if(items.length > 0) {
-                        this.listener?.onMessageUpdate(items);
-                }
+                this.emitMessageItems(items, false);
                 if(modifiers.length > 0) {
                         this.listener?.onModifierUpdate(modifiers);
                 }

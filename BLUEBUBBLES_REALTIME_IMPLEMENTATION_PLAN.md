@@ -69,21 +69,24 @@ Replace interval-only polling with a socket-driven realtime channel while preser
 - [x] Connection state transitions remain visible through existing `connectionManager` listeners.
 
 ## Phase 2: Realtime Message Ingestion
+### Status
+- Completed on 2026-02-18.
+
 ### Goals
 - Route socket message events through the same canonical parsing/reconciliation path used today.
 
-### Tasks
-- Replace Phase 1 hint-based catch-up polling for socket events with direct socket payload ingestion.
-- Handle `new-message` and `updated-message` events.
-- Normalize/decrypt payloads when needed and map to `MessageResponse`-compatible shapes.
-- Reuse `processMessages(...)` to emit `onMessageUpdate` / `onModifierUpdate`.
-- Update cursor markers (`lastRowId`, timestamps) from socket events to preserve catch-up correctness.
-- If an event payload is partial, hydrate by GUID via REST before processing.
-- Add strict dedupe for duplicate socket + poll delivery overlap.
+### Delivered
+- Replaced Phase 1 hint-only socket hooks with queued direct ingestion of `new-message` and `updated-message` events in `BlueBubblesCommunicationsManager`.
+- Added `src/connection/bluebubbles/realtimePayload.ts` to normalize raw/envelope payloads, decode `JSON_STRING` / `BASE64`, and decrypt `encrypted` payloads using the BlueBubbles CryptoJS-compatible AES format.
+- Added conditional GUID hydration via `/message/query` when socket payloads are partial/incomplete before passing data to `processMessages(...)`.
+- Routed realtime-ingested messages through existing `processMessages(...)` and modifier emission flow (`onMessageUpdate` / `onModifierUpdate`).
+- Advanced polling cursor markers (`lastRowId`, `lastMessageTimestamp`) from realtime events to keep catch-up behavior deterministic.
+- Added duplicate suppression for overlapping socket/poll/outbound message emissions using item fingerprinting.
+- Added unit coverage in `test/connection/bluebubbles/realtimePayload.test.ts` and expanded realtime manager ingestion tests in `test/connection/bluebubbles/bluebubblesCommunicationsManager.test.ts`.
 
 ### Exit Criteria
-- Inbound messages render in near realtime.
-- No duplicate conversation items/modifiers under mixed socket/poll conditions.
+- [x] Inbound messages render in near realtime.
+- [x] No duplicate conversation items/modifiers under mixed socket/poll conditions.
 
 ## Phase 3: Outbound And Attachment Stability
 ### Goals

@@ -585,6 +585,187 @@ describe("polling catch-up", () => {
         });
 });
 
+describe("realtime message ingestion", () => {
+        class DummyProxy extends DataProxy {
+                public override readonly proxyType = "dummy";
+                public override start(): void {/* no-op */}
+                public override stop(): void {/* no-op */}
+                public override send(_data: ArrayBuffer, _encrypt: boolean): void {/* no-op */}
+        }
+
+        const auth: BlueBubblesAuthState = {serverUrl: "", accessToken: "guid-token"};
+        const chatGuid = "chat-guid";
+
+        const createRealtimeMessage = (rowId: number, overrides: Partial<MessageResponse> = {}): MessageResponse => ({
+                originalROWID: rowId,
+                guid: `message-${rowId}`,
+                text: `message ${rowId}`,
+                handleId: 1,
+                otherHandle: 0,
+                chats: [
+                        {
+                                originalROWID: 1,
+                                guid: chatGuid,
+                                participants: [],
+                                style: 0,
+                                chatIdentifier: chatGuid,
+                                isArchived: false,
+                                displayName: ""
+                        } as ChatResponse
+                ],
+                attachments: [],
+                subject: "",
+                error: 0,
+                dateCreated: rowId * 1000,
+                dateRead: null,
+                dateDelivered: null,
+                isFromMe: false,
+                isArchived: false,
+                itemType: 0,
+                groupTitle: null,
+                groupActionType: 0,
+                balloonBundleId: null,
+                associatedMessageGuid: null,
+                associatedMessageType: null,
+                expressiveSendStyleId: null,
+                handle: {
+                        originalROWID: 1,
+                        address: "friend@example.com",
+                        service: "iMessage"
+                } as HandleResponse,
+                ...overrides
+        } as MessageResponse);
+
+        const createListener = () => ({
+                onPacket: jest.fn(),
+                onIDUpdate: jest.fn(),
+                onMessageUpdate: jest.fn(),
+                onModifierUpdate: jest.fn()
+        });
+
+        afterEach(() => {
+                jest.restoreAllMocks();
+        });
+
+        it("ingests full raw socket message payloads without hydration", async () => {
+                const manager = new BlueBubblesCommunicationsManager(new DummyProxy(), auth);
+                const listener = createListener();
+                const querySpy = jest.spyOn(blueBubblesApi, "queryMessages");
+                (manager as unknown as {listener: unknown}).listener = listener;
+
+                const message = createRealtimeMessage(101);
+                await (manager as unknown as {ingestRealtimeEvent(eventName: "new-message", payload: unknown): Promise<void>})
+                        .ingestRealtimeEvent("new-message", message);
+
+                expect(querySpy).not.toHaveBeenCalled();
+                expect(listener.onPacket).toHaveBeenCalledTimes(1);
+                expect(listener.onMessageUpdate).toHaveBeenCalledTimes(1);
+                expect(listener.onMessageUpdate.mock.calls[0][0][0]).toEqual(
+                        expect.objectContaining({
+                                guid: message.guid,
+                                serverID: message.originalROWID
+                        })
+                );
+                expect((manager as unknown as {lastRowId: number}).lastRowId).toBe(101);
+        });
+
+        it("ingests envelope JSON string payloads", async () => {
+                const manager = new BlueBubblesCommunicationsManager(new DummyProxy(), auth);
+                const listener = createListener();
+                (manager as unknown as {listener: unknown}).listener = listener;
+
+                const message = createRealtimeMessage(102);
+                await (manager as unknown as {ingestRealtimeEvent(eventName: "updated-message", payload: unknown): Promise<void>})
+                        .ingestRealtimeEvent("updated-message", {
+                                data: JSON.stringify(message),
+                                encoding: "JSON_STRING"
+                        });
+
+                expect(listener.onMessageUpdate).toHaveBeenCalledTimes(1);
+                expect(listener.onMessageUpdate.mock.calls[0][0][0]).toEqual(
+                        expect.objectContaining({
+                                guid: message.guid,
+                                serverID: message.originalROWID
+                        })
+                );
+        });
+
+        it("hydrates partial payloads by message GUID before processing", async () => {
+                const manager = new BlueBubblesCommunicationsManager(new DummyProxy(), auth);
+                const listener = createListener();
+                (manager as unknown as {listener: unknown}).listener = listener;
+
+                const hydratedMessage = createRealtimeMessage(103, {
+                        guid: "hydrated-guid",
+                        text: "hydrated"
+                });
+                const querySpy = jest.spyOn(blueBubblesApi, "queryMessages")
+                        .mockResolvedValueOnce({data: [hydratedMessage]});
+
+                await (manager as unknown as {ingestRealtimeEvent(eventName: "updated-message", payload: unknown): Promise<void>})
+                        .ingestRealtimeEvent("updated-message", {
+                                data: {
+                                        guid: "hydrated-guid",
+                                        chats: hydratedMessage.chats
+                                },
+                                partial: true
+                        });
+
+                expect(querySpy).toHaveBeenCalledTimes(1);
+                expect(querySpy.mock.calls[0][1]).toEqual(expect.objectContaining({
+                        where: [
+                                {
+                                        statement: "message.guid = :guid",
+                                        args: {guid: "hydrated-guid"}
+                                }
+                        ]
+                }));
+                expect(listener.onMessageUpdate).toHaveBeenCalledTimes(1);
+                expect(listener.onMessageUpdate.mock.calls[0][0][0]).toEqual(
+                        expect.objectContaining({
+                                guid: "hydrated-guid",
+                                serverID: 103
+                        })
+                );
+        });
+
+        it("suppresses duplicate poll emissions when the same message already arrived via realtime", async () => {
+                const manager = new BlueBubblesCommunicationsManager(new DummyProxy(), auth);
+                const listener = createListener();
+                (manager as unknown as {listener: unknown}).listener = listener;
+
+                const message = createRealtimeMessage(200, {guid: "overlap-guid"});
+                await (manager as unknown as {ingestRealtimeEvent(eventName: "new-message", payload: unknown): Promise<void>})
+                        .ingestRealtimeEvent("new-message", message);
+
+                (manager as unknown as {lastRowId: number}).lastRowId = 199;
+                const querySpy = jest.spyOn(blueBubblesApi, "queryMessages")
+                        .mockResolvedValueOnce({data: [message]})
+                        .mockResolvedValueOnce({data: []});
+
+                await (manager as unknown as {pollUpdates(): Promise<void>}).pollUpdates();
+
+                expect(querySpy).toHaveBeenCalledTimes(1);
+                expect(listener.onMessageUpdate).toHaveBeenCalledTimes(1);
+        });
+
+        it("emits updates for the same message GUID when message content changes", async () => {
+                const manager = new BlueBubblesCommunicationsManager(new DummyProxy(), auth);
+                const listener = createListener();
+                (manager as unknown as {listener: unknown}).listener = listener;
+
+                const initial = createRealtimeMessage(300, {guid: "status-guid", text: "first text"});
+                const updated = createRealtimeMessage(300, {guid: "status-guid", text: "updated text"});
+
+                await (manager as unknown as {ingestRealtimeEvent(eventName: "new-message", payload: unknown): Promise<void>})
+                        .ingestRealtimeEvent("new-message", initial);
+                await (manager as unknown as {ingestRealtimeEvent(eventName: "updated-message", payload: unknown): Promise<void>})
+                        .ingestRealtimeEvent("updated-message", updated);
+
+                expect(listener.onMessageUpdate).toHaveBeenCalledTimes(2);
+        });
+});
+
 describe("realtime channel lifecycle", () => {
         class DummyProxy extends DataProxy {
                 public override readonly proxyType = "dummy";
