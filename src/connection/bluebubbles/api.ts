@@ -84,11 +84,115 @@ async function requestJson<T>(auth: BlueBubblesAuthState, path: string, init?: R
         return response.json() as Promise<T>;
 }
 
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+        if(value && typeof value === "object") {
+                return value as Record<string, unknown>;
+        }
+        return undefined;
+}
+
+function extractDataRecord(value: unknown): Record<string, unknown> | undefined {
+        const record = asRecord(value);
+        if(!record) return undefined;
+
+        const nestedData = asRecord(record.data);
+        return nestedData ?? record;
+}
+
+function readString(record: Record<string, unknown>, ...keys: string[]): string | undefined {
+        for(const key of keys) {
+                const value = record[key];
+                if(typeof value === "string") {
+                        return value;
+                }
+        }
+        return undefined;
+}
+
+function readBoolean(record: Record<string, unknown>, ...keys: string[]): boolean | undefined {
+        for(const key of keys) {
+                const value = record[key];
+                if(typeof value === "boolean") {
+                        return value;
+                }
+        }
+        return undefined;
+}
+
+function readNumberOrNull(record: Record<string, unknown>, ...keys: string[]): number | null | undefined {
+        for(const key of keys) {
+                const value = record[key];
+                if(typeof value === "number" || value === null) {
+                        return value;
+                }
+        }
+        return undefined;
+}
+
+function readStringArray(record: Record<string, unknown>, ...keys: string[]): string[] | undefined {
+        for(const key of keys) {
+                const value = record[key];
+                if(Array.isArray(value) && value.every((item) => typeof item === "string")) {
+                        return value;
+                }
+        }
+        return undefined;
+}
+
+function normalizeServerInfoPayload(rawPayload: unknown): ServerMetadataResponse {
+        const payload = extractDataRecord(rawPayload);
+        if(!payload) {
+                throw new Error("The server returned invalid metadata.");
+        }
+
+        const normalized: ServerMetadataResponse = {
+                computer_id: readString(payload, "computer_id", "computerId", "computerID") ?? "",
+                os_version: readString(payload, "os_version", "osVersion") ?? "",
+                server_version: readString(payload, "server_version", "serverVersion") ?? "",
+                private_api: readBoolean(payload, "private_api", "privateApi") ?? false,
+                helper_connected: readBoolean(payload, "helper_connected", "helperConnected") ?? false,
+                proxy_service: readString(payload, "proxy_service", "proxyService") ?? "",
+                detected_icloud: readString(payload, "detected_icloud", "detectedIcloud") ?? "",
+                detected_imessage: readString(payload, "detected_imessage", "detectedImessage") ?? "",
+                macos_time_sync: readNumberOrNull(payload, "macos_time_sync", "macosTimeSync") ?? null,
+                local_ipv4s: readStringArray(payload, "local_ipv4s", "localIpv4s") ?? [],
+                local_ipv6s: readStringArray(payload, "local_ipv6s", "localIpv6s") ?? []
+        };
+
+        return normalized;
+}
+
+function normalizeServerFeaturesPayload(rawPayload: unknown): ServerFeaturesResponse {
+        const payload = extractDataRecord(rawPayload);
+        if(!payload) {
+                return {};
+        }
+
+        const privateApi = readBoolean(payload, "private_api", "privateApi");
+        const helperConnected = readBoolean(payload, "helper_connected", "helperConnected");
+        const deliveredReceipts = readBoolean(payload, "delivered_receipts", "deliveredReceipts");
+        const readReceipts = readBoolean(payload, "read_receipts", "readReceipts");
+        const reactions = readBoolean(payload, "reactions");
+        const typingIndicators = readBoolean(payload, "typing_indicators", "typingIndicators");
+
+        return {
+                ...(payload as ServerFeaturesResponse),
+                ...(privateApi !== undefined ? {private_api: privateApi} : {}),
+                ...(helperConnected !== undefined ? {helper_connected: helperConnected} : {}),
+                ...(deliveredReceipts !== undefined ? {delivered_receipts: deliveredReceipts} : {}),
+                ...(readReceipts !== undefined ? {read_receipts: readReceipts} : {}),
+                ...(reactions !== undefined ? {reactions} : {}),
+                ...(typingIndicators !== undefined ? {typing_indicators: typingIndicators} : {})
+        };
+}
+
 export async function fetchServerMetadata(auth: BlueBubblesAuthState): Promise<ServerMetadataResponse> {
-        const info = await requestJson<ServerMetadataResponse>(auth, "/server/info", {method: "GET"});
+        const infoResponse = await requestJson<unknown>(auth, "/server/info", {method: "GET"});
+        const info = normalizeServerInfoPayload(infoResponse);
 
         try {
-                const features = await requestJson<ServerFeaturesResponse>(auth, "/server/features", {method: "GET"});
+                const featuresResponse = await requestJson<unknown>(auth, "/server/features", {method: "GET"});
+                const features = normalizeServerFeaturesPayload(featuresResponse);
                 return {
                         ...info,
                         private_api: features.private_api ?? info.private_api ?? false,

@@ -1,10 +1,18 @@
-import {MessageModifierType, MessageStatusCode, TapbackType} from "../../../src/data/stateCodes";
+import {ConnectionErrorCode, MessageModifierType, MessageStatusCode, TapbackType} from "../../../src/data/stateCodes";
 import BlueBubblesCommunicationsManager from "../../../src/connection/bluebubbles/bluebubblesCommunicationsManager";
+import BlueBubblesRealtimeChannel from "../../../src/connection/bluebubbles/realtimeChannel";
 import DataProxy from "../../../src/connection/dataProxy";
 import * as blueBubblesApi from "../../../src/connection/bluebubbles/api";
 import * as debugLogging from "../../../src/connection/bluebubbles/debugLogging";
 import type {BlueBubblesAuthState} from "../../../src/connection/bluebubbles/session";
-import type {ChatResponse, HandleResponse, MessageResponse} from "../../../src/connection/bluebubbles/types";
+import type {
+        AttachmentResponse,
+        ChatResponse,
+        HandleResponse,
+        MessageQueryResponse,
+        MessageResponse,
+        ServerMetadataResponse
+} from "../../../src/connection/bluebubbles/types";
 import {__testables} from "../../../src/connection/bluebubbles/bluebubblesCommunicationsManager";
 
 describe("mapTapback", () => {
@@ -455,6 +463,31 @@ describe("processMessages iMessage emoji tapbacks", () => {
                 expect(tapback.tapbackEmoji).toBe("🎊");
                 expect(tapback.isAddition).toBe(false);
         });
+
+        it("processes same-guid emoji reaction updates when the payload changes", () => {
+                const manager = createManager();
+                const baseMessage = createBaseMessage();
+                const reaction = createEmojiReaction({
+                        guid: "REACT-SAME",
+                        dateCreated: 1_100,
+                        text: `Reacted 🎊 to “${baseText}”`
+                });
+                const removal = createEmojiReaction({
+                        guid: "REACT-SAME",
+                        dateCreated: 1_200,
+                        text: `Removed reaction 🎊 from “${baseText}”`
+                });
+
+                (manager as unknown as {processMessages(messages: MessageResponse[]): {items: unknown[]; modifiers: unknown[]}}).processMessages([baseMessage, reaction]);
+                const {modifiers} = (manager as unknown as {processMessages(messages: MessageResponse[]): {items: unknown[]; modifiers: unknown[]}}).processMessages([removal]);
+
+                expect(modifiers).toHaveLength(1);
+                const tapback = modifiers[0] as unknown as {isAddition: boolean; tapbackType: TapbackType; tapbackEmoji?: string; messageGuid: string};
+                expect(tapback.messageGuid).toBe(baseMessageGuid);
+                expect(tapback.tapbackType).toBe(TapbackType.Emoji);
+                expect(tapback.tapbackEmoji).toBe("🎊");
+                expect(tapback.isAddition).toBe(false);
+        });
 });
 
 describe("polling catch-up", () => {
@@ -581,5 +614,690 @@ describe("polling catch-up", () => {
                         endRowId: 200,
                         endReason: "no-data"
                 }));
+        });
+});
+
+describe("realtime message ingestion", () => {
+        class DummyProxy extends DataProxy {
+                public override readonly proxyType = "dummy";
+                public override start(): void {/* no-op */}
+                public override stop(): void {/* no-op */}
+                public override send(_data: ArrayBuffer, _encrypt: boolean): void {/* no-op */}
+        }
+
+        const auth: BlueBubblesAuthState = {serverUrl: "", accessToken: "guid-token"};
+        const chatGuid = "chat-guid";
+
+        const createRealtimeMessage = (rowId: number, overrides: Partial<MessageResponse> = {}): MessageResponse => ({
+                originalROWID: rowId,
+                guid: `message-${rowId}`,
+                text: `message ${rowId}`,
+                handleId: 1,
+                otherHandle: 0,
+                chats: [
+                        {
+                                originalROWID: 1,
+                                guid: chatGuid,
+                                participants: [],
+                                style: 0,
+                                chatIdentifier: chatGuid,
+                                isArchived: false,
+                                displayName: ""
+                        } as ChatResponse
+                ],
+                attachments: [],
+                subject: "",
+                error: 0,
+                dateCreated: rowId * 1000,
+                dateRead: null,
+                dateDelivered: null,
+                isFromMe: false,
+                isArchived: false,
+                itemType: 0,
+                groupTitle: null,
+                groupActionType: 0,
+                balloonBundleId: null,
+                associatedMessageGuid: null,
+                associatedMessageType: null,
+                expressiveSendStyleId: null,
+                handle: {
+                        originalROWID: 1,
+                        address: "friend@example.com",
+                        service: "iMessage"
+                } as HandleResponse,
+                ...overrides
+        } as MessageResponse);
+
+        const createListener = () => ({
+                onPacket: jest.fn(),
+                onIDUpdate: jest.fn(),
+                onMessageUpdate: jest.fn(),
+                onModifierUpdate: jest.fn()
+        });
+
+        const flushMicrotasks = async () => {
+                await Promise.resolve();
+                await Promise.resolve();
+        };
+
+        afterEach(() => {
+                jest.restoreAllMocks();
+        });
+
+        it("ingests full raw socket message payloads without hydration", async () => {
+                const manager = new BlueBubblesCommunicationsManager(new DummyProxy(), auth);
+                const listener = createListener();
+                const querySpy = jest.spyOn(blueBubblesApi, "queryMessages");
+                (manager as unknown as {listener: unknown}).listener = listener;
+
+                const message = createRealtimeMessage(101);
+                await (manager as unknown as {ingestRealtimeEvent(eventName: "new-message", payload: unknown): Promise<void>})
+                        .ingestRealtimeEvent("new-message", message);
+
+                expect(querySpy).not.toHaveBeenCalled();
+                expect(listener.onPacket).toHaveBeenCalledTimes(1);
+                expect(listener.onMessageUpdate).toHaveBeenCalledTimes(1);
+                expect(listener.onMessageUpdate.mock.calls[0][0][0]).toEqual(
+                        expect.objectContaining({
+                                guid: message.guid,
+                                serverID: message.originalROWID
+                        })
+                );
+                expect((manager as unknown as {lastRowId: number}).lastRowId).toBe(101);
+        });
+
+        it("ingests envelope JSON string payloads", async () => {
+                const manager = new BlueBubblesCommunicationsManager(new DummyProxy(), auth);
+                const listener = createListener();
+                (manager as unknown as {listener: unknown}).listener = listener;
+
+                const message = createRealtimeMessage(102);
+                await (manager as unknown as {ingestRealtimeEvent(eventName: "updated-message", payload: unknown): Promise<void>})
+                        .ingestRealtimeEvent("updated-message", {
+                                data: JSON.stringify(message),
+                                encoding: "JSON_STRING"
+                        });
+
+                expect(listener.onMessageUpdate).toHaveBeenCalledTimes(1);
+                expect(listener.onMessageUpdate.mock.calls[0][0][0]).toEqual(
+                        expect.objectContaining({
+                                guid: message.guid,
+                                serverID: message.originalROWID
+                        })
+                );
+        });
+
+        it("hydrates partial payloads by message GUID before processing", async () => {
+                const manager = new BlueBubblesCommunicationsManager(new DummyProxy(), auth);
+                const listener = createListener();
+                (manager as unknown as {listener: unknown}).listener = listener;
+
+                const hydratedMessage = createRealtimeMessage(103, {
+                        guid: "hydrated-guid",
+                        text: "hydrated"
+                });
+                const querySpy = jest.spyOn(blueBubblesApi, "queryMessages")
+                        .mockResolvedValueOnce({data: [hydratedMessage]});
+
+                await (manager as unknown as {ingestRealtimeEvent(eventName: "updated-message", payload: unknown): Promise<void>})
+                        .ingestRealtimeEvent("updated-message", {
+                                data: {
+                                        guid: "hydrated-guid",
+                                        chats: hydratedMessage.chats
+                                },
+                                partial: true
+                        });
+
+                expect(querySpy).toHaveBeenCalledTimes(1);
+                expect(querySpy.mock.calls[0][1]).toEqual(expect.objectContaining({
+                        where: [
+                                {
+                                        statement: "message.guid = :guid",
+                                        args: {guid: "hydrated-guid"}
+                                }
+                        ]
+                }));
+                expect(listener.onMessageUpdate).toHaveBeenCalledTimes(1);
+                expect(listener.onMessageUpdate.mock.calls[0][0][0]).toEqual(
+                        expect.objectContaining({
+                                guid: "hydrated-guid",
+                                serverID: 103
+                        })
+                );
+        });
+
+        it("suppresses duplicate poll emissions when the same message already arrived via realtime", async () => {
+                const manager = new BlueBubblesCommunicationsManager(new DummyProxy(), auth);
+                const listener = createListener();
+                (manager as unknown as {listener: unknown}).listener = listener;
+
+                const message = createRealtimeMessage(200, {guid: "overlap-guid"});
+                await (manager as unknown as {ingestRealtimeEvent(eventName: "new-message", payload: unknown): Promise<void>})
+                        .ingestRealtimeEvent("new-message", message);
+
+                (manager as unknown as {lastRowId: number}).lastRowId = 199;
+                const querySpy = jest.spyOn(blueBubblesApi, "queryMessages")
+                        .mockResolvedValueOnce({data: [message]})
+                        .mockResolvedValueOnce({data: []});
+
+                await (manager as unknown as {pollUpdates(): Promise<void>}).pollUpdates();
+
+                expect(querySpy).toHaveBeenCalledTimes(1);
+                expect(listener.onMessageUpdate).toHaveBeenCalledTimes(1);
+        });
+
+        it("falls back to catch-up polling when realtime payload hydration cannot resolve a message", async () => {
+                const manager = new BlueBubblesCommunicationsManager(new DummyProxy(), auth);
+                const listener = createListener();
+                (manager as unknown as {listener: unknown}).listener = listener;
+                (manager as unknown as {hasStartedPolling: boolean}).hasStartedPolling = true;
+
+                const fallbackMessage = createRealtimeMessage(220, {guid: "rehydrate-miss-guid", text: "from-poll"});
+                const querySpy = jest.spyOn(blueBubblesApi, "queryMessages")
+                        .mockResolvedValueOnce({data: []})
+                        .mockResolvedValueOnce({data: [fallbackMessage]});
+
+                await (manager as unknown as {ingestRealtimeEvent(eventName: "updated-message", payload: unknown): Promise<void>})
+                        .ingestRealtimeEvent("updated-message", {
+                                data: {
+                                        guid: "rehydrate-miss-guid",
+                                        chats: fallbackMessage.chats
+                                },
+                                partial: true
+                        });
+                await flushMicrotasks();
+
+                expect(querySpy).toHaveBeenCalledTimes(2);
+                expect(listener.onMessageUpdate).toHaveBeenCalledTimes(1);
+                expect(listener.onMessageUpdate.mock.calls[0][0][0]).toEqual(expect.objectContaining({
+                        guid: "rehydrate-miss-guid",
+                        serverID: 220,
+                        text: "from-poll"
+                }));
+        });
+
+        it("emits updates for the same message GUID when message content changes", async () => {
+                const manager = new BlueBubblesCommunicationsManager(new DummyProxy(), auth);
+                const listener = createListener();
+                (manager as unknown as {listener: unknown}).listener = listener;
+
+                const initial = createRealtimeMessage(300, {guid: "status-guid", text: "first text"});
+                const updated = createRealtimeMessage(300, {guid: "status-guid", text: "updated text"});
+
+                await (manager as unknown as {ingestRealtimeEvent(eventName: "new-message", payload: unknown): Promise<void>})
+                        .ingestRealtimeEvent("new-message", initial);
+                await (manager as unknown as {ingestRealtimeEvent(eventName: "updated-message", payload: unknown): Promise<void>})
+                        .ingestRealtimeEvent("updated-message", updated);
+
+                expect(listener.onMessageUpdate).toHaveBeenCalledTimes(2);
+        });
+
+        it("emits modifier updates when a same-guid tapback changes from add to remove", async () => {
+                const manager = new BlueBubblesCommunicationsManager(new DummyProxy(), auth);
+                const listener = createListener();
+                (manager as unknown as {listener: unknown}).listener = listener;
+
+                const addition = createRealtimeMessage(400, {
+                        guid: "reaction-guid",
+                        text: "",
+                        associatedMessageGuid: "p:0/target-guid",
+                        associatedMessageType: "2001"
+                });
+                const removal = createRealtimeMessage(400, {
+                        guid: "reaction-guid",
+                        text: "",
+                        associatedMessageGuid: "p:0/target-guid",
+                        associatedMessageType: "3001"
+                });
+
+                await (manager as unknown as {ingestRealtimeEvent(eventName: "new-message", payload: unknown): Promise<void>})
+                        .ingestRealtimeEvent("new-message", addition);
+                await (manager as unknown as {ingestRealtimeEvent(eventName: "updated-message", payload: unknown): Promise<void>})
+                        .ingestRealtimeEvent("updated-message", removal);
+
+                expect(listener.onModifierUpdate).toHaveBeenCalledTimes(2);
+                expect(listener.onModifierUpdate.mock.calls[0][0][0]).toEqual(expect.objectContaining({
+                        messageGuid: "target-guid",
+                        tapbackType: TapbackType.Like,
+                        isAddition: true
+                }));
+                expect(listener.onModifierUpdate.mock.calls[1][0][0]).toEqual(expect.objectContaining({
+                        messageGuid: "target-guid",
+                        tapbackType: TapbackType.Like,
+                        isAddition: false
+                }));
+        });
+
+        it("suppresses duplicate modifier emissions when the same tapback arrives from realtime and polling", async () => {
+                const manager = new BlueBubblesCommunicationsManager(new DummyProxy(), auth);
+                const listener = createListener();
+                (manager as unknown as {listener: unknown}).listener = listener;
+
+                const reaction = createRealtimeMessage(410, {
+                        guid: "reaction-overlap-guid",
+                        text: "",
+                        associatedMessageGuid: "p:0/target-guid",
+                        associatedMessageType: "2001"
+                });
+
+                await (manager as unknown as {ingestRealtimeEvent(eventName: "new-message", payload: unknown): Promise<void>})
+                        .ingestRealtimeEvent("new-message", reaction);
+
+                (manager as unknown as {lastRowId: number}).lastRowId = 409;
+                const querySpy = jest.spyOn(blueBubblesApi, "queryMessages")
+                        .mockResolvedValueOnce({data: [reaction]})
+                        .mockResolvedValueOnce({data: []});
+
+                await (manager as unknown as {pollUpdates(): Promise<void>}).pollUpdates();
+
+                expect(querySpy).toHaveBeenCalledTimes(1);
+                expect(listener.onModifierUpdate).toHaveBeenCalledTimes(1);
+        });
+});
+
+describe("realtime channel lifecycle", () => {
+        class DummyProxy extends DataProxy {
+                public override readonly proxyType = "dummy";
+                public override start(): void {/* no-op */}
+                public override stop(): void {/* no-op */}
+                public override send(_data: ArrayBuffer, _encrypt: boolean): void {/* no-op */}
+        }
+
+        const auth: BlueBubblesAuthState = {serverUrl: "", accessToken: "guid-token"};
+
+        const createMetadata = (serverVersion: string): ServerMetadataResponse => ({
+                computer_id: "computer",
+                os_version: "14.0",
+                server_version: serverVersion,
+                private_api: true,
+                helper_connected: true,
+                proxy_service: "none",
+                detected_icloud: "",
+                detected_imessage: "",
+                macos_time_sync: null,
+                local_ipv4s: [],
+                local_ipv6s: [],
+                features: {
+                        private_api: true,
+                        helper_connected: true
+                }
+        });
+
+        afterEach(() => {
+                jest.restoreAllMocks();
+        });
+
+        it("creates and tears down the realtime channel for supported server versions", async () => {
+                const fetchMetadataSpy = jest.spyOn(blueBubblesApi, "fetchServerMetadata").mockResolvedValue(createMetadata("1.6.0"));
+                const realtimeConnectSpy = jest.spyOn(BlueBubblesRealtimeChannel.prototype, "connect").mockImplementation(() => undefined);
+                const realtimeDisconnectSpy = jest.spyOn(BlueBubblesRealtimeChannel.prototype, "disconnect").mockImplementation(() => undefined);
+
+                const onOpen = jest.fn();
+                const onClose = jest.fn();
+                const manager = new BlueBubblesCommunicationsManager(new DummyProxy(), auth);
+                (manager as unknown as {listener: unknown}).listener = {onOpen, onClose};
+
+                await (manager as unknown as {initialize(): Promise<void>}).initialize();
+                expect(fetchMetadataSpy).toHaveBeenCalledTimes(1);
+                expect(onOpen).toHaveBeenCalledTimes(1);
+                expect(realtimeConnectSpy).toHaveBeenCalledTimes(1);
+
+                manager.disconnect();
+                expect(realtimeDisconnectSpy).toHaveBeenCalledTimes(1);
+                expect(onClose).toHaveBeenCalledWith(ConnectionErrorCode.Connection);
+        });
+
+        it("keeps realtime disabled on older server versions", async () => {
+                jest.spyOn(blueBubblesApi, "fetchServerMetadata").mockResolvedValue(createMetadata("1.5.9"));
+                const realtimeConnectSpy = jest.spyOn(BlueBubblesRealtimeChannel.prototype, "connect").mockImplementation(() => undefined);
+
+                const manager = new BlueBubblesCommunicationsManager(new DummyProxy(), auth);
+                (manager as unknown as {listener: unknown}).listener = {onOpen: jest.fn(), onClose: jest.fn()};
+
+                await (manager as unknown as {initialize(): Promise<void>}).initialize();
+                expect(realtimeConnectSpy).not.toHaveBeenCalled();
+        });
+});
+
+describe("phase 5 fallback and resilience", () => {
+        class DummyProxy extends DataProxy {
+                public override readonly proxyType = "dummy";
+                public override start(): void {/* no-op */}
+                public override stop(): void {/* no-op */}
+                public override send(_data: ArrayBuffer, _encrypt: boolean): void {/* no-op */}
+        }
+
+        const auth: BlueBubblesAuthState = {serverUrl: "", accessToken: "guid-token"};
+
+        const createMetadata = (serverVersion: string): ServerMetadataResponse => ({
+                computer_id: "computer",
+                os_version: "14.0",
+                server_version: serverVersion,
+                private_api: true,
+                helper_connected: true,
+                proxy_service: "none",
+                detected_icloud: "",
+                detected_imessage: "",
+                macos_time_sync: null,
+                local_ipv4s: [],
+                local_ipv6s: [],
+                features: {
+                        private_api: true,
+                        helper_connected: true
+                }
+        });
+
+        const flushMicrotasks = async () => {
+                await Promise.resolve();
+                await Promise.resolve();
+        };
+
+        afterEach(() => {
+                jest.restoreAllMocks();
+                jest.useRealTimers();
+        });
+
+        it("suspends interval polling while realtime is healthy and resumes it when degraded", () => {
+                jest.useFakeTimers();
+                const manager = new BlueBubblesCommunicationsManager(new DummyProxy(), auth);
+                (manager as unknown as {metadata: ServerMetadataResponse}).metadata = createMetadata("1.6.0");
+                (manager as unknown as {realtimeChannelState: "connected"}).realtimeChannelState = "connected";
+                (manager as unknown as {pollInFlight: boolean}).pollInFlight = true;
+
+                (manager as unknown as {ensurePollingStarted(): void}).ensurePollingStarted();
+                expect((manager as unknown as {pollTimer: ReturnType<typeof setInterval> | undefined}).pollTimer).toBeUndefined();
+
+                (manager as unknown as {handleRealtimeChannelStateChange(state: "disconnected"): void}).handleRealtimeChannelStateChange("disconnected");
+                expect((manager as unknown as {pollTimer: ReturnType<typeof setInterval> | undefined}).pollTimer).toBeDefined();
+
+                (manager as unknown as {handleRealtimeChannelStateChange(state: "connected"): void}).handleRealtimeChannelStateChange("connected");
+                expect((manager as unknown as {pollTimer: ReturnType<typeof setInterval> | undefined}).pollTimer).toBeUndefined();
+        });
+
+        it("queues a catch-up poll when an existing poll cycle is still in flight", async () => {
+                const manager = new BlueBubblesCommunicationsManager(new DummyProxy(), auth);
+                (manager as unknown as {hasStartedPolling: boolean}).hasStartedPolling = true;
+
+                let resolveFirstQuery: ((value: {data: MessageResponse[]}) => void) | undefined;
+                const firstQuery = new Promise<{data: MessageResponse[]}>((resolve) => {
+                        resolveFirstQuery = resolve;
+                });
+
+                const querySpy = jest.spyOn(blueBubblesApi, "queryMessages")
+                        .mockImplementationOnce(() => firstQuery as Promise<MessageQueryResponse>)
+                        .mockResolvedValueOnce({data: []});
+
+                const initialPollPromise = (manager as unknown as {pollUpdates(source: "interval"): Promise<void>}).pollUpdates("interval");
+                (manager as unknown as {requestPollCatchup(): void}).requestPollCatchup();
+
+                expect((manager as unknown as {pendingCatchupPoll: boolean}).pendingCatchupPoll).toBe(true);
+
+                resolveFirstQuery?.({data: []});
+                await initialPollPromise;
+                await flushMicrotasks();
+
+                expect(querySpy).toHaveBeenCalledTimes(2);
+                expect((manager as unknown as {pendingCatchupPoll: boolean}).pendingCatchupPoll).toBe(false);
+        });
+
+        it("queues reconnect-triggered catch-up when the channel degrades during an in-flight poll", async () => {
+                jest.useFakeTimers();
+                const manager = new BlueBubblesCommunicationsManager(new DummyProxy(), auth);
+                (manager as unknown as {metadata: ServerMetadataResponse}).metadata = createMetadata("1.6.0");
+                (manager as unknown as {hasStartedPolling: boolean}).hasStartedPolling = true;
+                (manager as unknown as {realtimeChannelState: "connected"}).realtimeChannelState = "connected";
+
+                let resolveFirstQuery: ((value: {data: MessageResponse[]}) => void) | undefined;
+                const firstQuery = new Promise<{data: MessageResponse[]}>((resolve) => {
+                        resolveFirstQuery = resolve;
+                });
+
+                const querySpy = jest.spyOn(blueBubblesApi, "queryMessages")
+                        .mockImplementationOnce(() => firstQuery as Promise<MessageQueryResponse>)
+                        .mockResolvedValueOnce({data: []});
+
+                const initialPollPromise = (manager as unknown as {pollUpdates(source: "interval"): Promise<void>}).pollUpdates("interval");
+                (manager as unknown as {handleRealtimeChannelStateChange(state: "disconnected"): void}).handleRealtimeChannelStateChange("disconnected");
+
+                expect((manager as unknown as {pendingCatchupPoll: boolean}).pendingCatchupPoll).toBe(true);
+
+                resolveFirstQuery?.({data: []});
+                await initialPollPromise;
+                await flushMicrotasks();
+
+                expect(querySpy).toHaveBeenCalledTimes(2);
+                expect((manager as unknown as {pendingCatchupPoll: boolean}).pendingCatchupPoll).toBe(false);
+                manager.disconnect();
+        });
+});
+
+describe("outbound and attachment stability", () => {
+        class DummyProxy extends DataProxy {
+                public override readonly proxyType = "dummy";
+                public override start(): void {/* no-op */}
+                public override stop(): void {/* no-op */}
+                public override send(_data: ArrayBuffer, _encrypt: boolean): void {/* no-op */}
+        }
+
+        const auth: BlueBubblesAuthState = {serverUrl: "https://example.com", accessToken: "guid-token"};
+        const chatGuid = "chat-guid";
+        const createListener = () => ({
+                onMessageUpdate: jest.fn(),
+                onModifierUpdate: jest.fn(),
+                onSendMessageResponse: jest.fn(),
+                onFileRequestStart: jest.fn(),
+                onFileRequestData: jest.fn(),
+                onFileRequestComplete: jest.fn(),
+                onFileRequestFail: jest.fn()
+        });
+
+        const createOutgoingMessage = (rowId: number, overrides: Partial<MessageResponse> = {}): MessageResponse => ({
+                originalROWID: rowId,
+                guid: `outgoing-${rowId}`,
+                tempGuid: `web-temp-${rowId}`,
+                text: "hello",
+                handleId: 1,
+                otherHandle: 0,
+                chats: [
+                        {
+                                originalROWID: 1,
+                                guid: chatGuid,
+                                participants: [],
+                                style: 0,
+                                chatIdentifier: chatGuid,
+                                isArchived: false,
+                                displayName: ""
+                        } as ChatResponse
+                ],
+                attachments: [],
+                subject: "",
+                error: 0,
+                dateCreated: rowId * 1000,
+                dateRead: null,
+                dateDelivered: null,
+                isFromMe: true,
+                isArchived: false,
+                itemType: 0,
+                groupTitle: null,
+                groupActionType: 0,
+                balloonBundleId: null,
+                associatedMessageGuid: null,
+                associatedMessageType: null,
+                expressiveSendStyleId: null,
+                handle: {
+                        originalROWID: 1,
+                        address: "me",
+                        service: "iMessage"
+                } as HandleResponse,
+                ...overrides
+        } as MessageResponse);
+
+        const createAttachment = (): AttachmentResponse => ({
+                originalROWID: 10,
+                guid: "attachment-guid",
+                blurhash: undefined,
+                uti: "public.jpeg",
+                mimeType: "image/jpeg",
+                totalBytes: 4,
+                transferName: "photo.jpg"
+        } as AttachmentResponse);
+
+        const flushAsync = async () => {
+                await new Promise((resolve) => setTimeout(resolve, 0));
+        };
+
+        afterEach(() => {
+                jest.restoreAllMocks();
+        });
+
+        it("keeps sendMessage on the REST path and resolves outbound callbacks", async () => {
+                const manager = new BlueBubblesCommunicationsManager(new DummyProxy(), auth);
+                const listener = createListener();
+                (manager as unknown as {listener: unknown}).listener = listener;
+
+                const responseMessage = createOutgoingMessage(501, {guid: "outgoing-guid"});
+                const sendSpy = jest.spyOn(blueBubblesApi, "sendTextMessage").mockResolvedValue({data: responseMessage});
+
+                const sent = manager.sendMessage(77, {type: "linked", guid: chatGuid}, "hello");
+                expect(sent).toBe(true);
+
+                await flushAsync();
+                await flushAsync();
+
+                expect(sendSpy).toHaveBeenCalledTimes(1);
+                expect(sendSpy.mock.calls[0][1]).toEqual(expect.objectContaining({
+                        chatGuid,
+                        message: "hello",
+                        tempGuid: expect.stringMatching(/^web-\d+-77$/)
+                }));
+                expect(listener.onMessageUpdate).toHaveBeenCalledTimes(1);
+                expect(listener.onSendMessageResponse).toHaveBeenCalledWith(77, undefined);
+        });
+
+        it("keeps sendFile on the REST upload path and preserves upload progress + completion", async () => {
+                const manager = new BlueBubblesCommunicationsManager(new DummyProxy(), auth);
+                const listener = createListener();
+                (manager as unknown as {listener: unknown}).listener = listener;
+
+                const responseMessage = createOutgoingMessage(502, {
+                        guid: "file-guid",
+                        text: "",
+                        attachments: [createAttachment()]
+                });
+
+                class MockXMLHttpRequest {
+                        public static nextResponseBody: unknown;
+
+                        public responseType = "";
+                        public response: unknown;
+                        public responseText = "";
+                        public status = 0;
+                        private readonly listeners = new Map<string, Array<(event?: unknown) => void>>();
+                        private uploadProgressListener: ((event: {lengthComputable: boolean; loaded: number}) => void) | undefined;
+                        public readonly upload = {
+                                addEventListener: (event: string, listener: (event: {lengthComputable: boolean; loaded: number}) => void) => {
+                                        if(event === "progress") {
+                                                this.uploadProgressListener = listener;
+                                        }
+                                }
+                        };
+
+                        public open(_method: string, _url: string, _async: boolean): void {/* no-op */}
+                        public setRequestHeader(_name: string, _value: string): void {/* no-op */}
+
+                        public addEventListener(event: string, listener: (event?: unknown) => void): void {
+                                const listeners = this.listeners.get(event) ?? [];
+                                listeners.push(listener);
+                                this.listeners.set(event, listeners);
+                        }
+
+                        public send(_payload: unknown): void {
+                                this.uploadProgressListener?.({lengthComputable: true, loaded: 4});
+                                this.status = 200;
+                                this.response = MockXMLHttpRequest.nextResponseBody;
+                                const loadListeners = this.listeners.get("load") ?? [];
+                                for(const listener of loadListeners) {
+                                        listener();
+                                }
+                        }
+                }
+
+                const previousXhr = global.XMLHttpRequest;
+                MockXMLHttpRequest.nextResponseBody = {data: responseMessage};
+                (global as unknown as {XMLHttpRequest: typeof XMLHttpRequest}).XMLHttpRequest =
+                        MockXMLHttpRequest as unknown as typeof XMLHttpRequest;
+
+                const progressCallback = jest.fn();
+                try {
+                        const guid = await manager.sendFile(
+                                78,
+                                {type: "linked", guid: chatGuid},
+                                new File(["data"], "photo.jpg", {type: "image/jpeg"}),
+                                progressCallback
+                        );
+
+                        expect(guid).toBe("file-guid");
+                        expect(progressCallback).toHaveBeenCalledWith(4);
+                        expect(listener.onMessageUpdate).toHaveBeenCalledTimes(1);
+                        expect(listener.onSendMessageResponse).toHaveBeenCalledWith(78, undefined);
+                } finally {
+                        (global as unknown as {XMLHttpRequest: typeof XMLHttpRequest}).XMLHttpRequest = previousXhr;
+                }
+        });
+
+        it("preserves attachment download streaming callbacks", async () => {
+                const manager = new BlueBubblesCommunicationsManager(new DummyProxy(), auth);
+                const listener = createListener();
+                (manager as unknown as {listener: unknown}).listener = listener;
+
+                const chunk = new Uint8Array([1, 2, 3, 4]);
+                const reader = {
+                        read: jest.fn()
+                                .mockResolvedValueOnce({done: false, value: chunk})
+                                .mockResolvedValueOnce({done: true, value: undefined})
+                };
+                const response = {
+                        headers: {
+                                get: (name: string) => {
+                                        if(name === "content-length") return "4";
+                                        if(name === "content-type") return "image/jpeg";
+                                        return null;
+                                }
+                        },
+                        body: {
+                                getReader: () => reader
+                        }
+                } as unknown as Response;
+
+                jest.spyOn(blueBubblesApi, "downloadAttachment").mockResolvedValue(response);
+                manager.requestAttachmentDownload(79, "attachment-guid");
+
+                await flushAsync();
+                await flushAsync();
+
+                expect(listener.onFileRequestStart).toHaveBeenCalledWith(
+                        79,
+                        undefined,
+                        "image/jpeg",
+                        4,
+                        expect.anything()
+                );
+                expect(listener.onFileRequestData).toHaveBeenCalledTimes(1);
+                expect(listener.onFileRequestData.mock.calls[0][1]).toBeInstanceOf(ArrayBuffer);
+                expect(listener.onFileRequestComplete).toHaveBeenCalledWith(79);
+                expect(listener.onFileRequestFail).not.toHaveBeenCalled();
+        });
+
+        it("preserves attachment thumbnail fetch behavior", async () => {
+                const manager = new BlueBubblesCommunicationsManager(new DummyProxy(), auth);
+                const thumbnailBlob = new Blob(["thumb"], {type: "image/jpeg"});
+                const thumbnailResponse = {
+                        blob: jest.fn().mockResolvedValue(thumbnailBlob)
+                } as unknown as Response;
+                const thumbnailSpy = jest.spyOn(blueBubblesApi, "downloadAttachmentThumbnail").mockResolvedValue(thumbnailResponse);
+
+                const blob = await manager.fetchAttachmentThumbnail("attachment-guid");
+                expect(blob).toBe(thumbnailBlob);
+                expect(thumbnailSpy).toHaveBeenCalledWith(auth, "attachment-guid", {signal: undefined});
         });
 });

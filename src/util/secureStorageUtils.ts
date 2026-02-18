@@ -59,6 +59,7 @@ export enum SecureStorageKey {
         ServerPassword = "serverPassword",
         BlueBubblesServerUrl = "blueBubblesServerUrl",
         BlueBubblesToken = "blueBubblesToken",
+        BlueBubblesSocketGuid = "blueBubblesSocketGuid",
         BlueBubblesRefreshToken = "blueBubblesRefreshToken",
         BlueBubblesDeviceName = "blueBubblesDeviceName",
         BlueBubblesTokenExpiry = "blueBubblesTokenExpiry",

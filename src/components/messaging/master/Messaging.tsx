@@ -25,12 +25,13 @@ import {searchCache} from "shared/state/searchCache";
 export default function Messaging(props: {
         serverUrl: string;
         accessToken: string;
+        socketGuid?: string;
         refreshToken?: string;
         legacyPasswordAuth?: boolean;
         deviceName?: string;
         onReset?: VoidFunction;
 }) {
-        const {serverUrl, accessToken, refreshToken, legacyPasswordAuth, deviceName, onReset} = props;
+        const {serverUrl, accessToken, socketGuid, refreshToken, legacyPasswordAuth, deviceName, onReset} = props;
         const [detailPane, setDetailPane] = useState<DetailPane>({type: DetailType.Loading});
         const [sidebarBanner, setSidebarBanner] = useState<ConnectionErrorCode | "connecting" | undefined>(undefined);
         const {
@@ -47,6 +48,7 @@ export default function Messaging(props: {
                 ConnectionManager.setBlueBubblesAuth({
                         serverUrl,
                         accessToken,
+                        socketGuid,
                         refreshToken,
                         legacyPasswordAuth,
                         deviceName
@@ -56,7 +58,7 @@ export default function Messaging(props: {
                         searchCache.clear();
                         ConnectionManager.setBlueBubblesAuth(undefined);
                 };
-        }, [serverUrl, accessToken, refreshToken, legacyPasswordAuth, deviceName]);
+        }, [serverUrl, accessToken, socketGuid, refreshToken, legacyPasswordAuth, deviceName]);
 	
         const lastLoggedConversationIDRef = useRef<number | undefined>(undefined);
 

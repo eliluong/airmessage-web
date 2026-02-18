@@ -475,7 +475,15 @@ export default function DetailThread({conversation, focusTarget}: {
                                 //Try to find a matching conversation item
                                 let itemMatched = false;
                                 if(newItem.itemType === ConversationItemType.Message) {
-                                        const matchedIndex = findMatchingUnconfirmedMessageIndex(pendingMessages, newItem);
+                                        let matchedIndex = findMatchingUnconfirmedMessageIndex(pendingMessages, newItem);
+                                        if(matchedIndex === -1) {
+                                                matchedIndex = pendingMessages.findIndex((existingItem) => {
+                                                        if(existingItem.itemType !== ConversationItemType.Message) return false;
+                                                        if(newItem.serverID !== undefined && existingItem.serverID === newItem.serverID) return true;
+                                                        if(newItem.guid !== undefined && existingItem.guid === newItem.guid) return true;
+                                                        return false;
+                                                });
+                                        }
                                         if(matchedIndex !== -1) {
                                                 //Merge the information into the item
                                                 const mergeTargetItem = pendingMessages[matchedIndex] as MessageItem;

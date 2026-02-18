@@ -11,7 +11,7 @@ import {
 } from "shared/data/blocks";
 import {ConversationItemType, ConversationPreviewType, MessageModifierType, MessageStatusCode, TapbackType} from "shared/data/stateCodes";
 import localMessageCache from "shared/state/localMessageCache";
-import {modifierUpdateEmitter} from "shared/connection/connectionManager";
+import {messageUpdateEmitter, modifierUpdateEmitter} from "shared/connection/connectionManager";
 
 const messageListRenders: ConversationItem[][] = [];
 
@@ -154,6 +154,68 @@ describe("DetailThread tapback handling", () => {
                         const latest = messageListRenders[messageListRenders.length - 1];
                         const message = latest[0] as MessageItem;
                         expect(message.tapbacks).toHaveLength(0);
+                });
+        });
+
+        it("merges confirmed server updates by serverID and reconciles guid transitions", async () => {
+                const preview: ConversationPreview = {
+                        type: ConversationPreviewType.Message,
+                        date: new Date(0),
+                        attachments: []
+                };
+                const conversation: Conversation = {
+                        localID: 2,
+                        service: "iMessage",
+                        members: ["me", "friend"],
+                        preview,
+                        unreadMessages: false,
+                        localOnly: true
+                };
+
+                const optimisticMessage: MessageItem = {
+                        itemType: ConversationItemType.Message,
+                        localID: 2,
+                        serverID: 500,
+                        guid: "web-temp-guid",
+                        chatLocalID: conversation.localID,
+                        date: new Date(0),
+                        text: "Hello",
+                        subject: undefined,
+                        sender: undefined,
+                        attachments: [],
+                        stickers: [],
+                        tapbacks: [],
+                        sendStyle: undefined,
+                        status: MessageStatusCode.Delivered,
+                        statusDate: undefined,
+                        error: undefined,
+                        progress: undefined
+                };
+
+                localMessageCache.set(conversation.localID, [optimisticMessage]);
+
+                render(<DetailThread conversation={conversation} />);
+                await waitFor(() => expect(messageListRenders.length).toBeGreaterThan(0));
+
+                const confirmedMessage: MessageItem = {
+                        ...optimisticMessage,
+                        guid: "final-guid",
+                        date: new Date(1_000),
+                        status: MessageStatusCode.Read,
+                        statusDate: new Date(1_000)
+                };
+
+                await act(async () => {
+                        messageUpdateEmitter.notify([confirmedMessage]);
+                });
+
+                await waitFor(() => {
+                        const latest = messageListRenders[messageListRenders.length - 1];
+                        expect(latest).toHaveLength(1);
+                        const message = latest[0] as MessageItem;
+                        expect(message.serverID).toBe(500);
+                        expect(message.guid).toBe("final-guid");
+                        expect(message.status).toBe(MessageStatusCode.Read);
                 });
         });
 });
