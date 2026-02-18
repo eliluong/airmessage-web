@@ -26,19 +26,28 @@ Replace interval-only polling with a socket-driven realtime channel while preser
 - Polling remains as a controlled fallback, not the primary realtime path.
 
 ## Phase 0: Contract And Auth Decisions
-### Goals
-- Confirm server websocket contract and supported auth mode for target server versions.
-- Lock credential model for socket auth in this client.
+### Status
+- Completed on 2026-02-18.
 
-### Tasks
-- Confirm event payload shapes used by `new-message` and `updated-message`.
-- Confirm whether socket auth requires `guid` (password/token style), bearer token, or both.
-- Define session migration for existing token-only sessions if raw password is required for socket auth.
-- Define minimum supported BlueBubbles server version for realtime mode.
+### Decisions
+- Socket auth uses websocket query param `guid` with the same credential currently used for REST auth (`accessToken` in this client, legacy password in legacy mode).
+- Socket auth does not depend on an `Authorization: Bearer ...` header.
+- Event names for message ingress are `new-message` and `updated-message`.
+- Event payload can be either a raw message object or an envelope object containing `data` plus optional metadata (`encrypted`, `partial`, `type`, `subtype`, `encoding`, `encryptionType`).
+- Existing stored sessions do not require credential migration; token-based sessions already persist `accessToken`, and legacy sessions already persist password-equivalent auth in `accessToken` with `legacyPasswordAuth=true`.
+- Minimum supported server version for socket-first realtime mode is `>= 1.6.0`.
+- Servers below `1.6.0` remain on polling-only behavior.
+- GUID hydration policy is conditional: hydrate by GUID only when socket payload is partial or missing fields required by `processMessages(...)`.
+
+### Baseline Phase 0 Fixtures
+- `new-message/raw-full`: raw `MessageResponse` JSON object.
+- `new-message/envelope-full`: `{data: MessageResponse, encrypted?: false, partial?: false}`.
+- `updated-message/envelope-partial`: `{data: {guid, chats}, partial: true}` requiring GUID hydration.
+- `updated-message/envelope-string`: `{data: "<json-string>", encoding: "JSON_STRING"}`.
 
 ### Exit Criteria
-- Auth approach is finalized and documented.
-- Event payload contract is captured and test fixtures are defined.
+- [x] Auth approach is finalized and documented.
+- [x] Event payload contract is captured and baseline fixtures are defined.
 
 ## Phase 1: Realtime Channel Foundation
 ### Goals
@@ -135,7 +144,7 @@ Replace interval-only polling with a socket-driven realtime channel while preser
 - Manual validation confirms realtime delivery and reconnect recovery.
 - Roadmap/documentation updated with final behavior and known limitations.
 
-## Required Decisions Before Coding
-- Socket auth credential source and persistence model.
-- Minimum supported BlueBubbles server version for realtime mode.
-- Whether payload hydration by GUID should be always-on or conditional by payload completeness.
+## Phase 0 Decision Log
+- Socket auth credential source and persistence model: resolved (reuse `BlueBubblesAuthState.accessToken` as socket `guid`; no new credential storage key).
+- Minimum supported BlueBubbles server version for realtime mode: resolved (`>= 1.6.0`).
+- Payload hydration strategy: resolved (conditional by payload completeness, not always-on).
