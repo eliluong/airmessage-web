@@ -1,6 +1,8 @@
 import {MessageModifierType, MessageStatusCode, TapbackType} from "../../../src/data/stateCodes";
 import BlueBubblesCommunicationsManager from "../../../src/connection/bluebubbles/bluebubblesCommunicationsManager";
 import DataProxy from "../../../src/connection/dataProxy";
+import * as blueBubblesApi from "../../../src/connection/bluebubbles/api";
+import * as debugLogging from "../../../src/connection/bluebubbles/debugLogging";
 import type {BlueBubblesAuthState} from "../../../src/connection/bluebubbles/session";
 import type {ChatResponse, HandleResponse, MessageResponse} from "../../../src/connection/bluebubbles/types";
 import {__testables} from "../../../src/connection/bluebubbles/bluebubblesCommunicationsManager";
@@ -310,5 +312,132 @@ describe("processMessages SMS tapbacks", () => {
                 const tapback = modifiers[0] as unknown as {messageGuid: string; tapbackType: TapbackType};
                 expect(tapback.messageGuid).toBe(baseMessageGuid);
                 expect(tapback.tapbackType).toBe(TapbackType.Like);
+        });
+});
+
+describe("polling catch-up", () => {
+        class DummyProxy extends DataProxy {
+                public override readonly proxyType = "dummy";
+                public override start(): void {/* no-op */}
+                public override stop(): void {/* no-op */}
+                public override send(_data: ArrayBuffer, _encrypt: boolean): void {/* no-op */}
+        }
+
+        const auth: BlueBubblesAuthState = {serverUrl: "", accessToken: ""};
+        const chatGuid = "chat-guid";
+
+        const createPollMessage = (rowId: number): MessageResponse => ({
+                originalROWID: rowId,
+                guid: `message-${rowId}`,
+                text: `message ${rowId}`,
+                handleId: 1,
+                otherHandle: 0,
+                chats: [
+                        {
+                                originalROWID: 1,
+                                guid: chatGuid,
+                                participants: [],
+                                style: 0,
+                                chatIdentifier: chatGuid,
+                                isArchived: false,
+                                displayName: ""
+                        } as ChatResponse
+                ],
+                attachments: [],
+                subject: "",
+                error: 0,
+                dateCreated: rowId * 1000,
+                dateRead: null,
+                dateDelivered: null,
+                isFromMe: false,
+                isArchived: false,
+                itemType: 0,
+                groupTitle: null,
+                groupActionType: 0,
+                balloonBundleId: null,
+                associatedMessageGuid: null,
+                associatedMessageType: null,
+                expressiveSendStyleId: null,
+                handle: {
+                        originalROWID: 1,
+                        address: "friend@example.com",
+                        service: "iMessage"
+                } as HandleResponse
+        } as MessageResponse);
+
+        afterEach(() => {
+                jest.restoreAllMocks();
+        });
+
+        it("pages through all new rows when more than one poll page is pending", async () => {
+                const manager = new BlueBubblesCommunicationsManager(new DummyProxy(), auth);
+                const firstPage = Array.from({length: 50}, (_, index) => createPollMessage(101 + index));
+                const secondPage = Array.from({length: 50}, (_, index) => createPollMessage(151 + index));
+
+                const debugSpy = jest.spyOn(debugLogging, "logBlueBubblesDebug");
+                const querySpy = jest.spyOn(blueBubblesApi, "queryMessages")
+                        .mockResolvedValueOnce({data: firstPage})
+                        .mockResolvedValueOnce({data: secondPage})
+                        .mockResolvedValueOnce({data: []});
+
+                const listener = {
+                        onPacket: jest.fn(),
+                        onIDUpdate: jest.fn(),
+                        onMessageUpdate: jest.fn(),
+                        onModifierUpdate: jest.fn()
+                };
+
+                (manager as unknown as {lastRowId: number}).lastRowId = 100;
+                (manager as unknown as {listener: unknown}).listener = listener;
+                await (manager as unknown as {pollUpdates(): Promise<void>}).pollUpdates();
+
+                expect(querySpy).toHaveBeenCalledTimes(3);
+                expect(querySpy.mock.calls[0][1]).toEqual(expect.objectContaining({
+                        sort: "ASC",
+                        where: [
+                                {
+                                        statement: "message.ROWID > :rowid",
+                                        args: {rowid: 100}
+                                }
+                        ]
+                }));
+                expect(querySpy.mock.calls[1][1]).toEqual(expect.objectContaining({
+                        where: [
+                                {
+                                        statement: "message.ROWID > :rowid",
+                                        args: {rowid: 150}
+                                }
+                        ]
+                }));
+                expect(querySpy.mock.calls[2][1]).toEqual(expect.objectContaining({
+                        where: [
+                                {
+                                        statement: "message.ROWID > :rowid",
+                                        args: {rowid: 200}
+                                }
+                        ]
+                }));
+
+                expect((manager as unknown as {lastRowId: number}).lastRowId).toBe(200);
+                expect(listener.onMessageUpdate).toHaveBeenCalledTimes(2);
+
+                const emittedRowIds = listener.onMessageUpdate.mock.calls
+                        .flatMap(([batch]: [{serverID: number}[]]) => batch.map((item) => item.serverID))
+                        .slice()
+                        .sort((a, b) => a - b);
+                expect(emittedRowIds).toHaveLength(100);
+                expect(emittedRowIds[0]).toBe(101);
+                expect(emittedRowIds[99]).toBe(200);
+
+                const pollCycleLogs = debugSpy.mock.calls.filter(([label]) => label === "Poll cycle");
+                expect(pollCycleLogs).toHaveLength(1);
+                expect(pollCycleLogs[0][1]).toEqual(expect.objectContaining({
+                        source: "interval",
+                        pagesFetched: 2,
+                        totalMessages: 100,
+                        startRowId: 100,
+                        endRowId: 200,
+                        endReason: "no-data"
+                }));
         });
 });

@@ -413,13 +413,24 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 return true;
         }
 
-        public override requestRetrievalTime(_timeLower: Date, _timeUpper: Date): boolean {
-                // Not supported via BlueBubbles REST API. Missed message retrieval is handled via polling.
-                return false;
+        public override requestRetrievalTime(timeLower: Date, _timeUpper: Date): boolean {
+                const lowerTimestamp = Math.floor(timeLower.getTime());
+                if(Number.isFinite(lowerTimestamp) && (this.lastMessageTimestamp === undefined || lowerTimestamp < this.lastMessageTimestamp)) {
+                        this.lastMessageTimestamp = lowerTimestamp;
+                }
+
+                this.requestPollCatchup();
+                return true;
         }
 
-        public override requestRetrievalID(_idLower: number, _timeLower: Date, _timeUpper: Date): boolean {
-                return false;
+        public override requestRetrievalID(idLower: number, _timeLower: Date, _timeUpper: Date): boolean {
+                const normalizedLowerId = Math.floor(idLower);
+                if(Number.isFinite(normalizedLowerId) && (this.lastRowId === undefined || normalizedLowerId < this.lastRowId)) {
+                        this.lastRowId = normalizedLowerId;
+                }
+
+                this.requestPollCatchup();
+                return true;
         }
 
         public override requestChatCreation(requestID: number, members: string[], service: string): boolean {
@@ -505,15 +516,19 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
         private startPolling() {
                 if(this.pollTimer) return;
                 this.pollTimer = setInterval(() => {
-                        this.pollUpdates().catch((error) => console.warn("Failed to poll BlueBubbles updates", error));
+                        this.pollUpdates("interval").catch((error) => console.warn("Failed to poll BlueBubbles updates", error));
                 }, POLL_INTERVAL_MS);
         }
 
-        private async pollUpdates() {
-                if(this.pollInFlight) return;
-                this.pollInFlight = true;
+        private requestPollCatchup() {
+                this.ensurePollingStarted();
+                this.pollUpdates("catchup").catch((error) => console.warn("Failed to poll BlueBubbles updates", error));
+        }
+
+        private buildPollPayload(): {payload: Record<string, unknown>; hasCursor: boolean;} {
+                const hasCursor = this.lastRowId !== undefined || this.lastMessageTimestamp !== undefined;
                 const payload: Record<string, unknown> = {
-                        sort: "DESC",
+                        sort: hasCursor ? "ASC" : "DESC",
                         limit: DEFAULT_THREAD_PAGE_SIZE,
                         with: ["attachments", "chat"],
                         offset: 0
@@ -528,31 +543,104 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 } else if(this.lastMessageTimestamp !== undefined) {
                         payload.after = this.lastMessageTimestamp;
                 }
+                return {payload, hasCursor};
+        }
 
+        private updatePollCursor(messages: MessageResponse[]): boolean {
+                if(messages.length === 0) return false;
+
+                let didAdvance = false;
+                const latestTimestamp = messages[messages.length - 1].dateCreated;
+                if(this.lastMessageTimestamp === undefined || latestTimestamp > this.lastMessageTimestamp) {
+                        this.lastMessageTimestamp = latestTimestamp;
+                        didAdvance = true;
+                }
+
+                const latestRowId = messages.reduce(
+                        (max, message) => Math.max(max, message.originalROWID),
+                        Number.NEGATIVE_INFINITY
+                );
+                if(Number.isFinite(latestRowId) && (this.lastRowId === undefined || latestRowId > this.lastRowId)) {
+                        this.lastRowId = latestRowId;
+                        this.listener?.onIDUpdate(latestRowId);
+                        didAdvance = true;
+                }
+
+                return didAdvance;
+        }
+
+        private async pollUpdates(source: "interval" | "catchup" = "interval") {
+                if(this.pollInFlight) return;
+                this.pollInFlight = true;
+                const startRowId = this.lastRowId;
+                const startTimestamp = this.lastMessageTimestamp;
+                let pagesFetched = 0;
+                let totalMessages = 0;
+                let totalItems = 0;
+                let totalModifiers = 0;
+                let endReason: "no-data" | "page-exhausted" | "initial-sync" | "cursor-stalled" | "error" = "no-data";
                 try {
-                        const response = await queryMessages(this.auth, payload);
-                        if(!response.data || response.data.length === 0) return;
+                        let hasMore = true;
+                        while(hasMore) {
+                                const {payload, hasCursor} = this.buildPollPayload();
+                                const response = await queryMessages(this.auth, payload);
+                                this.listener?.onPacket();
 
-                        const sorted = response.data.sort((a, b) => a.dateCreated - b.dateCreated);
-                        const latestTimestamp = sorted[sorted.length - 1].dateCreated;
-                        this.lastMessageTimestamp = Math.max(this.lastMessageTimestamp ?? latestTimestamp, latestTimestamp);
-                        const latestRowId = sorted.reduce(
-                                (max, message) => Math.max(max, message.originalROWID),
-                                this.lastRowId ?? Number.NEGATIVE_INFINITY
-                        );
-                        if(Number.isFinite(latestRowId)) {
-                                this.lastRowId = latestRowId;
-                        }
+                                const responseData = response.data ?? [];
+                                if(responseData.length === 0) {
+                                        endReason = "no-data";
+                                        break;
+                                }
 
-                        const {items, modifiers} = this.processMessages(sorted);
-                        if(items.length > 0) {
-                                const newestFirstItems = items.slice().reverse();
-                                this.listener?.onMessageUpdate(newestFirstItems);
+                                pagesFetched += 1;
+                                totalMessages += responseData.length;
+                                const sorted = responseData.slice().sort((a, b) => a.dateCreated - b.dateCreated);
+                                const cursorAdvanced = this.updatePollCursor(sorted);
+                                const {items, modifiers} = this.processMessages(sorted);
+                                totalItems += items.length;
+                                totalModifiers += modifiers.length;
+                                if(items.length > 0) {
+                                        const newestFirstItems = items.slice().reverse();
+                                        this.listener?.onMessageUpdate(newestFirstItems);
+                                }
+                                if(modifiers.length > 0) {
+                                        this.listener?.onModifierUpdate(modifiers);
+                                }
+
+                                if(!hasCursor) {
+                                        endReason = "initial-sync";
+                                        break;
+                                }
+
+                                hasMore = responseData.length >= DEFAULT_THREAD_PAGE_SIZE;
+                                if(hasMore && !cursorAdvanced) {
+                                        endReason = "cursor-stalled";
+                                        console.warn("[BlueBubbles] Poll cursor stalled while paging updates; stopping catch-up cycle");
+                                        break;
+                                }
+                                if(!hasMore) {
+                                        endReason = "page-exhausted";
+                                }
                         }
-                        if(modifiers.length > 0) {
-                                this.listener?.onModifierUpdate(modifiers);
-                        }
+                } catch(error) {
+                        endReason = "error";
+                        throw error;
                 } finally {
+                        const shouldLogSummary = source === "catchup" || pagesFetched > 1 || endReason === "cursor-stalled";
+                        if(shouldLogSummary) {
+                                logBlueBubblesDebug("Poll cycle", {
+                                        source,
+                                        pagesFetched,
+                                        totalMessages,
+                                        totalItems,
+                                        totalModifiers,
+                                        startRowId,
+                                        endRowId: this.lastRowId,
+                                        startTimestamp,
+                                        endTimestamp: this.lastMessageTimestamp,
+                                        endReason
+                                });
+                        }
                         this.pollInFlight = false;
                 }
         }
@@ -632,10 +720,8 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 const response: MessageQueryResponse = await queryMessages(this.auth, payload);
                 const ordered = response.data.slice().sort((a, b) => b.dateCreated - a.dateCreated);
                 if(direction === "latest" && ordered.length > 0) {
-                        const newestTimestamp = ordered[0].dateCreated;
-                        if(this.lastMessageTimestamp === undefined || newestTimestamp > this.lastMessageTimestamp) {
-                                this.lastMessageTimestamp = newestTimestamp;
-                        }
+                        const sortedAscending = ordered.slice().reverse();
+                        this.updatePollCursor(sortedAscending);
                 }
                 const processed = this.processMessages(ordered);
                 const metadata = this.buildThreadMetadata(processed.items);
