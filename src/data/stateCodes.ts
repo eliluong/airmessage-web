@@ -21,7 +21,8 @@ export enum TapbackType {
 	Dislike,
 	Laugh,
 	Emphasis,
-	Question
+	Question,
+	Emoji
 }
 
 export enum ConnectionErrorCode {

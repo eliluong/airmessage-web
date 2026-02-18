@@ -601,6 +601,7 @@ export default function DetailThread({conversation, focusTarget}: {
                                                         const existingTapback = pendingTapbacks[matchingTapbackIndex];
                                                         const tapbackChanged = existingTapback.isAddition !== modifier.isAddition
                                                                 || existingTapback.tapbackType !== modifier.tapbackType
+                                                                || existingTapback.tapbackEmoji !== modifier.tapbackEmoji
                                                                 || existingTapback.messageIndex !== modifier.messageIndex
                                                                 || existingTapback.sender !== modifier.sender;
                                                         if(tapbackChanged) {

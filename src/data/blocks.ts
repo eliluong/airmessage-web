@@ -113,6 +113,7 @@ export interface StickerItem extends ResponseMessageModifier {
 export interface TapbackItem extends ResponseMessageModifier {
 	readonly isAddition: boolean;
 	readonly tapbackType: TapbackType;
+	readonly tapbackEmoji?: string;
 }
 
 export interface ParticipantAction extends ConversationItemBase {

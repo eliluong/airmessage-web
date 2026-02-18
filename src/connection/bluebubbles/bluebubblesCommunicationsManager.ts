@@ -60,7 +60,7 @@ const POLL_INTERVAL_MS = 5000;
 const DEFAULT_THREAD_PAGE_SIZE = 50;
 const TAPBACK_ADD_OFFSET = 2000;
 const TAPBACK_REMOVE_OFFSET = 3000;
-const SMS_TAPBACK_CACHE_LIMIT = 50;
+const TEXT_TAPBACK_CACHE_LIMIT = 50;
 const REACTION_GUID_CACHE_LIMIT = 5000;
 const LINK_SCAN_QUERY_LIMIT = 1000;
 
@@ -104,14 +104,14 @@ interface PendingReaction {
         tapback: TapbackItem;
 }
 
-interface SmsTapbackCacheRecord {
+interface TextTapbackCacheRecord {
         normalizedText: string;
         guid: string;
 }
 
-interface SmsTapbackCacheEntry {
+interface TextTapbackCacheEntry {
         map: Map<string, string[]>;
-        order: SmsTapbackCacheRecord[];
+        order: TextTapbackCacheRecord[];
 }
 
 export default class BlueBubblesCommunicationsManager extends CommunicationsManager {
@@ -124,7 +124,7 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
         private lastRowId: number | undefined;
         private lastMessageTimestamp: number | undefined;
         private readonly tapbackCache = new Map<string, TapbackItem[]>();
-        private readonly smsTapbackCache = new Map<string, SmsTapbackCacheEntry>();
+        private readonly textTapbackCache = new Map<string, TextTapbackCacheEntry>();
         private readonly reactionGuidQueue: string[] = [];
         private readonly reactionGuidSet = new Set<string>();
         private supportsDeliveredReceipts = false;
@@ -465,7 +465,7 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 this.isClosed = false;
                 this.hasStartedPolling = false;
                 this.conversationGuidCache.clear();
-                this.clearSmsTapbackCache();
+                this.clearTextTapbackCache();
                 this.lastRowId = undefined;
                 this.lastMessageTimestamp = undefined;
                 try {
@@ -480,7 +480,7 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                         const reactionsEnabled = Boolean(reactionsFlag);
                         if(!reactionsEnabled) {
                                 this.tapbackCache.clear();
-                                this.clearSmsTapbackCache();
+                                this.clearTextTapbackCache();
                         }
                         this.supportsDeliveredReceipts = Boolean(privateApiFlag && helperFlag && deliveredFlag);
                         this.supportsReadReceipts = Boolean(privateApiFlag && helperFlag && readFlag);
@@ -824,29 +824,36 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                         const smsTapback = !message.associatedMessageGuid && isSmsService(service)
                                 ? parseSmsTapback(message)
                                 : undefined;
-                        if(smsTapback) {
+                        const emojiTapback = !message.associatedMessageGuid
+                                ? parseEmojiTapback(message)
+                                : undefined;
+                        const textTapback = smsTapback ?? emojiTapback;
+                        if(textTapback) {
                                 if(this.hasSeenReaction(message.guid)) {
                                         continue;
                                 }
-                                const targetGuid = this.resolveSmsTapbackTargetGuid(message, smsTapback, messages);
+                                const targetGuid = this.resolveTextTapbackTargetGuid(message, textTapback, messages);
                                 if(targetGuid) {
                                         const tapback: TapbackItem = {
                                                 type: MessageModifierType.Tapback,
                                                 messageGuid: targetGuid,
                                                 messageIndex: 0,
                                                 sender: message.isFromMe ? "me" : message.handle?.address ?? "unknown",
-                                                isAddition: smsTapback.isAddition,
-                                                tapbackType: smsTapback.tapbackType
+                                                isAddition: textTapback.isAddition,
+                                                tapbackType: textTapback.tapbackType,
+                                                tapbackEmoji: textTapback.tapbackEmoji
                                         } as TapbackItem;
                                         this.markReactionSeen(message.guid);
                                         pendingReactions.push({messageGuid: targetGuid, tapback});
                                         modifiers.push(tapback);
                                         continue;
                                 }
-                                console.warn("[BlueBubbles] Unable to resolve SMS tapback target", {
+                                console.warn("[BlueBubbles] Unable to resolve text tapback target", {
                                         guid: message.guid,
                                         chatGuid: message.chats?.[0]?.guid,
-                                        targetText: smsTapback.targetText
+                                        targetText: textTapback.targetText,
+                                        tapbackType: textTapback.tapbackType,
+                                        tapbackEmoji: textTapback.tapbackEmoji
                                 });
                         }
                         if(isReactionMessage(message)) {
@@ -859,6 +866,7 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                                                 messageGuid: message.guid,
                                                 associatedMessageGuid: message.associatedMessageGuid,
                                                 tapbackType: tapback.tapbackType,
+                                                tapbackEmoji: tapback.tapbackEmoji,
                                                 isAddition: tapback.isAddition,
                                                 sender: tapback.sender
                                         });
@@ -923,7 +931,6 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
         }
 
         private convertMessage(message: MessageResponse): ConversationItem | undefined {
-                const service = getMessageService(message);
                 if(isGroupAction(message)) {
                         const actionType = mapParticipantActionType(message.groupActionType);
                         if(actionType === ParticipantActionType.Unknown) return undefined;
@@ -983,14 +990,14 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                         if(message.guid && message.guid !== item.guid) {
                                 this.tapbackCache.set(message.guid, tapbackSnapshot);
                         }
-                        if(isSmsService(service) && item.chatGuid && item.text) {
-                                this.rememberSmsTapbackTarget(item.chatGuid, item.text, item.guid);
+                        if(item.chatGuid && item.text) {
+                                this.rememberTextTapbackTarget(item.chatGuid, item.text, item.guid);
                         }
                 }
                 return item;
         }
 
-        private resolveSmsTapbackTargetGuid(message: MessageResponse, tapback: ParsedSmsTapback, batch: MessageResponse[]): string | undefined {
+        private resolveTextTapbackTargetGuid(message: MessageResponse, tapback: ParsedTextTapback, batch: MessageResponse[]): string | undefined {
                 const chatGuid = message.chats?.[0]?.guid;
                 if(!chatGuid) return undefined;
 
@@ -1027,14 +1034,14 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
 
                 if(bestGuid) return bestGuid;
                 for(const normalized of normalizedTargets) {
-                        const cached = this.lookupSmsTapbackTarget(chatGuid, normalized);
+                        const cached = this.lookupTextTapbackTarget(chatGuid, normalized);
                         if(cached) return cached;
                 }
                 return undefined;
         }
 
-        private lookupSmsTapbackTarget(chatGuid: string, normalizedText: string): string | undefined {
-                const entry = this.smsTapbackCache.get(chatGuid);
+        private lookupTextTapbackTarget(chatGuid: string, normalizedText: string): string | undefined {
+                const entry = this.textTapbackCache.get(chatGuid);
                 if(!entry) return undefined;
                 const guids = entry.map.get(normalizedText);
                 if(guids && guids.length > 0) return guids[guids.length - 1];
@@ -1052,14 +1059,14 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 return undefined;
         }
 
-        private rememberSmsTapbackTarget(chatGuid: string, text: string, messageGuid: string) {
+        private rememberTextTapbackTarget(chatGuid: string, text: string, messageGuid: string) {
                 const normalizedText = normalizeTapbackTargetText(text);
                 if(normalizedText.length === 0) return;
 
-                let entry = this.smsTapbackCache.get(chatGuid);
+                let entry = this.textTapbackCache.get(chatGuid);
                 if(!entry) {
                         entry = {map: new Map<string, string[]>(), order: []};
-                        this.smsTapbackCache.set(chatGuid, entry);
+                        this.textTapbackCache.set(chatGuid, entry);
                 }
 
                 let guids = entry.map.get(normalizedText);
@@ -1070,7 +1077,7 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 guids.push(messageGuid);
                 entry.order.push({normalizedText, guid: messageGuid});
 
-                while(entry.order.length > SMS_TAPBACK_CACHE_LIMIT) {
+                while(entry.order.length > TEXT_TAPBACK_CACHE_LIMIT) {
                         const oldest = entry.order.shift();
                         if(!oldest) break;
                         const stored = entry.map.get(oldest.normalizedText);
@@ -1081,8 +1088,8 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 }
         }
 
-        private clearSmsTapbackCache() {
-                this.smsTapbackCache.clear();
+        private clearTextTapbackCache() {
+                this.textTapbackCache.clear();
         }
 
         private convertChat(chat: ChatResponse): LinkedConversation {
@@ -1158,8 +1165,9 @@ interface NormalizedTapbackIdentifier {
         isRemoval: boolean;
 }
 
-interface ParsedSmsTapback {
+interface ParsedTextTapback {
         tapbackType: TapbackType;
+        tapbackEmoji?: string;
         isAddition: boolean;
         targetText: string;
         normalizedTargets: string[];
@@ -1186,6 +1194,9 @@ const VARIATION_SELECTOR_REGEX = /[\uFE0E\uFE0F]/g;
 const EMOJI_MODIFIER_REGEX = /[\u{1F3FB}-\u{1F3FF}]/gu;
 const SMS_TAPBACK_QUOTE_REGEX = /^(.*?)[“"”'’]([\s\S]*)[”"'’]$/;
 const NON_ALPHANUMERIC_WITH_OPTIONAL_SUFFIX_REGEX = /^[^a-z0-9]+(?:\s+(?:to|at))?$/u;
+const EMOJI_TAPBACK_ADDITION_PREFIX_REGEX = /^reacted\s+(.+?)\s+to$/iu;
+const EMOJI_TAPBACK_REMOVAL_PREFIX_REGEX = /^removed(?:\s+(?:a|an))?(?:\s+reaction)?\s+(.+?)\s+from$/iu;
+const EMOJI_TAPBACK_TOKEN_REGEX = /\p{Extended_Pictographic}/u;
 
 const SMS_TAPBACK_PREFIX_MAP: Record<string, {tapbackType: TapbackType; isAddition: boolean}> = {
         loved: {tapbackType: TapbackType.Love, isAddition: true},
@@ -1251,7 +1262,7 @@ const SMS_TAPBACK_TARGET_WRAPPERS: Partial<Record<TapbackType, string[]>> = {
         [TapbackType.Question]: ["?", "❓", "❔"]
 };
 
-function parseSmsTapback(message: MessageResponse): ParsedSmsTapback | undefined {
+function parseSmsTapback(message: MessageResponse): ParsedTextTapback | undefined {
         const text = message.text;
         if(!text) return undefined;
 
@@ -1286,6 +1297,55 @@ function parseSmsTapback(message: MessageResponse): ParsedSmsTapback | undefined
         };
 }
 
+function parseEmojiTapback(message: MessageResponse): ParsedTextTapback | undefined {
+        const text = message.text;
+        if(!text) return undefined;
+
+        const sanitized = stripInvisibleSelectors(text).trim();
+        if(sanitized.length === 0) return undefined;
+
+        const match = sanitized.match(SMS_TAPBACK_QUOTE_REGEX);
+        if(!match) return undefined;
+
+        const rawPrefix = match[1].trim();
+        const rawTarget = match[2].trim();
+        if(rawPrefix.length === 0 || rawTarget.length === 0) return undefined;
+
+        let isAddition: boolean;
+        let rawTapbackToken: string | undefined;
+
+        const additionMatch = rawPrefix.match(EMOJI_TAPBACK_ADDITION_PREFIX_REGEX);
+        if(additionMatch) {
+                isAddition = true;
+                rawTapbackToken = additionMatch[1];
+        } else {
+                const removalMatch = rawPrefix.match(EMOJI_TAPBACK_REMOVAL_PREFIX_REGEX);
+                if(!removalMatch) return undefined;
+                isAddition = false;
+                rawTapbackToken = removalMatch[1];
+        }
+
+        const tapbackEmoji = normalizeEmojiTapbackToken(rawTapbackToken);
+        if(!tapbackEmoji) return undefined;
+
+        const targetText = stripInvisibleSelectors(rawTarget).trim();
+        if(targetText.length === 0) return undefined;
+
+        const normalizedBase = normalizeTapbackTargetText(targetText);
+        if(normalizedBase.length === 0) return undefined;
+
+        const normalizedTargets = buildSmsTapbackTargetVariants(normalizedBase, TapbackType.Emoji);
+        if(normalizedTargets.length === 0) return undefined;
+
+        return {
+                tapbackType: TapbackType.Emoji,
+                tapbackEmoji,
+                isAddition,
+                targetText,
+                normalizedTargets
+        };
+}
+
 function normalizeTapbackTargetText(text: string): string {
         return stripInvisibleSelectors(text).trim();
 }
@@ -1304,6 +1364,14 @@ function normalizeSmsTapbackPrefix(prefix: string): string {
                 normalized = collapseRepeatedSymbols(normalized);
         }
 
+        return normalized;
+}
+
+function normalizeEmojiTapbackToken(token: string | undefined): string | undefined {
+        if(!token) return undefined;
+        const normalized = stripInvisibleSelectors(token).replace(/\s+/g, " ").trim();
+        if(normalized.length === 0) return undefined;
+        if(!EMOJI_TAPBACK_TOKEN_REGEX.test(normalized)) return undefined;
         return normalized;
 }
 

@@ -16,33 +16,38 @@ import {PeopleContext} from "shared/state/peopleState";
  * @param props.count The amount of reactions of this tapback type
  */
 export default function TapbackChip(props: {
-        type: TapbackType;
         count: number;
         senders: readonly string[];
-}) {
+} & (
+        {type: TapbackType.Emoji; emoji: string}
+        | {type: Exclude<TapbackType, TapbackType.Emoji>; emoji?: undefined}
+)) {
         const peopleState = useContext(PeopleContext);
-        let Icon: React.ElementType;
+        let Icon: React.ElementType | undefined;
         switch(props.type) {
                 case TapbackType.Love:
-			Icon = TapbackLoveIcon;
-			break;
-		case TapbackType.Like:
-			Icon = TapbackLikeIcon;
-			break;
-		case TapbackType.Dislike:
-			Icon = TapbackDislikeIcon;
-			break;
-		case TapbackType.Laugh:
-			Icon = TapbackLaughIcon;
-			break;
-		case TapbackType.Emphasis:
-			Icon = TapbackEmphasisIcon;
-			break;
-		case TapbackType.Question:
-			Icon = TapbackQuestionIcon;
-			break;
-	}
-	
+                        Icon = TapbackLoveIcon;
+                        break;
+                case TapbackType.Like:
+                        Icon = TapbackLikeIcon;
+                        break;
+                case TapbackType.Dislike:
+                        Icon = TapbackDislikeIcon;
+                        break;
+                case TapbackType.Laugh:
+                        Icon = TapbackLaughIcon;
+                        break;
+                case TapbackType.Emphasis:
+                        Icon = TapbackEmphasisIcon;
+                        break;
+                case TapbackType.Question:
+                        Icon = TapbackQuestionIcon;
+                        break;
+                case TapbackType.Emoji:
+                        Icon = undefined;
+                        break;
+        }
+		
         const tooltipTitle = useMemo(() => (
                 props.senders
                         .map((sender) => {
@@ -73,12 +78,24 @@ export default function TapbackChip(props: {
                                 direction="row"
                                 alignItems="center"
                                 justifyContent="center">
-                                <Icon
-                                        sx={{
-                                                color: (theme: Theme) => theme.palette.text.secondary,
-                                                width: 12,
-                                                height: 12
-                                        }} />
+                                {props.type === TapbackType.Emoji
+                                        ? (
+                                                <Typography
+                                                        sx={{
+                                                                fontSize: 12,
+                                                                lineHeight: 1
+                                                        }}>
+                                                        {props.emoji}
+                                                </Typography>
+                                        )
+                                        : Icon && (
+                                                <Icon
+                                                        sx={{
+                                                                color: (theme: Theme) => theme.palette.text.secondary,
+                                                                width: 12,
+                                                                height: 12
+                                                        }} />
+                                        )}
 
                                 {props.count > 1 && (
                                         <Typography variant="body2" color="secondary">
