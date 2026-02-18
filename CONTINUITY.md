@@ -21,6 +21,10 @@
 - 2026-02-18 [CODE] Fix implemented: Added emoji text-reaction parsing (`Reacted <emoji> to “...”` + removal form), reused target-resolution cache for all services, and threaded `tapbackEmoji` through modifier/state/UI chip rendering.
 - 2026-02-18 [CODE] Now: Jest and build pass with new iMessage emoji tapback regression coverage.
 - 2026-02-18 [CODE] Next: Manual QA against a live BlueBubbles server to confirm real device emoji-reaction phrasing variants map correctly.
+- 2026-02-18 [USER] Goal: Create a phased implementation plan for migrating BlueBubbles transport from polling to socket-first realtime delivery.
+- 2026-02-18 [USER] Constraint: Keep scope to core messaging/attachments/received tapbacks; exclude typing indicators, unsend, and sending tapbacks; use URL+password sign-in only (no Google sign-in).
+- 2026-02-18 [CODE] Now: Added `BLUEBUBBLES_REALTIME_IMPLEMENTATION_PLAN.md` and linked it from `project.md` for roadmap discoverability.
+- 2026-02-18 [CODE] Next: Execute Phase 0 (socket auth contract and credential/session strategy) before coding realtime transport changes.
 
 ## Invariants / Constraints
 - 2026-02-17 [USER] Preserve existing architecture: UI calls `connectionManager`; transport-specific logic stays in `bluebubblesCommunicationsManager`.
@@ -32,20 +36,23 @@
 - 2026-02-17 [CODE] D003 ACTIVE: Update poll cursor from both polling and latest-thread fetches, and emit `onIDUpdate` when row cursor advances.
 - 2026-02-17 [CODE] D004 ACTIVE: Emit a lightweight `Poll cycle` debug summary only for catch-up-triggered cycles, multi-page cycles, or cursor-stall protection events to keep default polling logs low-noise.
 - 2026-02-18 [CODE] D005 ACTIVE: Treat quoted text reactions without `associatedMessageGuid` as a text-tapback channel; keep legacy SMS phrase parsing and add explicit emoji reaction parsing for iMessage-era `Reacted <emoji> to “...”` messages.
+- 2026-02-18 [CODE] D006 ACTIVE: Realtime migration scope is core chat/attachment/tapback-receive only; defer typing indicators, unsend/edit, and tapback-sending features.
 
 ## Done (recent)
-- 2026-02-18 [CODE] Identified emoji reaction miss path: `associatedMessageGuid` null caused `Reacted 🎊 to “...”` payloads to render as ordinary message text.
-- 2026-02-18 [CODE] Added emoji text-tapback parser and unified target-resolution path (`resolveTextTapbackTargetGuid`) with cached lookup fallback.
-- 2026-02-18 [CODE] Expanded tapback domain model (`TapbackType.Emoji`, `tapbackEmoji`) and ensured reducer/sound dedupe logic account for emoji payload changes.
-- 2026-02-18 [CODE] Updated tapback chip rendering to show emoji glyph chips while preserving standard icon chips.
-- 2026-02-18 [CODE] Added regression coverage for iMessage emoji reactions (same-batch + cache-fallback resolution cases) and documented the milestone in `project.md`.
-- 2026-02-18 [TOOL] `npm test -- --runInBand test/connection/bluebubbles/bluebubblesCommunicationsManager.test.ts` passed after emoji tapback implementation.
-- 2026-02-18 [TOOL] `npm test -- --runInBand` and `npm run build` passed after emoji tapback implementation.
+- 2026-02-18 [TOOL] Completed cross-repo architecture review of `airmessage-web` and `bluebubbles-app` (`lib`/`web`) for realtime migration planning.
+- 2026-02-18 [CODE] Confirmed BlueBubbles web/desktop realtime path is socket.io, while Firebase is ancillary (config/push), not primary inbound message transport.
+- 2026-02-18 [CODE] Verified `airmessage-web` already uses URL+password onboarding/auth and persists BlueBubbles session/token data.
+- 2026-02-18 [CODE] Authored phased implementation plan file `BLUEBUBBLES_REALTIME_IMPLEMENTATION_PLAN.md`.
+- 2026-02-18 [CODE] Documented explicit in-scope/out-of-scope feature boundaries for realtime implementation.
+- 2026-02-18 [CODE] Linked `project.md` live-updates gap to `BLUEBUBBLES_REALTIME_IMPLEMENTATION_PLAN.md`.
+- 2026-02-18 [TOOL] Planning-only turn completed with no runtime behavior changes or test execution.
 
 ## Open Questions
 - 2026-02-17 [ASSUMPTION] Does every target BlueBubbles server version guarantee `message.ROWID` monotonicity across all relevant queries? UNCONFIRMED.
 - 2026-02-18 [ASSUMPTION] Does the deployed runtime profile (browser + thread size + media load) still show perceptible judder after this patch? UNCONFIRMED pending manual QA.
 - 2026-02-18 [ASSUMPTION] Do all server/device combinations use the parsed emoji-reaction prefix patterns (`Reacted <emoji> to`, `Removed ... <emoji> from`)? UNCONFIRMED pending live captures.
+- 2026-02-18 [ASSUMPTION] For target server versions, does websocket auth accept bearer token, or require raw `guid`/password-style query auth? UNCONFIRMED.
+- 2026-02-18 [ASSUMPTION] If raw password is required for websocket auth, should this client persist that credential alongside token session data? UNCONFIRMED.
 
 ## Working set
 - 2026-02-18 [CODE] `src/components/messaging/thread/DetailThread.tsx`
@@ -57,6 +64,7 @@
 - 2026-02-18 [CODE] `src/state/conversationState.ts`
 - 2026-02-18 [CODE] `test/connection/bluebubbles/bluebubblesCommunicationsManager.test.ts`
 - 2026-02-18 [CODE] `project.md`
+- 2026-02-18 [CODE] `BLUEBUBBLES_REALTIME_IMPLEMENTATION_PLAN.md`
 - 2026-02-18 [CODE] `CONTINUITY.md`
 
 ## Receipts
@@ -73,3 +81,4 @@
 - 2026-02-18 [TOOL] `npm test -- --runInBand test/components/messaging/thread/DetailThread.test.tsx` passed after tapback emoji reconciliation update.
 - 2026-02-18 [TOOL] `npm test -- --runInBand` passed after emoji tapback changes (11 suites, 60 tests).
 - 2026-02-18 [TOOL] `npm run build` passed after emoji tapback changes (webpack compile success; existing non-blocking asset/perf warnings only).
+- 2026-02-18 [TOOL] Static planning trace (`rg`, `nl`, `sed`) across `airmessage-web` and `bluebubbles-app` completed; wrote phased realtime plan and roadmap pointer without codepath modifications.
