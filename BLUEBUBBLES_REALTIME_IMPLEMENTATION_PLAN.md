@@ -50,28 +50,30 @@ Replace interval-only polling with a socket-driven realtime channel while preser
 - [x] Event payload contract is captured and baseline fixtures are defined.
 
 ## Phase 1: Realtime Channel Foundation
+### Status
+- Completed on 2026-02-18.
+
 ### Goals
 - Introduce a socket channel abstraction used by `BlueBubblesCommunicationsManager`.
 
-### Tasks
-- Add `socket.io-client` dependency.
-- Add a transport-local module (for example `src/connection/bluebubbles/realtimeChannel.ts`) responsible for:
-- connect/disconnect lifecycle.
-- reconnect/backoff behavior.
-- event subscription/unsubscription.
-- socket health state and error surfacing.
-- Integrate channel lifecycle with existing manager `connect()` and `disconnect()`.
-- Keep current polling path available behind channel health checks.
+### Delivered
+- Added `socket.io-client` dependency.
+- Added `src/connection/bluebubbles/realtimeChannel.ts` with connect/disconnect lifecycle, reconnect/backoff behavior, event subscription/unsubscription (`new-message`, `updated-message`), and socket health/error callbacks.
+- Integrated channel startup/teardown into `BlueBubblesCommunicationsManager.initialize()` / `disconnect()`.
+- Added server-version gate (`>= 1.6.0`) before enabling realtime channel.
+- Kept polling active as fallback, with channel health/event hooks triggering immediate catch-up polls.
+- Added unit coverage for channel behavior and manager lifecycle wiring.
 
 ### Exit Criteria
-- Manager can establish and tear down socket connection cleanly.
-- Connection state transitions remain visible through existing `connectionManager` listeners.
+- [x] Manager can establish and tear down socket connection cleanly.
+- [x] Connection state transitions remain visible through existing `connectionManager` listeners.
 
 ## Phase 2: Realtime Message Ingestion
 ### Goals
 - Route socket message events through the same canonical parsing/reconciliation path used today.
 
 ### Tasks
+- Replace Phase 1 hint-based catch-up polling for socket events with direct socket payload ingestion.
 - Handle `new-message` and `updated-message` events.
 - Normalize/decrypt payloads when needed and map to `MessageResponse`-compatible shapes.
 - Reuse `processMessages(...)` to emit `onMessageUpdate` / `onModifierUpdate`.

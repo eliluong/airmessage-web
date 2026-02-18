@@ -55,6 +55,11 @@ import {
 } from "./api";
 import {convertChatResponse} from "./chatTransformers";
 import {logBlueBubblesDebug} from "./debugLogging";
+import BlueBubblesRealtimeChannel, {
+        BlueBubblesRealtimeConnectionState,
+        BlueBubblesRealtimeEventName
+} from "./realtimeChannel";
+import {compareVersions} from "../../util/versionUtils";
 
 const POLL_INTERVAL_MS = 5000;
 const DEFAULT_THREAD_PAGE_SIZE = 50;
@@ -63,6 +68,7 @@ const TAPBACK_REMOVE_OFFSET = 3000;
 const TEXT_TAPBACK_CACHE_LIMIT = 50;
 const REACTION_GUID_CACHE_LIMIT = 5000;
 const LINK_SCAN_QUERY_LIMIT = 1000;
+const MIN_REALTIME_SERVER_VERSION = [1, 6, 0];
 
 const SQLITE_LIKE_SPECIAL_CHARS = /[%_\[]/g;
 
@@ -130,6 +136,9 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
         private supportsDeliveredReceipts = false;
         private supportsReadReceipts = false;
         private readonly conversationGuidCache = new Map<string, string>();
+        private realtimeChannel: BlueBubblesRealtimeChannel | undefined;
+        private realtimeChannelState: BlueBubblesRealtimeConnectionState = "idle";
+        private readonly realtimeUnsubscribeCallbacks: Array<() => void> = [];
 
         constructor(dataProxy: DataProxy, auth: BlueBubblesAuthState, private readonly options: {onError?: (error: Error) => void} = {}) {
                 super(dataProxy);
@@ -466,8 +475,10 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                 this.hasStartedPolling = false;
                 this.conversationGuidCache.clear();
                 this.clearTextTapbackCache();
+                this.realtimeChannelState = "idle";
                 this.lastRowId = undefined;
                 this.lastMessageTimestamp = undefined;
+                this.teardownRealtimeChannel();
                 try {
                         this.metadata = await fetchServerMetadata(this.auth);
                         const features = this.metadata.features;
@@ -491,6 +502,7 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                                 this.metadata.server_version,
                                 supportsFaceTime
                         );
+                        this.initializeRealtimeChannel();
                 } catch(error) {
                         this.handleFatalError(error);
                 }
@@ -499,6 +511,7 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
         private teardown() {
                 this.isClosed = true;
                 this.hasStartedPolling = false;
+                this.teardownRealtimeChannel();
                 if(this.pollTimer) {
                         clearInterval(this.pollTimer);
                         this.pollTimer = undefined;
@@ -523,6 +536,72 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
         private requestPollCatchup() {
                 this.ensurePollingStarted();
                 this.pollUpdates("catchup").catch((error) => console.warn("Failed to poll BlueBubbles updates", error));
+        }
+
+        private initializeRealtimeChannel() {
+                if(!this.isRealtimeSupported()) {
+                        logBlueBubblesDebug("Realtime channel disabled for server version", {
+                                serverVersion: this.metadata?.server_version,
+                                minimumVersion: MIN_REALTIME_SERVER_VERSION.join(".")
+                        });
+                        return;
+                }
+
+                const channel = new BlueBubblesRealtimeChannel(this.auth, {
+                        onStateChange: (state, details) => this.handleRealtimeChannelStateChange(state, details),
+                        onError: (error) => this.handleRealtimeChannelError(error)
+                });
+                this.realtimeChannel = channel;
+                this.realtimeUnsubscribeCallbacks.push(channel.subscribe("new-message", (payload) => this.handleRealtimeEventHint("new-message", payload)));
+                this.realtimeUnsubscribeCallbacks.push(channel.subscribe("updated-message", (payload) => this.handleRealtimeEventHint("updated-message", payload)));
+                channel.connect();
+        }
+
+        private teardownRealtimeChannel() {
+                while(this.realtimeUnsubscribeCallbacks.length > 0) {
+                        const unsubscribe = this.realtimeUnsubscribeCallbacks.pop();
+                        if(!unsubscribe) break;
+                        unsubscribe();
+                }
+                if(this.realtimeChannel) {
+                        this.realtimeChannel.disconnect();
+                        this.realtimeChannel = undefined;
+                }
+                this.realtimeChannelState = "idle";
+        }
+
+        private isRealtimeSupported(): boolean {
+                return compareVersions(this.communicationsVersion, MIN_REALTIME_SERVER_VERSION) >= 0;
+        }
+
+        private handleRealtimeChannelStateChange(state: BlueBubblesRealtimeConnectionState, details?: unknown): void {
+                if(this.isClosed) return;
+                this.realtimeChannelState = state;
+                logBlueBubblesDebug("Realtime channel state", {state, details});
+
+                if(!this.hasStartedPolling) return;
+                if(state === "connected" || state === "disconnected" || state === "error") {
+                        this.requestPollCatchup();
+                }
+        }
+
+        private handleRealtimeChannelError(error: Error): void {
+                if(this.isClosed) return;
+                console.warn("[BlueBubbles] Realtime channel error", error);
+                this.options.onError?.(error);
+                if(this.hasStartedPolling) {
+                        this.requestPollCatchup();
+                }
+        }
+
+        private handleRealtimeEventHint(eventName: BlueBubblesRealtimeEventName, _payload: unknown): void {
+                logBlueBubblesDebug("Realtime message hint", {
+                        eventName,
+                        channelState: this.realtimeChannelState
+                });
+                if(this.hasStartedPolling) {
+                        this.requestPollCatchup();
+                }
         }
 
         private buildPollPayload(): {payload: Record<string, unknown>; hasCursor: boolean;} {

@@ -1,10 +1,11 @@
-import {MessageModifierType, MessageStatusCode, TapbackType} from "../../../src/data/stateCodes";
+import {ConnectionErrorCode, MessageModifierType, MessageStatusCode, TapbackType} from "../../../src/data/stateCodes";
 import BlueBubblesCommunicationsManager from "../../../src/connection/bluebubbles/bluebubblesCommunicationsManager";
+import BlueBubblesRealtimeChannel from "../../../src/connection/bluebubbles/realtimeChannel";
 import DataProxy from "../../../src/connection/dataProxy";
 import * as blueBubblesApi from "../../../src/connection/bluebubbles/api";
 import * as debugLogging from "../../../src/connection/bluebubbles/debugLogging";
 import type {BlueBubblesAuthState} from "../../../src/connection/bluebubbles/session";
-import type {ChatResponse, HandleResponse, MessageResponse} from "../../../src/connection/bluebubbles/types";
+import type {ChatResponse, HandleResponse, MessageResponse, ServerMetadataResponse} from "../../../src/connection/bluebubbles/types";
 import {__testables} from "../../../src/connection/bluebubbles/bluebubblesCommunicationsManager";
 
 describe("mapTapback", () => {
@@ -581,5 +582,69 @@ describe("polling catch-up", () => {
                         endRowId: 200,
                         endReason: "no-data"
                 }));
+        });
+});
+
+describe("realtime channel lifecycle", () => {
+        class DummyProxy extends DataProxy {
+                public override readonly proxyType = "dummy";
+                public override start(): void {/* no-op */}
+                public override stop(): void {/* no-op */}
+                public override send(_data: ArrayBuffer, _encrypt: boolean): void {/* no-op */}
+        }
+
+        const auth: BlueBubblesAuthState = {serverUrl: "", accessToken: "guid-token"};
+
+        const createMetadata = (serverVersion: string): ServerMetadataResponse => ({
+                computer_id: "computer",
+                os_version: "14.0",
+                server_version: serverVersion,
+                private_api: true,
+                helper_connected: true,
+                proxy_service: "none",
+                detected_icloud: "",
+                detected_imessage: "",
+                macos_time_sync: null,
+                local_ipv4s: [],
+                local_ipv6s: [],
+                features: {
+                        private_api: true,
+                        helper_connected: true
+                }
+        });
+
+        afterEach(() => {
+                jest.restoreAllMocks();
+        });
+
+        it("creates and tears down the realtime channel for supported server versions", async () => {
+                const fetchMetadataSpy = jest.spyOn(blueBubblesApi, "fetchServerMetadata").mockResolvedValue(createMetadata("1.6.0"));
+                const realtimeConnectSpy = jest.spyOn(BlueBubblesRealtimeChannel.prototype, "connect").mockImplementation(() => undefined);
+                const realtimeDisconnectSpy = jest.spyOn(BlueBubblesRealtimeChannel.prototype, "disconnect").mockImplementation(() => undefined);
+
+                const onOpen = jest.fn();
+                const onClose = jest.fn();
+                const manager = new BlueBubblesCommunicationsManager(new DummyProxy(), auth);
+                (manager as unknown as {listener: unknown}).listener = {onOpen, onClose};
+
+                await (manager as unknown as {initialize(): Promise<void>}).initialize();
+                expect(fetchMetadataSpy).toHaveBeenCalledTimes(1);
+                expect(onOpen).toHaveBeenCalledTimes(1);
+                expect(realtimeConnectSpy).toHaveBeenCalledTimes(1);
+
+                manager.disconnect();
+                expect(realtimeDisconnectSpy).toHaveBeenCalledTimes(1);
+                expect(onClose).toHaveBeenCalledWith(ConnectionErrorCode.Connection);
+        });
+
+        it("keeps realtime disabled on older server versions", async () => {
+                jest.spyOn(blueBubblesApi, "fetchServerMetadata").mockResolvedValue(createMetadata("1.5.9"));
+                const realtimeConnectSpy = jest.spyOn(BlueBubblesRealtimeChannel.prototype, "connect").mockImplementation(() => undefined);
+
+                const manager = new BlueBubblesCommunicationsManager(new DummyProxy(), auth);
+                (manager as unknown as {listener: unknown}).listener = {onOpen: jest.fn(), onClose: jest.fn()};
+
+                await (manager as unknown as {initialize(): Promise<void>}).initialize();
+                expect(realtimeConnectSpy).not.toHaveBeenCalled();
         });
 });
