@@ -675,6 +675,11 @@ describe("realtime message ingestion", () => {
                 onModifierUpdate: jest.fn()
         });
 
+        const flushMicrotasks = async () => {
+                await Promise.resolve();
+                await Promise.resolve();
+        };
+
         afterEach(() => {
                 jest.restoreAllMocks();
         });
@@ -779,6 +784,36 @@ describe("realtime message ingestion", () => {
 
                 expect(querySpy).toHaveBeenCalledTimes(1);
                 expect(listener.onMessageUpdate).toHaveBeenCalledTimes(1);
+        });
+
+        it("falls back to catch-up polling when realtime payload hydration cannot resolve a message", async () => {
+                const manager = new BlueBubblesCommunicationsManager(new DummyProxy(), auth);
+                const listener = createListener();
+                (manager as unknown as {listener: unknown}).listener = listener;
+                (manager as unknown as {hasStartedPolling: boolean}).hasStartedPolling = true;
+
+                const fallbackMessage = createRealtimeMessage(220, {guid: "rehydrate-miss-guid", text: "from-poll"});
+                const querySpy = jest.spyOn(blueBubblesApi, "queryMessages")
+                        .mockResolvedValueOnce({data: []})
+                        .mockResolvedValueOnce({data: [fallbackMessage]});
+
+                await (manager as unknown as {ingestRealtimeEvent(eventName: "updated-message", payload: unknown): Promise<void>})
+                        .ingestRealtimeEvent("updated-message", {
+                                data: {
+                                        guid: "rehydrate-miss-guid",
+                                        chats: fallbackMessage.chats
+                                },
+                                partial: true
+                        });
+                await flushMicrotasks();
+
+                expect(querySpy).toHaveBeenCalledTimes(2);
+                expect(listener.onMessageUpdate).toHaveBeenCalledTimes(1);
+                expect(listener.onMessageUpdate.mock.calls[0][0][0]).toEqual(expect.objectContaining({
+                        guid: "rehydrate-miss-guid",
+                        serverID: 220,
+                        text: "from-poll"
+                }));
         });
 
         it("emits updates for the same message GUID when message content changes", async () => {
@@ -1003,6 +1038,36 @@ describe("phase 5 fallback and resilience", () => {
 
                 expect(querySpy).toHaveBeenCalledTimes(2);
                 expect((manager as unknown as {pendingCatchupPoll: boolean}).pendingCatchupPoll).toBe(false);
+        });
+
+        it("queues reconnect-triggered catch-up when the channel degrades during an in-flight poll", async () => {
+                jest.useFakeTimers();
+                const manager = new BlueBubblesCommunicationsManager(new DummyProxy(), auth);
+                (manager as unknown as {metadata: ServerMetadataResponse}).metadata = createMetadata("1.6.0");
+                (manager as unknown as {hasStartedPolling: boolean}).hasStartedPolling = true;
+                (manager as unknown as {realtimeChannelState: "connected"}).realtimeChannelState = "connected";
+
+                let resolveFirstQuery: ((value: {data: MessageResponse[]}) => void) | undefined;
+                const firstQuery = new Promise<{data: MessageResponse[]}>((resolve) => {
+                        resolveFirstQuery = resolve;
+                });
+
+                const querySpy = jest.spyOn(blueBubblesApi, "queryMessages")
+                        .mockImplementationOnce(() => firstQuery as Promise<MessageQueryResponse>)
+                        .mockResolvedValueOnce({data: []});
+
+                const initialPollPromise = (manager as unknown as {pollUpdates(source: "interval"): Promise<void>}).pollUpdates("interval");
+                (manager as unknown as {handleRealtimeChannelStateChange(state: "disconnected"): void}).handleRealtimeChannelStateChange("disconnected");
+
+                expect((manager as unknown as {pendingCatchupPoll: boolean}).pendingCatchupPoll).toBe(true);
+
+                resolveFirstQuery?.({data: []});
+                await initialPollPromise;
+                await flushMicrotasks();
+
+                expect(querySpy).toHaveBeenCalledTimes(2);
+                expect((manager as unknown as {pendingCatchupPoll: boolean}).pendingCatchupPoll).toBe(false);
+                manager.disconnect();
         });
 });
 

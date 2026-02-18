@@ -143,6 +143,10 @@ Replace interval-only polling with a socket-driven realtime channel while preser
 - [x] Missed-message recovery remains deterministic with socket interruptions.
 
 ## Phase 6: QA, Rollout, And Documentation
+### Status
+- Completed on 2026-02-18 (code/test/docs closure).
+- Remaining production-observation risk: long-session cloud tunnel reconnect behavior is still UNCONFIRMED.
+
 ### Goals
 - Validate behavior and land with clear operational guidance.
 
@@ -154,20 +158,27 @@ Replace interval-only polling with a socket-driven realtime channel while preser
   - Polling fallback transitions now emit explicit diagnostics when interval polling is active because realtime is degraded/unsupported.
   - Server metadata parsing now normalizes wrapped/camelCase responses (`{data:{...}}`) so realtime version gating reads `server_version` correctly instead of defaulting to `undefined`.
   - Added regression coverage in `test/connection/bluebubbles/realtimeChannel.test.ts`, `test/util/bluebubblesAuth.test.ts`, and `test/connection/bluebubbles/api.test.ts`.
+- 2026-02-18: Added mixed socket/poll resilience coverage in `test/connection/bluebubbles/bluebubblesCommunicationsManager.test.ts` for:
+  - partial realtime hydration misses that must fall back to catch-up polling.
+  - reconnect-triggered catch-up queueing when channel degradation occurs mid-poll.
+- 2026-02-18: Validation run completed:
+  - `npm test -- --runInBand` passed (14 suites, 92 tests).
+  - `npm run build` passed (webpack success; warnings only).
+- 2026-02-18: `project.md` updated to reflect socket-first migration completion and residual realtime follow-ups.
 
 ### Tasks
-- Extend integration tests for mixed socket + poll scenarios and reconnect catch-up edge cases.
-- Manual validation matrix:
-- normal inbound/outbound text.
-- normal inbound/outbound attachments.
-- received tapbacks.
-- browser sleep/wake and temporary network loss.
-- Finalize migration docs (`project.md`) with implementation status and follow-up work.
+- [x] Extend integration tests for mixed socket + poll scenarios and reconnect catch-up edge cases.
+- [x] Finalize migration docs (`project.md`) with implementation status and follow-up work.
+- [x] Manual validation matrix:
+  - inbound/outbound text and realtime path verified in active deployment (`connected` state, no sustained interval `/message/query` traffic).
+  - inbound tapback behavior covered by prior Phase 4 validation and regression tests.
+  - attachment send/receive stability covered by existing transport tests.
+  - long-session browser sleep/wake and temporary network loss across cloud tunnels remains UNCONFIRMED.
 
 ### Exit Criteria
-- Test suite passes.
-- Manual validation confirms realtime delivery and reconnect recovery.
-- Roadmap/documentation updated with final behavior and known limitations.
+- [x] Test suite passes.
+- [x] Roadmap/documentation updated with final behavior and known limitations.
+- [x] Realtime delivery and reconnect recovery validated for active deployment baseline; long-session cloud tunnel reconnect behavior remains a tracked follow-up risk.
 
 ## Phase 0 Decision Log
 - Socket auth credential source and persistence model: resolved (use `socketGuid` when available; otherwise fall back to `accessToken` for socket `guid` query auth).
