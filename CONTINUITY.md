@@ -12,9 +12,10 @@
 - 2026-02-18 [USER] Observed: Runtime reaches realtime `connected` with `serverVersion: 1.9.7` and no sustained periodic polling.
 - 2026-02-18 [USER] Goal: Proceed with Phase 6.
 - 2026-02-18 [CODE] Completed: Phase 6 code/test/doc closure implemented (new mixed socket/poll edge tests + roadmap updates).
-- 2026-02-18 [USER] Goal: Analyze remaining `/chat/query` + `/message/query` traffic and propose non-REST alternatives.
-- 2026-02-18 [CODE] Now: Remaining requests map to chat bootstrap, thread fetch/paging, and media drawer filtering; realtime socket path is ingress-only (`new-message`/`updated-message`) with REST hydration fallback.
-- 2026-02-18 [CODE] Next: Present feasibility split: (A) no-server-change reduction of REST volume, (B) server-backed socket query parity for full replacement.
+- 2026-02-18 [USER] Goal: Eliminate plaintext password usage from browser BlueBubbles REST requests (e.g., `query`, `download`).
+- 2026-02-18 [USER] Constraint: Target deployment consistently returns `404` for `/api/v1/auth/login` and `/api/v1/login`; token-only browser flow is not viable.
+- 2026-02-18 [CODE] Now: Node BFF intermediary is selected as the active mitigation path to keep BlueBubbles credentials out of browser-visible traffic.
+- 2026-02-18 [CODE] Next: Implement BFF in phases from `BLUEBUBBLES_BFF_IMPLEMENTATION_PLAN.md` and wire web transport behind feature flags.
 - 2026-02-18 [ASSUMPTION] Frequency of encrypted realtime payloads (`encrypted: true`) across deployments is UNCONFIRMED.
 
 ## Invariants / Constraints
@@ -32,35 +33,34 @@
 - 2026-02-18 [CODE] D017 ACTIVE: Socket auth/routing compatibility prefers persisted `socketGuid` for query `guid` (fallback `accessToken`) and resolves socket target as `origin + <basePath>/socket.io`.
 - 2026-02-18 [CODE] D018 ACTIVE: Phase 6 closure requires explicit documentation of remaining realtime risks (no silent “fully done” claims when behavior is UNCONFIRMED).
 - 2026-02-18 [CODE] D019 ACTIVE: Query-style bootstrap/history/media retrieval remains REST-backed until server provides a documented, versioned socket query contract with `where`/pagination parity.
+- 2026-02-18 [CODE] D020 ACTIVE: Legacy-auth environments use a Node BFF credential boundary (browser holds only BFF session state; BlueBubbles password/guid/token stays server-side).
 
 ## Done (recent)
 - 2026-02-18 [TOOL] Mapped reported network calls to concrete client callsites: chat bootstrap (`fetchChats`), thread latest/paging (`fetchThread`), and media drawer (`fetchConversationMedia`).
-- 2026-02-18 [TOOL] Audited native BlueBubbles app transport usage: message/chat queries still use REST (`http.chats`, `http.messages`, `http.chatMessages`), while socket is primarily push ingress + typing/settings emits.
-- 2026-02-18 [TOOL] Confirmed public BlueBubbles docs emphasize REST API + webhooks for integrations; no current public socket query contract documented.
-- 2026-02-18 [TOOL] Confirmed BlueBubbles server README still lists legacy socket handlers (`get-chats`, `get-chat-messages`) as available, indicating potential but undocumented query path.
-- 2026-02-18 [CODE] Updated `BLUEBUBBLES_REALTIME_IMPLEMENTATION_PLAN.md` and `project.md` to record Phase 6 completion and residual realtime unknowns.
-- 2026-02-18 [TOOL] `npm test -- --runInBand` passed after Phase 6 updates (14 suites, 92 tests).
-- 2026-02-18 [TOOL] `npm run build` passed after Phase 6 updates (webpack success; warnings only).
+- 2026-02-18 [TOOL] Static trace: `appendLegacyAuthParams` appends `password`/`device` only when `legacyPasswordAuth === true`, including attachment upload/download paths.
+- 2026-02-18 [TOOL] Static trace: auth fallback sets `legacyPasswordAuth` only after `/api/v1/auth/login` and `/api/v1/login` return 404 and legacy probe success.
+- 2026-02-18 [USER] Confirmed environment behavior: `/api/v1/auth/login` and `/api/v1/login` consistently return 404.
+- 2026-02-18 [CODE] Added `BLUEBUBBLES_BFF_IMPLEMENTATION_PLAN.md` with full phased Node BFF architecture, API contracts, rollout, and hardening plan.
+- 2026-02-18 [CODE] Updated `project.md` to track credential-boundary mitigation via Node BFF as an outstanding integration gap.
+- 2026-02-18 [TOOL] `npm test -- --runInBand` and `npm run build` remained previously green after prior realtime Phase 6 work (no new runtime code changes in this doc-only update).
 
 ## Open Questions
 - 2026-02-18 [ASSUMPTION] For all target server versions, is configured password always valid as socket `guid` when token-auth endpoints are present? UNCONFIRMED.
 - 2026-02-18 [ASSUMPTION] Intermittent cloud tunnel reconnect behavior under longer sessions remains UNCONFIRMED.
 - 2026-02-18 [ASSUMPTION] Real-world frequency of encrypted socket payloads (`encrypted: true`) across target deployments remains UNCONFIRMED.
 - 2026-02-18 [ASSUMPTION] Are legacy socket query handlers (`get-chats`, `get-chat-messages`) stable/supported across all target server versions (including 1.9.7) for production usage? UNCONFIRMED.
+- 2026-02-18 [ASSUMPTION] Should BFF deployment be same-origin with web assets (recommended) or cross-origin with strict CORS/cookie policy? UNCONFIRMED.
 
 ## Working set
 - 2026-02-18 [CODE] `src/connection/bluebubbles/api.ts`
-- 2026-02-18 [CODE] `src/connection/bluebubbles/realtimeChannel.ts`
+- 2026-02-18 [CODE] `src/util/bluebubblesAuth.ts`
 - 2026-02-18 [CODE] `src/connection/bluebubbles/bluebubblesCommunicationsManager.ts`
-- 2026-02-18 [CODE] `src/components/messaging/master/Messaging.tsx`
-- 2026-02-18 [CODE] `src/components/messaging/thread/DetailThread.tsx`
-- 2026-02-18 [CODE] `src/state/useConversationMedia.ts`
-- 2026-02-18 [CODE] `src/state/conversationState.ts`
-- 2026-02-18 [CODE] `src/connection/connectionManager.ts`
+- 2026-02-18 [CODE] `src/components/SignInGate.tsx`
 - 2026-02-18 [CODE] `/home/xilex/Downloads/node/bluebubbles-app/lib/services/network/socket_service.dart`
 - 2026-02-18 [CODE] `/home/xilex/Downloads/node/bluebubbles-app/lib/services/network/http_service.dart`
-- 2026-02-18 [CODE] `/home/xilex/Downloads/node/bluebubbles-app/lib/services/ui/chat/chat_manager.dart`
-- 2026-02-18 [CODE] `/home/xilex/Downloads/node/bluebubbles-app/lib/services/ui/message/messages_service.dart`
+- 2026-02-18 [CODE] `BLUEBUBBLES_BFF_IMPLEMENTATION_PLAN.md`
+- 2026-02-18 [CODE] `project.md`
+- 2026-02-18 [CODE] `CONTINUITY.md`
 
 ## Receipts
 - 2026-02-18 [TOOL] Static trace: interval polling is disabled when realtime state is `connected` in `bluebubblesCommunicationsManager.ts`.
@@ -78,3 +78,8 @@
 - 2026-02-18 [TOOL] Static trace: reported request payloads align with `fetchChats` (`with: participants,lastmessage`, default `limit: 1000`), `fetchThread` (`limit: 50`, `ROWID` anchor paging), and `fetchConversationMedia` (`attachment.mimeType LIKE image/%`, `limit: 30`).
 - 2026-02-18 [TOOL] Static trace: native app currently performs chat/message queries via REST (`http.chats`, `http.chatMessages`, `http.messages`) and only uses socket emits for typing + limited settings commands.
 - 2026-02-18 [TOOL] External docs trace: integration docs advertise REST + webhooks; server README documents legacy socket query handlers (`get-chats`, `get-chat-messages`) but support level across modern versions is UNCONFIRMED.
+- 2026-02-18 [TOOL] Static trace: web client password query-string usage is centralized in `appendLegacyAuthParams`; it activates only when `legacyPasswordAuth` is persisted and impacts `/chat/query`, `/message/query`, attachment download, and attachment upload.
+- 2026-02-18 [TOOL] Static trace: web auth fallback to legacy mode is triggered by auth endpoint 404s and validated by a legacy ping probe that includes `password` query auth.
+- 2026-02-18 [TOOL] Static trace: native app API layer still injects `guid` query auth broadly (`HttpService.buildQueryParams`) and redacts `guid`/`password` in interceptor error logs.
+- 2026-02-18 [CODE] Added `BLUEBUBBLES_BFF_IMPLEMENTATION_PLAN.md` documenting phased Node BFF implementation (auth/session boundary, route contracts, socket proxying, rollout, and test strategy).
+- 2026-02-18 [CODE] Updated `project.md` to register BFF credential-boundary work under outstanding integration gaps.
