@@ -146,6 +146,15 @@ Replace interval-only polling with a socket-driven realtime channel while preser
 ### Goals
 - Validate behavior and land with clear operational guidance.
 
+### Progress
+- 2026-02-18: Added realtime compatibility hardening to reduce false degraded-mode polling on compatible servers:
+  - Socket auth now uses a dedicated `socketGuid` credential when available (persisted from auth/password flow), with `accessToken` retained as a fallback source.
+  - Socket target normalization now connects to URL origin with explicit `path` (`<basePath>/socket.io`) for subpath/proxy deployments.
+  - Realtime channel now enables Engine.IO v3 compatibility (`allowEIO3`) and explicit connect timeout handling to avoid indefinite `connecting` states on mixed-version deployments.
+  - Polling fallback transitions now emit explicit diagnostics when interval polling is active because realtime is degraded/unsupported.
+  - Server metadata parsing now normalizes wrapped/camelCase responses (`{data:{...}}`) so realtime version gating reads `server_version` correctly instead of defaulting to `undefined`.
+  - Added regression coverage in `test/connection/bluebubbles/realtimeChannel.test.ts`, `test/util/bluebubblesAuth.test.ts`, and `test/connection/bluebubbles/api.test.ts`.
+
 ### Tasks
 - Extend integration tests for mixed socket + poll scenarios and reconnect catch-up edge cases.
 - Manual validation matrix:
@@ -161,6 +170,6 @@ Replace interval-only polling with a socket-driven realtime channel while preser
 - Roadmap/documentation updated with final behavior and known limitations.
 
 ## Phase 0 Decision Log
-- Socket auth credential source and persistence model: resolved (reuse `BlueBubblesAuthState.accessToken` as socket `guid`; no new credential storage key).
+- Socket auth credential source and persistence model: resolved (use `socketGuid` when available; otherwise fall back to `accessToken` for socket `guid` query auth).
 - Minimum supported BlueBubbles server version for realtime mode: resolved (`>= 1.6.0`).
 - Payload hydration strategy: resolved (conditional by payload completeness, not always-on).

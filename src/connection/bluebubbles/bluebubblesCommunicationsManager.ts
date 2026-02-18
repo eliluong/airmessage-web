@@ -143,6 +143,8 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
         private readonly conversationGuidCache = new Map<string, string>();
         private realtimeChannel: BlueBubblesRealtimeChannel | undefined;
         private realtimeChannelState: BlueBubblesRealtimeConnectionState = "idle";
+        private lastRealtimeErrorMessage: string | undefined;
+        private isIntervalPollingActive = false;
         private readonly realtimeUnsubscribeCallbacks: Array<() => void> = [];
         private realtimeEventQueue: Promise<void> = Promise.resolve();
         private pendingCatchupPoll = false;
@@ -480,9 +482,11 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
         private async initialize() {
                 this.isClosed = false;
                 this.hasStartedPolling = false;
+                this.isIntervalPollingActive = false;
                 this.conversationGuidCache.clear();
                 this.clearTextTapbackCache();
                 this.realtimeChannelState = "idle";
+                this.lastRealtimeErrorMessage = undefined;
                 this.lastRowId = undefined;
                 this.lastMessageTimestamp = undefined;
                 this.emittedMessageFingerprints.clear();
@@ -498,6 +502,12 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                         const reactionsFlag = features?.reactions ?? true;
                         const deliveredFlag = features?.delivered_receipts ?? true;
                         const readFlag = features?.read_receipts ?? deliveredFlag;
+                        logBlueBubblesDebug("Server metadata", {
+                                serverVersion: this.metadata.server_version,
+                                privateApi: privateApiFlag,
+                                helperConnected: helperFlag,
+                                hasFeaturesEndpoint: Boolean(features)
+                        });
 
                         const reactionsEnabled = Boolean(reactionsFlag);
                         if(!reactionsEnabled) {
@@ -522,6 +532,7 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
         private teardown() {
                 this.isClosed = true;
                 this.hasStartedPolling = false;
+                this.isIntervalPollingActive = false;
                 this.realtimeEventQueue = Promise.resolve();
                 this.pendingCatchupPoll = false;
                 this.teardownRealtimeChannel();
@@ -556,11 +567,30 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
         }
 
         private synchronizePollingMode() {
-                if(this.shouldUseIntervalPolling()) {
+                const shouldUseIntervalPolling = this.shouldUseIntervalPolling();
+                if(shouldUseIntervalPolling) {
                         this.startPolling();
-                        return;
+                } else {
+                        this.stopPolling();
                 }
-                this.stopPolling();
+
+                if(this.isIntervalPollingActive !== shouldUseIntervalPolling) {
+                        this.isIntervalPollingActive = shouldUseIntervalPolling;
+                        if(shouldUseIntervalPolling) {
+                                const reason = !this.isRealtimeSupported()
+                                        ? "realtime-unsupported"
+                                        : `channel-state-${this.realtimeChannelState}`;
+                                console.warn("[BlueBubbles] Realtime channel unavailable, interval polling fallback is active", {
+                                        reason,
+                                        channelState: this.realtimeChannelState,
+                                        lastRealtimeError: this.lastRealtimeErrorMessage
+                                });
+                        } else {
+                                logBlueBubblesDebug("Realtime healthy, interval polling suspended", {
+                                        channelState: this.realtimeChannelState
+                                });
+                        }
+                }
         }
 
         private requestPollCatchup() {
@@ -611,6 +641,14 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
         private handleRealtimeChannelStateChange(state: BlueBubblesRealtimeConnectionState, details?: unknown): void {
                 if(this.isClosed) return;
                 this.realtimeChannelState = state;
+                if(state === "connected") {
+                        this.lastRealtimeErrorMessage = undefined;
+                } else if(state === "error") {
+                        const normalizedStateError = normalizeRealtimeError(details);
+                        if(normalizedStateError) {
+                                this.lastRealtimeErrorMessage = normalizedStateError;
+                        }
+                }
                 logBlueBubblesDebug("Realtime channel state", {state, details});
 
                 if(!this.hasStartedPolling) return;
@@ -622,6 +660,7 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
 
         private handleRealtimeChannelError(error: Error): void {
                 if(this.isClosed) return;
+                this.lastRealtimeErrorMessage = error.message;
                 console.warn("[BlueBubbles] Realtime channel error", error);
                 this.options.onError?.(error);
                 if(this.hasStartedPolling) {
@@ -2006,6 +2045,29 @@ function mapTapbackType(code: number) {
                         return TapbackType.Question;
                 default:
                         return undefined;
+        }
+}
+
+function normalizeRealtimeError(error: unknown): string | undefined {
+        if(error instanceof Error) {
+                return error.message;
+        }
+        if(typeof error === "string") {
+                return error;
+        }
+        if(error && typeof error === "object" && "message" in error) {
+                const value = (error as {message?: unknown}).message;
+                if(typeof value === "string") {
+                        return value;
+                }
+        }
+        if(error === undefined || error === null) {
+                return undefined;
+        }
+        try {
+                return JSON.stringify(error);
+        } catch {
+                return String(error);
         }
 }
 

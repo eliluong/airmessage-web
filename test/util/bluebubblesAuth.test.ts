@@ -50,6 +50,64 @@ describe("legacy BlueBubbles authentication", () => {
                 expect(fetchMock.mock.calls[2][0]).toBe("https://example.com/api/v1/ping?password=secret&device=device-guid");
         });
 
+        test("login falls back to /api/v1/login when /api/v1/auth/login is missing", async () => {
+                const fetchMock = jest.fn().mockResolvedValueOnce({
+                        ok: false,
+                        status: 404,
+                        statusText: "Not Found",
+                        json: jest.fn().mockResolvedValue({message: "missing"})
+                } as unknown as Response)
+                        .mockResolvedValueOnce({
+                                ok: true,
+                                status: 200,
+                                statusText: "OK",
+                                json: jest.fn().mockResolvedValue({
+                                        accessToken: "token-access",
+                                        refreshToken: "refresh-token"
+                                })
+                        } as unknown as Response);
+                (globalThis as typeof globalThis & {fetch: typeof fetch}).fetch = fetchMock as unknown as typeof fetch;
+
+                const {loginBlueBubblesDevice} = await import("../../src/util/bluebubblesAuth");
+                const result = await loginBlueBubblesDevice({
+                        serverUrl: "https://example.com",
+                        password: "socket-secret",
+                        deviceName: "web"
+                });
+
+                expect(result.accessToken).toBe("token-access");
+                expect(result.refreshToken).toBe("refresh-token");
+                expect(result.socketGuid).toBe("socket-secret");
+                expect(fetchMock).toHaveBeenCalledTimes(2);
+                expect(fetchMock.mock.calls[0][0]).toBe("https://example.com/api/v1/auth/login");
+                expect(fetchMock.mock.calls[1][0]).toBe("https://example.com/api/v1/login");
+        });
+
+        test("login keeps the configured password as socket guid when token auth succeeds", async () => {
+                const fetchMock = jest.fn().mockResolvedValue({
+                        ok: true,
+                        status: 200,
+                        statusText: "OK",
+                        json: jest.fn().mockResolvedValue({
+                                accessToken: "token-access",
+                                refreshToken: "refresh-token"
+                        })
+                } as unknown as Response);
+                (globalThis as typeof globalThis & {fetch: typeof fetch}).fetch = fetchMock as unknown as typeof fetch;
+
+                const {loginBlueBubblesDevice} = await import("../../src/util/bluebubblesAuth");
+                const result = await loginBlueBubblesDevice({
+                        serverUrl: "https://example.com",
+                        password: "socket-secret",
+                        deviceName: "web"
+                });
+
+                expect(result.accessToken).toBe("token-access");
+                expect(result.refreshToken).toBe("refresh-token");
+                expect(result.socketGuid).toBe("socket-secret");
+                expect(fetchMock).toHaveBeenCalledTimes(1);
+        });
+
         test("legacy sessions append the password and device name as query parameters", async () => {
                 const fetchMock = jest.fn().mockResolvedValue({
                         ok: true,

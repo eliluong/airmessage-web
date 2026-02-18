@@ -6,6 +6,7 @@ export interface BlueBubblesAuthConfig {
 
 export interface BlueBubblesAuthResult {
         accessToken: string;
+        socketGuid?: string;
         refreshToken?: string;
         expiresAt?: number;
         legacyPasswordAuth?: boolean;
@@ -21,6 +22,11 @@ interface BlueBubblesRawAuthResponse {
         token?: string;
         accessToken?: string;
         access_token?: string;
+        socketGuid?: string;
+        socket_guid?: string;
+        guid?: string;
+        guidAuthKey?: string;
+        guid_auth_key?: string;
         refreshToken?: string;
         refresh_token?: string;
         expiresIn?: number;
@@ -107,14 +113,37 @@ function parseAuthResponse(data: BlueBubblesRawAuthResponse): BlueBubblesAuthRes
                 throw new BlueBubblesAuthError("The server did not return an access token.");
         }
 
+        const socketGuid = normalizeSocketGuid(
+                data.socketGuid
+                ?? data.socket_guid
+                ?? data.guid
+                ?? data.guidAuthKey
+                ?? data.guid_auth_key
+        );
         const refreshToken = data.refreshToken ?? data.refresh_token;
         const expiresSeconds = data.expires_in ?? data.expiresIn;
         const expiresAt = data.expires_at ?? data.expiresAt ?? (expiresSeconds !== undefined ? Date.now() + expiresSeconds * 1000 : undefined);
 
         return {
                 accessToken,
+                socketGuid,
                 refreshToken,
                 expiresAt
+        };
+}
+
+function normalizeSocketGuid(value: string | undefined): string | undefined {
+        const normalized = value?.trim();
+        return normalized && normalized.length > 0 ? normalized : undefined;
+}
+
+function withConfiguredSocketGuid(authResult: BlueBubblesAuthResult, config: BlueBubblesAuthConfig): BlueBubblesAuthResult {
+        if(authResult.socketGuid) return authResult;
+        const configuredSocketGuid = normalizeSocketGuid(config.password);
+        if(!configuredSocketGuid) return authResult;
+        return {
+                ...authResult,
+                socketGuid: configuredSocketGuid
         };
 }
 
@@ -148,6 +177,7 @@ async function probeLegacyPasswordAuth(config: BlueBubblesAuthConfig): Promise<B
                 if(response.ok) {
                         return {
                                 accessToken: config.password,
+                                socketGuid: config.password,
                                 legacyPasswordAuth: true
                         };
                 }
@@ -206,10 +236,12 @@ export async function registerBlueBubblesDevice(config: BlueBubblesAuthConfig): 
 
         // Prefer the auth namespace when available, but gracefully fall back.
         try {
-                return await postAuth(config.serverUrl, "/api/v1/auth/register", payload);
+                const authResult = await postAuth(config.serverUrl, "/api/v1/auth/register", payload);
+                return withConfiguredSocketGuid(authResult, config);
         } catch(error) {
                 if(error instanceof BlueBubblesAuthError && error.status === 404) {
-                        return postAuth(config.serverUrl, "/api/v1/register", payload);
+                        const authResult = await postAuth(config.serverUrl, "/api/v1/register", payload);
+                        return withConfiguredSocketGuid(authResult, config);
                 }
                 throw error;
         }
@@ -222,11 +254,13 @@ export async function loginBlueBubblesDevice(config: BlueBubblesAuthConfig): Pro
         };
 
         try {
-                return await postAuth(config.serverUrl, "/api/v1/auth/login", payload);
+                const authResult = await postAuth(config.serverUrl, "/api/v1/auth/login", payload);
+                return withConfiguredSocketGuid(authResult, config);
         } catch(error) {
                 if(error instanceof BlueBubblesAuthError && error.status === 404) {
                         try {
-                                return await postAuth(config.serverUrl, "/api/v1/login", payload);
+                                const authResult = await postAuth(config.serverUrl, "/api/v1/login", payload);
+                                return withConfiguredSocketGuid(authResult, config);
                         } catch(secondError) {
                                 if(secondError instanceof BlueBubblesAuthError && secondError.status === 404) {
                                         return probeLegacyPasswordAuth(config);

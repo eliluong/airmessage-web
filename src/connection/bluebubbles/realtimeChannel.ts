@@ -15,9 +15,19 @@ export interface BlueBubblesRealtimeChannelOptions {
         reconnectionDelayMs?: number;
         reconnectionDelayMaxMs?: number;
         maxReconnectAttempts?: number;
+        connectTimeoutMs?: number;
 }
 
 export type BlueBubblesRealtimeListener = (payload: unknown) => void;
+
+interface BlueBubblesRealtimeSocketTarget {
+        origin: string;
+        path: string;
+}
+
+type BlueBubblesSocketIoOptions = Partial<ManagerOptions & SocketOptions> & {
+        allowEIO3?: boolean;
+};
 
 export default class BlueBubblesRealtimeChannel {
         private socket: Socket | undefined;
@@ -72,21 +82,32 @@ export default class BlueBubblesRealtimeChannel {
                         return this.socket;
                 }
 
-                const connectionOptions: Partial<ManagerOptions & SocketOptions> = {
+                const socketTarget = resolveSocketTarget(this.auth.serverUrl);
+                const socketGuid = normalizeSocketGuid(this.auth.socketGuid) ?? normalizeSocketGuid(this.auth.accessToken);
+                if(!socketGuid) {
+                        throw new Error("Missing socket guid credential for BlueBubbles realtime connection");
+                }
+
+                const connectionOptions: BlueBubblesSocketIoOptions = {
                         autoConnect: false,
                         transports: SOCKET_TRANSPORTS,
+                        // Some BlueBubbles deployments still front older Socket.IO/Engine.IO stacks.
+                        // Allowing EIO3 avoids silent "stuck connecting" behavior in those environments.
+                        allowEIO3: true,
                         reconnection: true,
+                        path: socketTarget.path,
+                        timeout: this.options.connectTimeoutMs ?? 10000,
                         reconnectionDelay: this.options.reconnectionDelayMs ?? BLUEBUBBLES_REALTIME_MIN_RECONNECTION_DELAY_MS,
                         reconnectionDelayMax: this.options.reconnectionDelayMaxMs ?? BLUEBUBBLES_REALTIME_MAX_RECONNECTION_DELAY_MS,
                         query: {
-                                guid: this.auth.accessToken
+                                guid: socketGuid
                         }
                 };
                 if(this.options.maxReconnectAttempts !== undefined) {
                         connectionOptions.reconnectionAttempts = Math.max(1, Math.floor(this.options.maxReconnectAttempts));
                 }
 
-                const socket = io(this.auth.serverUrl, connectionOptions);
+                const socket = io(socketTarget.origin, connectionOptions as Partial<ManagerOptions & SocketOptions>);
                 this.bindSocketListeners(socket);
                 this.socket = socket;
                 return socket;
@@ -122,6 +143,11 @@ export default class BlueBubblesRealtimeChannel {
                 socket.io.on("reconnect_error", (error: unknown) => {
                         this.setState("error", error);
                         this.emitError("Socket reconnect error", error);
+                });
+
+                socket.io.on("error", (error: unknown) => {
+                        this.setState("error", error);
+                        this.emitError("Socket manager error", error);
                 });
 
                 socket.io.on("reconnect_failed", () => {
@@ -173,4 +199,21 @@ function normalizeErrorSuffix(rawError: unknown): string | undefined {
         } catch {
                 return String(rawError);
         }
+}
+
+function resolveSocketTarget(serverUrl: string): BlueBubblesRealtimeSocketTarget {
+        const parsedUrl = new URL(serverUrl);
+        const normalizedBasePath = parsedUrl.pathname.replace(/\/+$/, "");
+        const pathPrefix = normalizedBasePath.length > 0 ? normalizedBasePath : "";
+        const socketPath = `${pathPrefix}/socket.io`.replace(/\/{2,}/g, "/");
+
+        return {
+                origin: parsedUrl.origin,
+                path: socketPath.startsWith("/") ? socketPath : `/${socketPath}`
+        };
+}
+
+function normalizeSocketGuid(value: string | undefined): string | undefined {
+        const normalized = value?.trim();
+        return normalized && normalized.length > 0 ? normalized : undefined;
 }

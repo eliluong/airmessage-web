@@ -69,9 +69,12 @@ describe("BlueBubblesRealtimeChannel", () => {
                 const channel = new BlueBubblesRealtimeChannel(auth, {onStateChange: stateSpy});
                 channel.connect();
 
-                expect(mockedIo).toHaveBeenCalledWith(auth.serverUrl, expect.objectContaining({
+                expect(mockedIo).toHaveBeenCalledWith("http://localhost:1234", expect.objectContaining({
                         autoConnect: false,
+                        path: "/socket.io",
                         transports: ["websocket", "polling"],
+                        allowEIO3: true,
+                        timeout: 10000,
                         reconnection: true,
                         query: {guid: auth.accessToken}
                 }));
@@ -86,6 +89,38 @@ describe("BlueBubblesRealtimeChannel", () => {
                 expect(fakeSocket.disconnect).toHaveBeenCalledTimes(1);
                 expect(fakeSocket.removeAllListeners).toHaveBeenCalledTimes(1);
                 expect(channel.state).toBe("disconnected");
+        });
+
+        it("uses socketGuid and preserves URL base path for socket.io routing", () => {
+                const fakeSocket = new FakeSocket();
+                const mockedIo = io as unknown as jest.Mock;
+                mockedIo.mockReturnValue(fakeSocket);
+
+                const channel = new BlueBubblesRealtimeChannel({
+                        serverUrl: "https://example.com/nested/path/",
+                        accessToken: "access-token",
+                        socketGuid: "socket-guid"
+                });
+                channel.connect();
+
+                expect(mockedIo).toHaveBeenCalledWith("https://example.com", expect.objectContaining({
+                        path: "/nested/path/socket.io",
+                        allowEIO3: true,
+                        query: {guid: "socket-guid"}
+                }));
+        });
+
+        it("supports overriding socket connect timeout", () => {
+                const fakeSocket = new FakeSocket();
+                const mockedIo = io as unknown as jest.Mock;
+                mockedIo.mockReturnValue(fakeSocket);
+
+                const channel = new BlueBubblesRealtimeChannel(auth, {connectTimeoutMs: 25000});
+                channel.connect();
+
+                expect(mockedIo).toHaveBeenCalledWith("http://localhost:1234", expect.objectContaining({
+                        timeout: 25000
+                }));
         });
 
         it("subscribes and unsubscribes realtime message listeners", () => {

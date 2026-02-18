@@ -22,6 +22,7 @@ import {
 interface BlueBubblesSessionState {
         serverUrl: string;
         accessToken: string;
+        socketGuid?: string;
         refreshToken?: string;
         expiresAt?: number;
         deviceName?: string;
@@ -50,9 +51,10 @@ export default function SignInGate() {
         });
 
         const loadStoredSession = useCallback(async () => {
-                const [serverUrl, token, refreshToken, deviceName, expiresAt, legacyAuth] = await Promise.all([
+                const [serverUrl, token, socketGuid, refreshToken, deviceName, expiresAt, legacyAuth] = await Promise.all([
                         getSecureLS(SecureStorageKey.BlueBubblesServerUrl),
                         getSecureLS(SecureStorageKey.BlueBubblesToken),
+                        getSecureLS(SecureStorageKey.BlueBubblesSocketGuid),
                         getSecureLS(SecureStorageKey.BlueBubblesRefreshToken),
                         getSecureLS(SecureStorageKey.BlueBubblesDeviceName),
                         getSecureLS(SecureStorageKey.BlueBubblesTokenExpiry),
@@ -70,6 +72,7 @@ export default function SignInGate() {
                         const storedSession: BlueBubblesSessionState = {
                                 serverUrl,
                                 accessToken: token,
+                                socketGuid: socketGuid ?? undefined,
                                 refreshToken: refreshToken ?? undefined,
                                 expiresAt: Number.isFinite(parsedExpiry) ? parsedExpiry : undefined,
                                 deviceName: deviceName ?? undefined,
@@ -97,6 +100,7 @@ export default function SignInGate() {
                 await Promise.all([
                         setSecureLS(SecureStorageKey.BlueBubblesServerUrl, value?.serverUrl),
                         setSecureLS(SecureStorageKey.BlueBubblesToken, value?.accessToken),
+                        setSecureLS(SecureStorageKey.BlueBubblesSocketGuid, value?.socketGuid),
                         setSecureLS(SecureStorageKey.BlueBubblesRefreshToken, value?.refreshToken),
                         setSecureLS(SecureStorageKey.BlueBubblesDeviceName, value?.deviceName),
                         setSecureLS(
@@ -112,13 +116,16 @@ export default function SignInGate() {
 
         const handleAuthResult = useCallback(async (
                 credentials: BlueBubblesCredentialValues,
-                authResult: BlueBubblesAuthResult
+                authResult: BlueBubblesAuthResult,
+                fallbackSocketGuid?: string
         ) => {
                 const sanitizedServerUrl = credentials.serverUrl.trim();
                 const sanitizedDevice = credentials.deviceName?.trim() ?? undefined;
+                const sanitizedSocketGuid = normalizeSocketGuid(authResult.socketGuid) ?? normalizeSocketGuid(fallbackSocketGuid);
                 const nextSession: BlueBubblesSessionState = {
                         serverUrl: sanitizedServerUrl,
                         accessToken: authResult.accessToken,
+                        socketGuid: sanitizedSocketGuid,
                         refreshToken: authResult.refreshToken,
                         expiresAt: authResult.expiresAt,
                         deviceName: sanitizedDevice,
@@ -166,7 +173,7 @@ export default function SignInGate() {
                                 ? await registerBlueBubblesDevice(payload)
                                 : await loginBlueBubblesDevice(payload);
 
-                        await handleAuthResult(payload, authResult);
+                        await handleAuthResult(payload, authResult, payload.password);
                         setSubmitState({submitting: false});
                 } catch(error) {
                         handleError(error);
@@ -200,7 +207,7 @@ export default function SignInGate() {
                                         serverUrl: session.serverUrl,
                                         password: "",
                                         deviceName: session.deviceName
-                                }, refreshed);
+                                }, refreshed, session.socketGuid);
                         } catch(error) {
                                 if(cancelled) return;
                                 console.warn("Failed to refresh BlueBubbles token", error);
@@ -239,6 +246,7 @@ export default function SignInGate() {
                                         <Messaging
                                                 serverUrl={session.serverUrl}
                                                 accessToken={session.accessToken}
+                                                socketGuid={session.socketGuid}
                                                 refreshToken={session.refreshToken}
                                                 legacyPasswordAuth={session.legacyPasswordAuth}
                                                 deviceName={session.deviceName}
@@ -269,4 +277,9 @@ function applySentryUser(session: BlueBubblesSessionState | null) {
                         username: session.deviceName
                 });
         }
+}
+
+function normalizeSocketGuid(value: string | undefined): string | undefined {
+        const normalized = value?.trim();
+        return normalized && normalized.length > 0 ? normalized : undefined;
 }
