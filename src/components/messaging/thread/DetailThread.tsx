@@ -323,6 +323,7 @@ export default function DetailThread({conversation, focusTarget}: {
                         || currentHistoryLoadState !== PageLoadState.Idle) return;
 
                 //Set the state to loading
+                historyLoadStateRef.current = PageLoadState.Loading;
                 setHistoryLoadState(PageLoadState.Loading);
 
                 const currentMetadata = currentDisplayState.metadata;
@@ -331,6 +332,7 @@ export default function DetailThread({conversation, focusTarget}: {
                 const anchorServerID = currentMetadata?.oldestServerID ?? fallbackAnchor;
 
                 if(anchorServerID === undefined) {
+                        historyLoadStateRef.current = PageLoadState.Complete;
                         setHistoryLoadState(PageLoadState.Complete);
                         return;
                 }
@@ -344,6 +346,7 @@ export default function DetailThread({conversation, focusTarget}: {
                 )
                         .then((result) => {
                                 if(result.items.length > 0) {
+                                        historyLoadStateRef.current = PageLoadState.Idle;
                                         setHistoryLoadState(PageLoadState.Idle);
 
                                         setDisplayState((displayState) => {
@@ -359,9 +362,11 @@ export default function DetailThread({conversation, focusTarget}: {
                                                 };
                                         });
                                 } else {
+                                        historyLoadStateRef.current = PageLoadState.Complete;
                                         setHistoryLoadState(PageLoadState.Complete);
                                 }
                         }).catch(() => {
+                                historyLoadStateRef.current = PageLoadState.Idle;
                         setHistoryLoadState(PageLoadState.Idle);
                 });
         }, [conversation, setDisplayState, setHistoryLoadState, requestHistoryUnsubscribeContainer, displayStateRef, historyLoadStateRef]);
@@ -374,6 +379,7 @@ export default function DetailThread({conversation, focusTarget}: {
                         || conversation.localOnly
                         || currentFutureLoadState !== PageLoadState.Idle) return;
 
+                futureLoadStateRef.current = PageLoadState.Loading;
                 setFutureLoadState(PageLoadState.Loading);
 
                 const currentMetadata = currentDisplayState.metadata;
@@ -382,6 +388,7 @@ export default function DetailThread({conversation, focusTarget}: {
                 const anchorServerID = newestFetchedServerID ?? currentMetadata?.newestServerID ?? fallbackAnchor;
 
                 if(anchorServerID === undefined) {
+                        futureLoadStateRef.current = PageLoadState.Complete;
                         setFutureLoadState(PageLoadState.Complete);
                         return;
                 }
@@ -395,6 +402,7 @@ export default function DetailThread({conversation, focusTarget}: {
                 )
                         .then((result) => {
                                 if(result.items.length > 0) {
+                                        futureLoadStateRef.current = PageLoadState.Idle;
                                         setFutureLoadState(PageLoadState.Idle);
 
                                         setDisplayState((displayState) => {
@@ -412,9 +420,11 @@ export default function DetailThread({conversation, focusTarget}: {
                                         const fetchedMetadata = mergeThreadFetchMetadata([result], result.items);
                                         updateNewestFetchedServerID(fetchedMetadata?.newestServerID);
                                 } else {
+                                        futureLoadStateRef.current = PageLoadState.Complete;
                                         setFutureLoadState(PageLoadState.Complete);
                                 }
                         }).catch(() => {
+                                futureLoadStateRef.current = PageLoadState.Idle;
                         setFutureLoadState(PageLoadState.Idle);
                 });
         }, [conversation, setDisplayState, setFutureLoadState, requestFutureUnsubscribeContainer, displayStateRef, futureLoadStateRef, newestFetchedServerID, updateNewestFetchedServerID]);
@@ -429,6 +439,8 @@ export default function DetailThread({conversation, focusTarget}: {
         }, [conversation.localID, focusKey, requestMessages, focusTarget]);
 
         useEffect(() => {
+                historyLoadStateRef.current = PageLoadState.Idle;
+                futureLoadStateRef.current = PageLoadState.Idle;
                 setHistoryLoadState(PageLoadState.Idle);
                 setFutureLoadState(PageLoadState.Idle);
                 setNewestFetchedServerID(undefined);
@@ -916,17 +928,32 @@ export default function DetailThread({conversation, focusTarget}: {
         let body: React.ReactNode;
         if(displayState.type === DisplayType.Messages) {
                 body = (
-                        <MessageList
-                                conversation={conversation}
-                                items={editedMessages}
-                                messageSubmitEmitter={messageSubmitEmitter.current}
-                                focusTarget={focusMetadata}
-                                showHistoryLoader={historyLoadState === PageLoadState.Loading}
-                                showFutureLoader={futureLoadState === PageLoadState.Loading}
-                                onRequestHistory={requestHistory}
-                                onRequestFuture={requestFuture} />
-		);
-	} else if(displayState.type === DisplayType.Loading) {
+                        <Box position="relative" display="flex" flexDirection="column" flexGrow={1} minHeight={0}>
+                                <MessageList
+                                        conversation={conversation}
+                                        items={editedMessages}
+                                        messageSubmitEmitter={messageSubmitEmitter.current}
+                                        focusTarget={focusMetadata}
+                                        showHistoryLoader={historyLoadState === PageLoadState.Loading}
+                                        onRequestHistory={requestHistory}
+                                        onRequestFuture={requestFuture} />
+                                {futureLoadState === PageLoadState.Loading && (
+                                        <Stack
+                                                sx={{
+                                                        position: "absolute",
+                                                        left: 0,
+                                                        right: 0,
+                                                        bottom: 16,
+                                                        pointerEvents: "none"
+                                                }}
+                                                alignItems="center"
+                                                justifyContent="center">
+                                                <CircularProgress size={24} />
+                                        </Stack>
+                                )}
+                        </Box>
+			);
+		} else if(displayState.type === DisplayType.Loading) {
 		body = (
 			<Stack height="100%" alignItems="center" justifyContent="center">
 				<CircularProgress />

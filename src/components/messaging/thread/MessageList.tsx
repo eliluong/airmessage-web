@@ -18,30 +18,23 @@ interface Props {
         onRequestHistory: () => void;
         onRequestFuture: () => void;
         showHistoryLoader?: boolean;
-        showFutureLoader?: boolean;
         focusTarget?: ThreadFocusTarget;
-}
-
-interface State {
-        isHistoryInThreshold: boolean;
-        isFutureInThreshold: boolean;
 }
 
 const historyLoadScrollThreshold = 300;
 const futureLoadScrollThreshold = 300;
 
-export default class MessageList extends React.Component<Props, State> {
-        state = {
-                isHistoryInThreshold: false,
-                isFutureInThreshold: false
-        };
-
+export default class MessageList extends React.Component<Props> {
         //Reference to the message scroll list element
         readonly scrollRef = React.createRef<HTMLDivElement>();
 	
 	//List scroll position snapshot values
 	private snapshotScrollHeight = 0;
         private snapshotScrollTop = 0;
+
+        //Threshold state kept outside React state to avoid rerendering while scrolling
+        private isHistoryInThreshold = false;
+        private isFutureInThreshold = false;
 
         //Used to track whether the message list should be scrolled to the bottom when the component is next updated
         private shouldScrollNextUpdate = false;
@@ -57,28 +50,21 @@ export default class MessageList extends React.Component<Props, State> {
                 const nearBottom = (element.scrollHeight - element.scrollTop - element.clientHeight)
                         < futureLoadScrollThreshold;
 
-                if(nearTop && !this.state.isHistoryInThreshold) {
+                if(nearTop && !this.isHistoryInThreshold) {
                         this.props.onRequestHistory();
                 }
-                if(nearBottom && !this.state.isFutureInThreshold) {
+                if(nearBottom && !this.isFutureInThreshold) {
                         this.props.onRequestFuture();
                 }
 
-                if(nearTop !== this.state.isHistoryInThreshold || nearBottom !== this.state.isFutureInThreshold) {
-                        this.setState({
-                                isHistoryInThreshold: nearTop,
-                                isFutureInThreshold: nearBottom
-                        });
-                }
+                this.isHistoryInThreshold = nearTop;
+                this.isFutureInThreshold = nearBottom;
         };
 
-        shouldComponentUpdate(nextProps: Readonly<Props>, nextState: Readonly<State>): boolean {
+        shouldComponentUpdate(nextProps: Readonly<Props>): boolean {
                 const focusChanged = !areFocusTargetsEqual(nextProps.focusTarget, this.props.focusTarget);
-                return nextState.isHistoryInThreshold !== this.state.isHistoryInThreshold
-                        || nextState.isFutureInThreshold !== this.state.isFutureInThreshold
-                        || nextProps.items !== this.props.items
+                return nextProps.items !== this.props.items
                         || nextProps.showHistoryLoader !== this.props.showHistoryLoader
-                        || nextProps.showFutureLoader !== this.props.showFutureLoader
                         || nextProps.conversation !== this.props.conversation
                         || nextProps.messageSubmitEmitter !== this.props.messageSubmitEmitter
                         || focusChanged;
@@ -123,7 +109,6 @@ export default class MessageList extends React.Component<Props, State> {
                                         maxWidth: "1000px",
                                         marginX: "auto"
                                 }} direction="column-reverse">
-                                        {this.props.showFutureLoader && <HistoryLoadingProgress key="static-futureloader" />}
                                         {this.props.items.map((item, i, array) => {
                                                 if(item.itemType === ConversationItemType.Message) {
                                                         const message = item as MessageItemWithEdits;
@@ -182,17 +167,22 @@ export default class MessageList extends React.Component<Props, State> {
 	}
 	
 	componentDidUpdate(prevProps: Readonly<Props>) {
-		//Scrolling the list to the bottom if needed
-		if(this.shouldScrollNextUpdate) {
-			this.scrollToBottom();
-			this.shouldScrollNextUpdate = false;
-		}
-		//Restoring the scroll position when new items are added at the top
-		else if(this.props.showHistoryLoader !== prevProps.showHistoryLoader && this.checkScrolledToTop()) {
-			const element = this.scrollRef.current!;
-			this.setScroll(this.snapshotScrollTop + (element.scrollHeight - this.snapshotScrollHeight), true);
-		}
-		
+                if(this.props.conversation !== prevProps.conversation) {
+                        this.isHistoryInThreshold = false;
+                        this.isFutureInThreshold = false;
+                }
+
+                //Scrolling the list to the bottom if needed
+                if(this.shouldScrollNextUpdate) {
+                        this.scrollToBottom();
+                        this.shouldScrollNextUpdate = false;
+                }
+                //Restoring the scroll position when new items are added at the top
+                else if(this.props.showHistoryLoader !== prevProps.showHistoryLoader && this.checkScrolledToTop()) {
+                        const element = this.scrollRef.current!;
+                        this.setScroll(this.snapshotScrollTop + (element.scrollHeight - this.snapshotScrollHeight), true);
+                }
+			
 		//Updating the submit emitter
                 if(this.props.messageSubmitEmitter !== prevProps.messageSubmitEmitter) {
                         prevProps.messageSubmitEmitter.unsubscribe(this.onMessageSubmit);
