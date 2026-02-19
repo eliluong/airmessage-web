@@ -124,7 +124,8 @@ module.exports = (env) => ({
                         "WPEnv.PACKAGE_VERSION": JSON.stringify(process.env.npm_package_version),
                         "WPEnv.RELEASE_HASH": "\"undefined\"",
                         "WPEnv.BUILD_DATE": Date.now(),
-                        "WPEnv.BFF_ENABLED": JSON.stringify(parseBooleanEnv(process.env.BFF_ENABLED)),
+                        "WPEnv.BFF_ENABLED": JSON.stringify(parseBooleanEnv(process.env.BFF_ENABLED ?? "true")),
+                        "WPEnv.BFF_DIRECT_MODE_ENABLED": JSON.stringify(parseBooleanEnv(process.env.BFF_DIRECT_MODE_ENABLED)),
                         "WPEnv.SENTRY_DSN": JSON.stringify(process.env.SENTRY_DSN ?? ""),
                         "WPEnv.LINK_PREVIEW_API_KEY": JSON.stringify(process.env.LINK_PREVIEW_API_KEY ?? "")
                 }),

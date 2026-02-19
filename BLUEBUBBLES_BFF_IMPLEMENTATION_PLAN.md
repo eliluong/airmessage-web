@@ -311,12 +311,27 @@ Operational evidence update (2026-02-19):
 - Persisted an in-repo evidence handoff record at `evidence/phase4-playwright-evidence.md`.
 
 ## Phase 5: Cleanup and default-on rollout
+Status (2026-02-19): COMPLETE
+
 - Make BFF path default.
 - Remove or deeply gate legacy direct-auth browser path.
 - Update onboarding copy/docs and deprecation notice for direct mode.
 
+Delivered artifacts:
+- Web transport defaults to BFF by default (`BFF_ENABLED=true` unless explicitly overridden) and `.env.example` now reflects the default-on rollout posture.
+- Added explicit direct-mode opt-in gate (`BFF_DIRECT_MODE_ENABLED`): direct browser auth now activates only when `BFF_ENABLED=false` and `BFF_DIRECT_MODE_ENABLED=true`; invalid mixed/disabled states fail closed with explicit configuration errors.
+- Updated onboarding copy to BFF-first messaging and added a direct-mode deprecation warning surface when direct mode is intentionally enabled.
+- Updated media-cache account scoping fallback to use configured transport mode instead of a hardcoded `"direct"` fallback.
+- Added transport configuration regression coverage for default-on and fail-closed behavior (`test/connection/bluebubbles/transportConfig.test.ts`).
+
 Exit criteria:
 - BFF is primary transport and credential boundary is enforced by default.
+- Direct mode is explicit, deprecated, and opt-in only.
+
+Validation update (2026-02-19):
+- `npm test -- --runInBand test/connection/bluebubbles/transportConfig.test.ts test/connection/bluebubbles/transport.test.ts test/connection/bluebubbles/bffSessionApi.test.ts test/connection/bluebubbles/bffApi.test.ts` passed (4 suites, 13 tests).
+- `npm test -- --runInBand` passed after making direct-mode intent explicit in legacy manager tests (26 suites, 130 tests).
+- `npm run build` passed after Phase 5 updates (webpack success; existing asset-size/service-worker warnings only).
 
 ## 9) Testing Strategy
 
@@ -351,7 +366,6 @@ If same-origin is not possible, enforce strict CORS and cookie domain policy.
 
 ## 12) Immediate Next Work Items
 
-1. Execute Phase 5 rollout work: default BFF transport-on path, deprecate/gate direct mode, and update onboarding copy.
-2. Add route-level BFF integration tests (mocked upstream) covering attachment upload/download streaming and CSRF failure envelopes.
-3. Capture longer-session reconnect behavior evidence (especially tunnel/cloud deployments) before default-on rollout.
-4. Add a focused regression test for nullable attachment MIME-type previews in conversation list rendering.
+1. Add route-level BFF integration tests (mocked upstream) covering attachment upload/download streaming and CSRF failure envelopes.
+2. Capture longer-session reconnect behavior evidence (especially tunnel/cloud deployments) under default-on BFF rollout.
+3. Add a focused regression test for nullable attachment MIME-type previews in conversation list rendering.

@@ -9,6 +9,7 @@ import {
         Typography
 } from "@mui/material";
 import AirMessageLogo from "shared/components/logo/AirMessageLogo";
+import type {BlueBubblesTransportMode} from "shared/connection/bluebubbles/session";
 
 export interface BlueBubblesCredentialValues {
         serverUrl: string;
@@ -18,6 +19,7 @@ export interface BlueBubblesCredentialValues {
 
 export interface OnboardingProps {
         initialValues: BlueBubblesCredentialValues;
+        transportMode: BlueBubblesTransportMode;
         submitting?: boolean;
         error?: string;
         onSubmit: (values: BlueBubblesCredentialValues, action: "login" | "register") => void;
@@ -32,6 +34,7 @@ interface ValidationState {
 export default function Onboarding(props: OnboardingProps) {
         const [values, setValues] = useState<BlueBubblesCredentialValues>(props.initialValues);
         const [touched, setTouched] = useState<{[K in keyof ValidationState]?: boolean}>({});
+        const isDirectTransport = props.transportMode === "direct";
 
         useEffect(() => {
                 setValues(props.initialValues);
@@ -97,11 +100,21 @@ export default function Onboarding(props: OnboardingProps) {
 
                         <Stack spacing={4} maxWidth={520} width="100%">
                                 <Stack spacing={1}>
-                                        <Typography variant="h4">Connect to your BlueBubbles server</Typography>
+                                        <Typography variant="h4">
+                                                {isDirectTransport ? "Connect directly to BlueBubbles" : "Connect to BlueBubbles through BFF"}
+                                        </Typography>
                                         <Typography color="text.secondary">
-                                                Enter your server information to sign in. You can register a new device label, or sign in with an existing one.
+                                                {isDirectTransport
+                                                        ? "Direct browser auth is deprecated and should only be used as a temporary fallback."
+                                                        : "Enter your server information to sign in through the AirMessage BFF credential boundary."}
                                         </Typography>
                                 </Stack>
+
+                                {isDirectTransport && (
+                                        <Alert severity="warning">
+                                                Direct mode exposes BlueBubbles auth material to browser-visible request surfaces and is not recommended for normal use.
+                                        </Alert>
+                                )}
 
                                 {props.error && (
                                         <Alert severity="error">{props.error}</Alert>
@@ -120,13 +133,15 @@ export default function Onboarding(props: OnboardingProps) {
                                                 fullWidth
                                         />
                                         <TextField
-                                                label="API password or token"
+                                                label={isDirectTransport ? "API password or token (direct mode)" : "API password or token"}
                                                 type="password"
                                                 value={values.password}
                                                 onChange={(event) => updateField("password", event.target.value)}
                                                 onBlur={() => handleBlur("password")}
                                                 error={touched.password && Boolean(validation.password)}
-                                                helperText={touched.password ? validation.password : undefined}
+                                                helperText={touched.password
+                                                        ? validation.password
+                                                        : (isDirectTransport ? "Direct mode is deprecated. Prefer BFF mode for secure credential handling." : undefined)}
                                                 disabled={submitting}
                                                 fullWidth
                                         />

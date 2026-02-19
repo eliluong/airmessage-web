@@ -1,4 +1,5 @@
 import * as ConnectionManager from "shared/connection/connectionManager";
+import {getConfiguredBlueBubblesTransportMode} from "shared/connection/bluebubbles/transport";
 import type {ThreadFetchMetadata} from "shared/connection/communicationsManager";
 import type {ConversationAttachmentEntry} from "shared/data/attachment";
 import type {ConversationItem, MessageItem} from "shared/data/blocks";
@@ -38,7 +39,7 @@ export function getConversationMediaCacheScopeKey(): string {
                                 auth.refreshToken ?? "",
                                 auth.deviceName ?? "",
                                 auth.legacyPasswordAuth ? "legacy" : "modern",
-                                auth.transportMode ?? "direct"
+                                auth.transportMode ?? getConfiguredBlueBubblesTransportMode()
                         ].join("|");
                         return `${proxyType}:${accountKey}`;
                 }

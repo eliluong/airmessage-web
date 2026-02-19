@@ -67,16 +67,39 @@ export interface AttachmentUploadTarget {
 }
 
 function readBffEnabledFlag(): boolean {
+        if(typeof WPEnv === "undefined") return true;
+        return WPEnv.BFF_ENABLED !== false;
+}
+
+function readDirectModeEnabledFlag(): boolean {
         if(typeof WPEnv === "undefined") return false;
-        return WPEnv.BFF_ENABLED === true;
+        return WPEnv.BFF_DIRECT_MODE_ENABLED === true;
 }
 
 export function getConfiguredBlueBubblesTransportMode(): BlueBubblesTransportMode {
-        return readBffEnabledFlag() ? "bff" : "direct";
+        const bffEnabled = readBffEnabledFlag();
+        const directModeEnabled = readDirectModeEnabledFlag();
+
+        if(directModeEnabled) {
+                if(bffEnabled) {
+                        throw new Error("Invalid BlueBubbles transport configuration: direct mode requires BFF_ENABLED=false.");
+                }
+                return "direct";
+        }
+
+        if(!bffEnabled) {
+                throw new Error("Invalid BlueBubbles transport configuration: BFF is disabled and direct mode is not enabled.");
+        }
+
+        return "bff";
 }
 
 export function isBffTransportEnabled(): boolean {
         return getConfiguredBlueBubblesTransportMode() === "bff";
+}
+
+export function isDirectBlueBubblesTransportEnabled(): boolean {
+        return getConfiguredBlueBubblesTransportMode() === "direct";
 }
 
 function resolveTransportMode(auth: BlueBubblesAuthState): BlueBubblesTransportMode {

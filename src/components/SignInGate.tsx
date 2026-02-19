@@ -308,6 +308,7 @@ export default function SignInGate() {
                         main = (
                                 <Onboarding
                                         initialValues={onboardingInitialValues}
+                                        transportMode={transportMode}
                                         submitting={submitState.submitting}
                                         error={submitState.error}
                                         onSubmit={handleSubmit}
