@@ -138,10 +138,24 @@ describe("BFF realtime bridge", () => {
                 sessionSecret: "secret",
                 sessionCookieName: "bff_session",
                 sessionMaxAgeMs: 24 * 60 * 60 * 1000,
+                sessionStoreMode: "memory",
+                sessionStoreTtlSeconds: 24 * 60 * 60,
+                redisKeyPrefix: "airmessage:bff:sess:",
                 cookieSecure: false,
                 trustProxy: false,
                 requestBodyLimit: "256kb",
-                allowedOrigins: undefined
+                allowedOrigins: undefined,
+                upstreamHostPolicy: {
+                        enforceAllowlist: false,
+                        allowedHosts: [],
+                        allowedCidrs: []
+                },
+                rateLimitEnabled: true,
+                proxyRateLimitWindowMs: 60_000,
+                proxyRateLimitMaxRequests: 300,
+                authRateLimitWindowMs: 60_000,
+                authRateLimitMaxRequests: 20,
+                metricsEnabled: true
         };
 
         beforeEach(() => {

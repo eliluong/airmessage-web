@@ -1,6 +1,6 @@
 import {randomUUID} from "node:crypto";
 import {BffHttpError} from "../errors";
-import {buildUpstreamUrl, normalizeServerUrl} from "../security/urlValidation";
+import {buildUpstreamUrl, normalizeServerUrl, UpstreamHostPolicy} from "../security/urlValidation";
 import {BffSessionRecord} from "../session/types";
 import {generateCsrfToken} from "../session/csrf";
 
@@ -50,7 +50,7 @@ export interface SessionLoginRequest {
         action?: AuthAction;
 }
 
-export function sanitizeSessionLoginRequest(rawBody: unknown): AuthenticateInput {
+export function sanitizeSessionLoginRequest(rawBody: unknown, upstreamHostPolicy?: UpstreamHostPolicy): AuthenticateInput {
         if(!rawBody || typeof rawBody !== "object") {
                 throw new BffHttpError({
                         code: "BFF_INVALID_LOGIN_PAYLOAD",
@@ -74,7 +74,7 @@ export function sanitizeSessionLoginRequest(rawBody: unknown): AuthenticateInput
         }
 
         return {
-                serverUrl: normalizeServerUrl(serverUrl),
+                serverUrl: normalizeServerUrl(serverUrl, upstreamHostPolicy),
                 password: password.trim(),
                 deviceName: deviceName && deviceName.length > 0 ? deviceName : undefined,
                 action

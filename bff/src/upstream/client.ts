@@ -1,4 +1,5 @@
 import {BffHttpError} from "../errors";
+import {recordUpstreamRequest, recordUpstreamTransportFailure} from "../observability/metrics";
 import {buildUpstreamUrl} from "../security/urlValidation";
 import {BffSessionRecord} from "../session/types";
 
@@ -81,10 +82,12 @@ export async function requestUpstreamResponse(session: BffSessionRecord, request
                 (fetchInit as RequestInit & {duplex: "half";}).duplex = "half";
         }
 
+        const startedAt = process.hrtime.bigint();
         let response: Response;
         try {
                 response = await fetch(url.toString(), fetchInit);
         } catch(error) {
+                recordUpstreamTransportFailure(request.method, request.path);
                 throw new BffHttpError({
                         code: "BFF_UPSTREAM_UNREACHABLE",
                         status: 502,
@@ -92,6 +95,13 @@ export async function requestUpstreamResponse(session: BffSessionRecord, request
                         retriable: true
                 });
         }
+
+        recordUpstreamRequest(
+                request.method,
+                request.path,
+                response.status,
+                computeDurationMs(startedAt)
+        );
 
         if(!response.ok) {
                 throw await buildProxyError(response);
@@ -239,4 +249,9 @@ function requiresDuplex(body: BodyInit): boolean {
         if(typeof streamLike.pipe === "function" || typeof streamLike.on === "function") return true;
 
         return false;
+}
+
+function computeDurationMs(startedAt: bigint): number {
+        const elapsedNanoseconds = process.hrtime.bigint() - startedAt;
+        return Number(elapsedNanoseconds) / 1_000_000;
 }

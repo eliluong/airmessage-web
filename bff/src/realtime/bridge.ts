@@ -3,6 +3,7 @@ import {Server as SocketIOServer, Socket as BrowserSocket} from "socket.io";
 import {Socket as UpstreamSocket} from "socket.io-client";
 import {BffConfig} from "../config";
 import {logger} from "../observability/logger";
+import {recordRealtimeReconnect} from "../observability/metrics";
 import {BffSessionMiddleware} from "../session/middleware";
 import {BffSessionRecord} from "../session/types";
 import {
@@ -116,6 +117,7 @@ function bindUpstreamLifecycle(
         });
 
         upstreamSocket.on("connect_error", (error) => {
+                recordRealtimeReconnect("connect_error");
                 const details = normalizeUpstreamStateDetails(error);
                 emitRealtimeState(browserSocket, "error", details);
                 logger.warn({
@@ -126,6 +128,7 @@ function bindUpstreamLifecycle(
         });
 
         upstreamSocket.on("error", (error) => {
+                recordRealtimeReconnect("error");
                 const details = normalizeUpstreamStateDetails(error);
                 emitRealtimeState(browserSocket, "error", details);
                 logger.warn({
@@ -136,14 +139,17 @@ function bindUpstreamLifecycle(
         });
 
         upstreamSocket.io.on("reconnect_attempt", (attempt) => {
+                recordRealtimeReconnect("reconnect_attempt");
                 emitRealtimeState(browserSocket, "connecting", normalizeUpstreamStateDetails(attempt));
         });
 
         upstreamSocket.io.on("reconnect", (attempt) => {
+                recordRealtimeReconnect("reconnect");
                 emitRealtimeState(browserSocket, "connected", normalizeUpstreamStateDetails(attempt));
         });
 
         upstreamSocket.io.on("reconnect_error", (error) => {
+                recordRealtimeReconnect("reconnect_error");
                 const details = normalizeUpstreamStateDetails(error);
                 emitRealtimeState(browserSocket, "error", details);
                 logger.warn({
@@ -154,6 +160,7 @@ function bindUpstreamLifecycle(
         });
 
         upstreamSocket.io.on("reconnect_failed", () => {
+                recordRealtimeReconnect("reconnect_failed");
                 emitRealtimeState(browserSocket, "error", "reconnect_failed");
                 logger.warn({
                         socketId: browserSocket.id,

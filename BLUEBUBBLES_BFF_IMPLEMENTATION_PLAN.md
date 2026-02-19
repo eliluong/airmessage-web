@@ -283,10 +283,21 @@ Exit criteria:
 - Realtime receive path functions without direct browser socket to BlueBubbles.
 
 ## Phase 4: Hardening + production readiness
+Status (2026-02-19): COMPLETE
+
 - Redis session store and TTL controls.
 - Rate limiting, host allowlist, secure deployment docs (TLS termination via reverse proxy).
 - Structured metrics (auth failures, proxy latency, reconnect counts, upstream 4xx/5xx).
 - Security review checklist and log redaction verification.
+
+Delivered artifacts:
+- Added configurable session persistence controls with Redis-backed `connect-redis` support, TTL wiring, and clean shutdown handling (`bff/src/config.ts`, `bff/src/session/middleware.ts`, `bff/src/server.ts`).
+- Added upstream host allowlist enforcement controls (`BFF_UPSTREAM_ALLOWED_HOSTS` / `BFF_UPSTREAM_ALLOWED_CIDRS`) with wildcard/CIDR validation and runtime host rejection (`bff/src/security/urlValidation.ts`, `bff/src/upstream/auth.ts`, `bff/src/routes/sessionRoutes.ts`).
+- Added configurable request rate limiting for auth and proxy paths (`bff/src/security/rateLimit.ts`, `bff/src/app.ts`).
+- Added Prometheus-style metrics for auth failures, upstream latency + status/error classes, and realtime reconnect churn, exposed via `/bff/metrics` with optional bearer-token protection (`bff/src/observability/metrics.ts`, `bff/src/realtime/bridge.ts`, `bff/src/upstream/client.ts`, `bff/src/app.ts`).
+- Expanded redaction coverage and added explicit verification tests (`bff/src/observability/logger.ts`, `test/bff/observability/logger.test.ts`).
+- Added Phase 4 regression coverage for allowlist/rate-limit/metrics behavior (`test/bff/security/urlValidation.test.ts`, `test/bff/security/rateLimit.test.ts`, `test/bff/observability/metrics.test.ts`).
+- Added deployment/security operator checklist with TLS/reverse-proxy guidance and hardening verification steps (`bff/SECURITY_CHECKLIST.md`, `bff/.env.example`).
 
 Exit criteria:
 - Ready for persistent internal deployment.
@@ -332,8 +343,7 @@ If same-origin is not possible, enforce strict CORS and cookie domain policy.
 
 ## 12) Immediate Next Work Items
 
-1. Add BFF integration tests (Node-side route + mocked upstream) for attachment upload/download streaming and CSRF rejection paths.
-2. Run Playwright E2E evidence capture in BFF mode: login, chat bootstrap, send text, receive realtime updates, upload/download attachment.
-3. Move session storage from in-memory to Redis-backed persistence (`connect-redis`) and document ops requirements.
-4. Add hardened rate limiting + upstream host allowlist controls for production deployment.
-5. Capture longer-session reconnect behavior evidence (especially tunnel/cloud deployments) before default-on rollout.
+1. Run Playwright E2E evidence capture in BFF mode: login, chat bootstrap, send text, receive realtime updates, upload/download attachment.
+2. Execute Phase 5 rollout work: default BFF transport-on path, deprecate/gate direct mode, and update onboarding copy.
+3. Add route-level BFF integration tests (mocked upstream) covering attachment upload/download streaming and CSRF failure envelopes.
+4. Capture longer-session reconnect behavior evidence (especially tunnel/cloud deployments) before default-on rollout.
