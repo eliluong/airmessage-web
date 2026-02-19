@@ -11,6 +11,9 @@
 	"scripts": {
 		"start": "webpack serve --open",
 		"start-secure": "webpack serve --open --env secure",
+		"dev:web": "npm start",
+		"dev:bff": "npm --prefix bff run dev",
+		"dev": "concurrently -k -n web,bff \"npm run dev:web\" \"npm run dev:bff\"",
 		"build": "webpack build",
 		"test": "jest"
 	},
@@ -56,6 +59,7 @@
 		"@mui/material": "^5.0.0",
 		"@sentry/react": "^7.0.0",
 		"bytebuffer": "^5.0.1",
+		"concurrently": "^9.2.1",
 		"emoji-picker-react": "^4.15.1",
 		"emoji-regex": "^10.6.0",
 		"firebase": "^9.0.1",
