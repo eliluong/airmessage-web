@@ -41,18 +41,20 @@ export function getMemberTitleSync(members: string[], peopleState: PeopleState):
 	);
 }
 
-export function mimeTypeToDisplay(type: string): string {
-	if(type.startsWith("image/")) return "Image";
-	else if(type.startsWith("video/")) return "Video";
-	else if(type.startsWith("audio/")) return "Audio";
+export function mimeTypeToDisplay(type?: string | null): string {
+	const normalizedType = (type ?? "").toLowerCase();
+	if(normalizedType.startsWith("image/")) return "Image";
+	else if(normalizedType.startsWith("video/")) return "Video";
+	else if(normalizedType.startsWith("audio/")) return "Audio";
 	else return "File";
 }
 
-export function mimeTypeToPreview(type: string): string {
-        if(type.startsWith("image/")) return "Image file";
-        else if(type.startsWith("video/")) return "Video file";
-        else if(type.startsWith("audio/")) return "Audio message";
-        else return "Attachment file";
+export function mimeTypeToPreview(type?: string | null): string {
+	const normalizedType = (type ?? "").toLowerCase();
+	if(normalizedType.startsWith("image/")) return "Image file";
+	else if(normalizedType.startsWith("video/")) return "Video file";
+	else if(normalizedType.startsWith("audio/")) return "Audio message";
+	else return "Attachment file";
 }
 
 export function isVideoMimeType(mimeType?: string | null): boolean {

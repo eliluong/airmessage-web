@@ -28,6 +28,14 @@ module.exports = (env) => ({
                 host: "0.0.0.0",
                 allowedHosts: "all",
                 port: 8080,
+                proxy: parseBooleanEnv(process.env.BFF_DEV_PROXY_ENABLED) ? [
+                        {
+                                context: ["/bff", "/bff/socket"],
+                                target: process.env.BFF_PROXY_TARGET ?? "http://127.0.0.1:3100",
+                                changeOrigin: true,
+                                ws: true
+                        }
+                ] : undefined,
                 https: env.secure ? {
                         key: fs.readFileSync("webpack.key"),
                         cert: fs.readFileSync("webpack.crt"),

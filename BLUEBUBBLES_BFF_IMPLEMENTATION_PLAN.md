@@ -302,6 +302,14 @@ Delivered artifacts:
 Exit criteria:
 - Ready for persistent internal deployment.
 
+Operational evidence update (2026-02-19):
+- Playwright BFF-mode evidence pass completed for login/bootstrap/send/realtime/upload/download flows on `http://debian-dev.lan:8081`.
+- Captured BFF-only request traces showing `/bff/*` route usage with no direct browser calls to upstream BlueBubbles REST host during the validated session.
+- Captured send/upload/download route evidence (`POST /bff/message/text`, `POST /bff/message/attachment`, `GET /bff/attachment/:guid/download`) and realtime event evidence from browser logs.
+- During evidence pass, incoming attachment data with `null` MIME type exposed a sidebar crash path in web preview rendering; patched `mimeTypeToPreview`/`mimeTypeToDisplay` to accept nullable MIME types and return stable fallback labels instead of throwing.
+- Post-fix validation confirmed no `ListConversation` runtime crash and continued BFF flow operation.
+- Persisted an in-repo evidence handoff record at `evidence/phase4-playwright-evidence.md`.
+
 ## Phase 5: Cleanup and default-on rollout
 - Make BFF path default.
 - Remove or deeply gate legacy direct-auth browser path.
@@ -343,7 +351,7 @@ If same-origin is not possible, enforce strict CORS and cookie domain policy.
 
 ## 12) Immediate Next Work Items
 
-1. Run Playwright E2E evidence capture in BFF mode: login, chat bootstrap, send text, receive realtime updates, upload/download attachment.
-2. Execute Phase 5 rollout work: default BFF transport-on path, deprecate/gate direct mode, and update onboarding copy.
-3. Add route-level BFF integration tests (mocked upstream) covering attachment upload/download streaming and CSRF failure envelopes.
-4. Capture longer-session reconnect behavior evidence (especially tunnel/cloud deployments) before default-on rollout.
+1. Execute Phase 5 rollout work: default BFF transport-on path, deprecate/gate direct mode, and update onboarding copy.
+2. Add route-level BFF integration tests (mocked upstream) covering attachment upload/download streaming and CSRF failure envelopes.
+3. Capture longer-session reconnect behavior evidence (especially tunnel/cloud deployments) before default-on rollout.
+4. Add a focused regression test for nullable attachment MIME-type previews in conversation list rendering.

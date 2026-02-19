@@ -21,8 +21,10 @@
 - 2026-02-19 [CODE] Completed: Node BFF Phase 3 landed (server-side socket bridge + browser BFF realtime channel + regression tests).
 - 2026-02-19 [USER] Goal: Proceed with Node BFF Phase 4 and update implementation roadmap docs.
 - 2026-02-19 [CODE] Completed: Node BFF Phase 4 landed (Redis session-store support + rate limits + upstream allowlist + metrics + security checklist + verification tests).
+- 2026-02-19 [CODE] Completed: Playwright BFF evidence captured for login/bootstrap/send/realtime/upload/download; browser traffic remained on `/bff/*` during validated run.
+- 2026-02-19 [CODE] Completed: Hotfix landed for nullable attachment MIME previews to prevent `ListConversation` runtime crash after incoming/uploaded attachment updates.
 - 2026-02-19 [CODE] Now: Phase 5 rollout planning remains (default-on BFF transport + direct-mode deprecation).
-- 2026-02-19 [CODE] Next: Capture Playwright BFF-mode E2E evidence for login/bootstrap/send/realtime/upload/download and then execute Phase 5 defaults cleanup.
+- 2026-02-19 [CODE] Next: Execute Phase 5 defaults cleanup and add regression coverage for nullable MIME preview rendering.
 - 2026-02-18 [ASSUMPTION] Frequency of encrypted realtime payloads (`encrypted: true`) across deployments is UNCONFIRMED.
 
 ## Invariants / Constraints
@@ -50,12 +52,12 @@
 
 ## Done (recent)
 - 2026-02-19 [CODE] Added configurable Redis-backed session runtime with TTL and clean shutdown lifecycle (`bff/src/session/middleware.ts`, `bff/src/server.ts`).
-- 2026-02-19 [CODE] Added upstream allowlist policy parsing + enforcement (`bff/src/config.ts`, `bff/src/security/urlValidation.ts`, `bff/src/routes/sessionRoutes.ts`, `bff/src/upstream/auth.ts`).
-- 2026-02-19 [CODE] Added hardened auth/proxy rate limiting middleware (`bff/src/security/rateLimit.ts`, `bff/src/app.ts`).
-- 2026-02-19 [CODE] Added Prometheus-style metrics collection and `/bff/metrics` route with optional bearer-token protection (`bff/src/observability/metrics.ts`, `bff/src/app.ts`, `bff/src/upstream/client.ts`, `bff/src/realtime/bridge.ts`).
+- 2026-02-19 [CODE] Added upstream allowlist + rate-limiting + metrics hardening controls for production BFF deployments (`bff/src/security/urlValidation.ts`, `bff/src/security/rateLimit.ts`, `bff/src/observability/metrics.ts`).
 - 2026-02-19 [CODE] Expanded logger redaction coverage and added redaction verification test (`bff/src/observability/logger.ts`, `test/bff/observability/logger.test.ts`).
-- 2026-02-19 [CODE] Added Phase 4 regression coverage for URL allowlist, rate limiting, and metrics (`test/bff/security/urlValidation.test.ts`, `test/bff/security/rateLimit.test.ts`, `test/bff/observability/metrics.test.ts`).
+- 2026-02-19 [CODE] Added Phase 4 regression coverage for allowlist/rate-limit/metrics (`test/bff/security/urlValidation.test.ts`, `test/bff/security/rateLimit.test.ts`, `test/bff/observability/metrics.test.ts`).
 - 2026-02-19 [CODE] Updated roadmap and operations docs for Phase 4 completion (`BLUEBUBBLES_BFF_IMPLEMENTATION_PLAN.md`, `project.md`, `bff/SECURITY_CHECKLIST.md`, `bff/.env.example`).
+- 2026-02-19 [TOOL] Captured Playwright evidence for BFF login/bootstrap/send/realtime/upload/download; request logs showed `/bff/*` usage and no direct upstream REST calls in validated run, with in-repo handoff at `evidence/phase4-playwright-evidence.md`.
+- 2026-02-19 [CODE] Patched nullable MIME preview handling to prevent sidebar crash on attachment-only updates (`src/util/conversationUtils.ts`).
 
 ## Open Questions
 - 2026-02-18 [ASSUMPTION] For all target server versions, is configured password always valid as socket `guid` when token-auth endpoints are present? UNCONFIRMED.
@@ -74,7 +76,7 @@
 - 2026-02-19 [CODE] `bff/src/observability/logger.ts`
 - 2026-02-19 [CODE] `bff/src/upstream/client.ts`
 - 2026-02-19 [CODE] `bff/SECURITY_CHECKLIST.md`
-- 2026-02-19 [CODE] `test/bff/security/urlValidation.test.ts`
+- 2026-02-19 [CODE] `src/util/conversationUtils.ts`
 - 2026-02-19 [CODE] `test/bff/security/rateLimit.test.ts`
 - 2026-02-19 [CODE] `BLUEBUBBLES_BFF_IMPLEMENTATION_PLAN.md`
 
@@ -117,3 +119,6 @@
 - 2026-02-19 [TOOL] `npm --prefix bff run build` passed after Phase 4 hardening implementation (TypeScript compile success).
 - 2026-02-19 [TOOL] `npm test -- --runInBand test/connection/bluebubbles/bffApi.test.ts test/connection/bluebubbles/bffSessionApi.test.ts test/connection/bluebubbles/bffRealtimeChannel.test.ts test/connection/bluebubbles/transport.test.ts test/bff/realtime/bridge.test.ts test/bff/upstream/realtimeSocket.test.ts test/bff/security/urlValidation.test.ts test/bff/security/rateLimit.test.ts test/bff/observability/metrics.test.ts test/bff/observability/logger.test.ts` passed (10 suites, 30 tests).
 - 2026-02-19 [TOOL] `npm run build` passed after Phase 4 hardening updates (webpack success; existing asset-size warnings).
+- 2026-02-19 [TOOL] Playwright evidence run observed `POST /bff/message/text`, `POST /bff/message/attachment`, and `GET /bff/attachment/:guid/download` with inbound realtime message logs and no direct browser requests to `xilexs-imac-pro.lan/api/v1/*` during validated BFF session (summarized in `evidence/phase4-playwright-evidence.md`).
+- 2026-02-19 [TOOL] Playwright runtime incident captured: `ListConversation` crashed on `mimeTypeToPreview(null)` after attachment update; fixed by accepting nullable MIME types with safe fallback labels.
+- 2026-02-19 [TOOL] `npm run build` and `npm --prefix bff run build` passed after nullable-MIME preview hotfix.

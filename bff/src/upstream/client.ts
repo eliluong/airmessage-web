@@ -205,7 +205,7 @@ async function buildProxyError(response: Response): Promise<BffHttpError> {
 
         return new BffHttpError({
                 code: "BFF_UPSTREAM_ERROR",
-                status: response.status >= 400 && response.status < 500 ? 400 : 502,
+                status: response.status >= 400 && response.status < 500 ? response.status : 502,
                 message: upstreamMessage ?? `Upstream request failed with status ${response.status}.`,
                 retriable: response.status >= 500,
                 details: payload
