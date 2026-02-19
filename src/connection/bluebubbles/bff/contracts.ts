@@ -1,4 +1,5 @@
 export const BFF_API_PREFIX = "/bff";
+export const BFF_CSRF_HEADER = "X-CSRF-Token";
 
 export const BFF_SESSION_ROUTES = {
         login: `${BFF_API_PREFIX}/session/login`,
@@ -29,6 +30,7 @@ export interface BffSessionStatusData {
         serverUrl?: string;
         deviceName?: string;
         authMode?: BffSessionAuthMode;
+        csrfToken?: string;
 }
 
 export interface BffSessionStatusResponse {

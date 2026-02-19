@@ -36,16 +36,21 @@ import {
 import BffRealtimeChannel from "./bff/realtimeChannel";
 import {
         BffApiError,
+        downloadAttachment as downloadAttachmentBff,
+        downloadAttachmentThumbnail as downloadAttachmentThumbnailBff,
         fetchChat as fetchChatBff,
         fetchChatCount as fetchChatCountBff,
         fetchChatMessages as fetchChatMessagesBff,
         fetchChats as fetchChatsBff,
         fetchServerMetadata as fetchServerMetadataBff,
         pingServer as pingServerBff,
-        queryMessages as queryMessagesBff
+        queryMessages as queryMessagesBff,
+        sendTextMessage as sendTextMessageBff
 } from "./bff/api";
+import {getBffCsrfToken} from "./bff/csrf";
+import {BFF_CSRF_HEADER, BFF_PROXY_ROUTES} from "./bff/contracts";
 
-const BFF_PHASE2_NOT_IMPLEMENTED_MESSAGE = "This action requires BFF Phase 2 routes and is not available in Phase 1.";
+const BFF_FEATURE_NOT_IMPLEMENTED_MESSAGE = "This action is not implemented for the current BFF rollout phase.";
 
 export interface BlueBubblesRealtimeChannelLike {
         connect(): void;
@@ -58,6 +63,7 @@ export interface BlueBubblesRealtimeChannelLike {
 export interface AttachmentUploadTarget {
         url: string;
         headers: Record<string, string>;
+        withCredentials?: boolean;
 }
 
 function readBffEnabledFlag(): boolean {
@@ -78,7 +84,7 @@ function resolveTransportMode(auth: BlueBubblesAuthState): BlueBubblesTransportM
 }
 
 function createPhase2NotImplementedError(action: string): Error {
-        return new Error(`${action} failed: ${BFF_PHASE2_NOT_IMPLEMENTED_MESSAGE}`);
+        return new Error(`${action} failed: ${BFF_FEATURE_NOT_IMPLEMENTED_MESSAGE}`);
 }
 
 export function fetchServerMetadata(auth: BlueBubblesAuthState): Promise<ServerMetadataResponse> {
@@ -151,7 +157,7 @@ export function queryMessages(auth: BlueBubblesAuthState, payload: Record<string
 
 export function sendTextMessage(auth: BlueBubblesAuthState, payload: Record<string, unknown>): Promise<MessageSendResponse> {
         if(resolveTransportMode(auth) === "bff") {
-                return Promise.reject(createPhase2NotImplementedError("Send message"));
+                return sendTextMessageBff(payload);
         }
         return sendTextMessageDirect(auth, payload);
 }
@@ -162,7 +168,7 @@ export function downloadAttachment(
         options: AttachmentDownloadOptions = {}
 ): Promise<Response> {
         if(resolveTransportMode(auth) === "bff") {
-                return Promise.reject(createPhase2NotImplementedError("Download attachment"));
+                return downloadAttachmentBff(guid, options);
         }
         return downloadAttachmentDirect(auth, guid, options);
 }
@@ -173,7 +179,7 @@ export function downloadAttachmentThumbnail(
         options: AttachmentDownloadOptions = {}
 ): Promise<Response> {
         if(resolveTransportMode(auth) === "bff") {
-                return Promise.reject(createPhase2NotImplementedError("Download attachment thumbnail"));
+                return downloadAttachmentThumbnailBff(guid, options);
         }
         return downloadAttachmentThumbnailDirect(auth, guid, options);
 }
@@ -190,7 +196,17 @@ export function createRealtimeChannel(
 
 export function resolveAttachmentUploadTarget(auth: BlueBubblesAuthState): AttachmentUploadTarget {
         if(resolveTransportMode(auth) === "bff") {
-                throw createPhase2NotImplementedError("Upload attachment");
+                const csrfToken = getBffCsrfToken();
+                if(!csrfToken) {
+                        throw new Error("Upload attachment failed: BFF CSRF token is missing.");
+                }
+                return {
+                        url: BFF_PROXY_ROUTES.messageAttachment,
+                        headers: {
+                                [BFF_CSRF_HEADER]: csrfToken
+                        },
+                        withCredentials: true
+                };
         }
         const path = appendLegacyAuthParams(auth, "/api/v1/message/attachment");
         const normalizedServer = auth.serverUrl.replace(/\/$/, "");

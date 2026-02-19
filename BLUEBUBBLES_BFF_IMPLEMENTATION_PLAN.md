@@ -237,7 +237,7 @@ Delivered artifacts:
 - Added upstream auth/proxy modules implementing modern-login fallback and legacy-guid probe behavior server-side.
 - Added Phase 1 proxy routes: `/bff/general/ping`, `/bff/server/info`, `/bff/server/features`, `/bff/chat/query`, `/bff/chat/count`, `/bff/chat/:guid`, `/bff/chat/:guid/message`, `/bff/message/query`.
 - Added web-side BFF clients: `src/connection/bluebubbles/bff/api.ts`, `src/connection/bluebubbles/bff/sessionApi.ts`, `src/connection/bluebubbles/bff/realtimeChannel.ts`.
-- Updated `src/connection/bluebubbles/transport.ts` to route read paths through BFF mode while keeping Phase 2 write/media calls explicit not-implemented errors (no silent fallback).
+- Updated `src/connection/bluebubbles/transport.ts` to route read/bootstrap calls through BFF mode behind explicit `transportMode` control.
 - Updated `src/components/SignInGate.tsx` to authenticate via `/bff/session/login`, restore via `/bff/session/status`, and persist only non-secret metadata in browser storage when in BFF mode.
 - Added regression coverage for BFF web clients/channels (`test/connection/bluebubbles/bffApi.test.ts`, `test/connection/bluebubbles/bffSessionApi.test.ts`, `test/connection/bluebubbles/bffRealtimeChannel.test.ts`).
 
@@ -246,16 +246,26 @@ Exit criteria:
 - Chat list and thread open work end-to-end.
 
 ## Phase 2: Message send/search + attachment transfer
-Status (2026-02-19): ACTIVE NEXT
+Status (2026-02-19): COMPLETE
 
 - Add message mutation routes (`/message/text`, `/message/query`, `/message/attachment`).
 - Add attachment download proxy streaming with abort support.
 - Implement CSRF protections for mutating endpoints.
 
+Delivered artifacts:
+- Added BFF Phase 2 mutation/media routes: `POST /bff/message/text`, `POST /bff/message/attachment`, `GET /bff/attachment/:guid/download` with upstream proxying and attachment download abort propagation on client disconnect.
+- Added CSRF token model to BFF sessions (`csrfToken`), issued via `/bff/session/login` and `/bff/session/status`, and enforced on mutating routes (`/bff/session/logout`, `/bff/message/text`, `/bff/message/attachment`).
+- Extended BFF upstream client to handle JSON and raw streamed request bodies plus raw response passthrough for media download routes.
+- Routed BFF-mode web send/media actions through new BFF endpoints (`sendTextMessage`, upload target resolution, attachment download/thumbnail download), removing prior Phase 1 not-implemented errors for those paths.
+- Added web-side CSRF token cache + header wiring for BFF mutating calls and logout (`X-CSRF-Token`).
+- Added Phase 2 regression coverage for CSRF/session and transport route usage (`test/connection/bluebubbles/bffApi.test.ts`, `test/connection/bluebubbles/bffSessionApi.test.ts`, `test/connection/bluebubbles/transport.test.ts`).
+
 Exit criteria:
 - Send text, search, upload attachment, and download attachment all work through BFF.
 
 ## Phase 3: Realtime socket bridge
+Status (2026-02-19): ACTIVE NEXT
+
 - BFF maintains upstream socket auth (`guid`/`socketGuid`) server-side.
 - Browser subscribes to `/bff/socket`.
 - Forward required events and ack/error handling.
@@ -314,8 +324,8 @@ If same-origin is not possible, enforce strict CORS and cookie domain policy.
 
 ## 12) Immediate Next Work Items
 
-1. Implement Phase 2 mutation/media routes in BFF: `/bff/message/text`, `/bff/message/attachment`, `/bff/attachment/:guid/download` (plus upload/download helpers).
-2. Route web send/search/attachment flows through BFF mode and remove current Phase 1 explicit not-implemented errors for those actions.
-3. Add CSRF protection for mutating BFF routes and wire corresponding browser headers/tokens.
-4. Validate Phase 1 read-path behavior end-to-end against a legacy-auth-only deployment and capture Playwright evidence.
-5. Add Phase 2 regression coverage (web + BFF integration) for send, upload, download, and message search via BFF transport.
+1. Implement Phase 3 realtime bridge (`/bff/socket`) with upstream auth and event forwarding parity for `new-message` / `updated-message`.
+2. Add BFF integration tests (Node-side route + mocked upstream) for attachment upload/download streaming and CSRF rejection paths.
+3. Run Playwright E2E evidence capture in BFF mode: login, chat bootstrap, send text, upload/download attachment.
+4. Move session storage from in-memory to Redis-backed persistence (`connect-redis`) and document ops requirements.
+5. Add hardened rate limiting + upstream host allowlist controls for production deployment.

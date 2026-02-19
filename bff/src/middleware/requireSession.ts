@@ -2,6 +2,7 @@ import {NextFunction, Request, Response} from "express";
 import "express-session";
 import {BffHttpError} from "../errors";
 import {BffSessionRecord} from "../session/types";
+import {ensureSessionCsrfToken} from "../session/csrf";
 
 export function requireAuthenticatedSession(req: Request, _res: Response, next: NextFunction): void {
         const sessionRecord = req.session.bffSession;
@@ -15,8 +16,9 @@ export function requireAuthenticatedSession(req: Request, _res: Response, next: 
                 return;
         }
 
+        const normalizedSessionRecord = ensureSessionCsrfToken(sessionRecord);
         req.session.bffSession = {
-                ...sessionRecord,
+                ...normalizedSessionRecord,
                 updatedAt: Date.now()
         };
         next();
@@ -32,5 +34,8 @@ export function getRequiredSession(req: Request): BffSessionRecord {
                         retriable: false
                 });
         }
-        return sessionRecord;
+
+        const normalizedSessionRecord = ensureSessionCsrfToken(sessionRecord);
+        req.session.bffSession = normalizedSessionRecord;
+        return normalizedSessionRecord;
 }

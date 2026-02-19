@@ -2181,6 +2181,9 @@ async function uploadAttachmentWithProgress(auth: BlueBubblesAuthState, payload:
                         }
                 });
                 xhr.open("POST", uploadTarget.url, true);
+                if(uploadTarget.withCredentials) {
+                        xhr.withCredentials = true;
+                }
                 for(const [header, value] of Object.entries(uploadTarget.headers)) {
                         xhr.setRequestHeader(header, value);
                 }

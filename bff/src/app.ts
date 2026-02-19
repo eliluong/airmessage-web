@@ -8,6 +8,7 @@ import sessionRoutes from "./routes/sessionRoutes";
 import serverRoutes from "./routes/serverRoutes";
 import chatRoutes from "./routes/chatRoutes";
 import messageRoutes from "./routes/messageRoutes";
+import attachmentRoutes from "./routes/attachmentRoutes";
 
 export function createApp(config: BffConfig): Express {
         const app = express();
@@ -59,6 +60,7 @@ export function createApp(config: BffConfig): Express {
         app.use("/bff", serverRoutes);
         app.use("/bff", chatRoutes);
         app.use("/bff", messageRoutes);
+        app.use("/bff", attachmentRoutes);
 
         app.use(notFoundHandler);
         app.use(errorHandler);

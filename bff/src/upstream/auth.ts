@@ -2,6 +2,7 @@ import {randomUUID} from "node:crypto";
 import {BffHttpError} from "../errors";
 import {buildUpstreamUrl, normalizeServerUrl} from "../security/urlValidation";
 import {BffSessionRecord} from "../session/types";
+import {generateCsrfToken} from "../session/csrf";
 
 type AuthAction = "login" | "register";
 
@@ -92,6 +93,7 @@ export async function authenticateUpstream(input: AuthenticateInput): Promise<Bf
                         serverUrl: input.serverUrl,
                         deviceName: input.deviceName,
                         authMode: "modern-token",
+                        csrfToken: generateCsrfToken(),
                         accessToken: modernAuthResult.accessToken,
                         refreshToken: modernAuthResult.refreshToken,
                         expiresAt: modernAuthResult.expiresAt,
@@ -123,6 +125,7 @@ export async function authenticateUpstream(input: AuthenticateInput): Promise<Bf
                 serverUrl: input.serverUrl,
                 deviceName: input.deviceName,
                 authMode: "legacy-guid",
+                csrfToken: generateCsrfToken(),
                 legacyPasswordGuid: input.password,
                 socketGuid: input.password
         };

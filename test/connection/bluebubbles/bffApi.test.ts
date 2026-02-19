@@ -95,4 +95,58 @@ describe("bluebubbles bff api", () => {
                         message: "Not signed in."
                 } as Partial<InstanceType<typeof BffApiError>>));
         });
+
+        test("sends text messages through bff route with csrf header", async () => {
+                const fetchMock = jest.fn().mockResolvedValue({
+                        ok: true,
+                        status: 200,
+                        statusText: "OK",
+                        json: jest.fn().mockResolvedValue({
+                                data: {guid: "msg-guid"}
+                        })
+                } as unknown as Response);
+                (globalThis as typeof globalThis & {fetch: typeof fetch}).fetch = fetchMock as unknown as typeof fetch;
+
+                const {setBffCsrfToken} = await import("../../../src/connection/bluebubbles/bff/csrf");
+                const {sendTextMessage} = await import("../../../src/connection/bluebubbles/bff/api");
+                setBffCsrfToken("csrf-send-token");
+
+                await sendTextMessage({
+                        chatGuid: "chat-guid",
+                        message: "hello"
+                });
+
+                expect(fetchMock).toHaveBeenCalledTimes(1);
+                expect(fetchMock.mock.calls[0][0]).toBe("/bff/message/text");
+                expect(fetchMock.mock.calls[0][1]).toEqual(expect.objectContaining({
+                        credentials: "include",
+                        method: "POST"
+                }));
+                const headers = new Headers((fetchMock.mock.calls[0][1] as RequestInit).headers);
+                expect(headers.get("X-CSRF-Token")).toBe("csrf-send-token");
+        });
+
+        test("downloads attachments through bff route with query params", async () => {
+                const fetchMock = jest.fn().mockResolvedValue({
+                        ok: true,
+                        status: 200,
+                        statusText: "OK",
+                        headers: new Headers(),
+                        body: null
+                } as unknown as Response);
+                (globalThis as typeof globalThis & {fetch: typeof fetch}).fetch = fetchMock as unknown as typeof fetch;
+
+                const {downloadAttachment} = await import("../../../src/connection/bluebubbles/bff/api");
+                await downloadAttachment("attachment-guid", {
+                        width: 320,
+                        quality: "best"
+                });
+
+                expect(fetchMock).toHaveBeenCalledTimes(1);
+                expect(fetchMock.mock.calls[0][0]).toBe("/bff/attachment/attachment-guid/download?width=320&quality=best");
+                expect(fetchMock.mock.calls[0][1]).toEqual(expect.objectContaining({
+                        credentials: "include",
+                        method: "GET"
+                }));
+        });
 });

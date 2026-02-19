@@ -1,8 +1,11 @@
-import {BffErrorEnvelope, BFF_PROXY_ROUTES} from "./contracts";
+import type {AttachmentDownloadOptions} from "../api";
+import {getBffCsrfToken} from "./csrf";
+import {BffErrorEnvelope, BFF_CSRF_HEADER, BFF_PROXY_ROUTES} from "./contracts";
 import {
         ChatCountResponse,
         ChatQueryPageResponse,
         ChatQueryResponse,
+        MessageSendResponse,
         MessageQueryResponse,
         ServerFeaturesResponse,
         ServerMetadataResponse,
@@ -11,6 +14,7 @@ import {
 
 export interface BffRequestOptions extends RequestInit {
         skipJsonContentType?: boolean;
+        includeCsrfToken?: boolean;
 }
 
 export class BffApiError extends Error {
@@ -35,13 +39,33 @@ export class BffApiError extends Error {
 }
 
 export async function requestBffJson<T>(path: string, init: BffRequestOptions = {}): Promise<T> {
-        const response = await fetch(path, {
-                ...init,
-                credentials: "include",
-                headers: {
-                        ...(init.skipJsonContentType ? {} : {"Content-Type": "application/json"}),
-                        ...(init.headers ?? {})
+        const {
+                skipJsonContentType,
+                includeCsrfToken,
+                headers: requestHeaders,
+                ...requestInit
+        } = init;
+
+        const headers = new Headers(requestHeaders ?? {});
+        if(!skipJsonContentType) {
+                headers.set("Content-Type", "application/json");
+        }
+
+        if(includeCsrfToken) {
+                const csrfToken = getBffCsrfToken();
+                if(!csrfToken) {
+                        throw new BffApiError("Your BFF session is missing a CSRF token. Sign in again.", {
+                                status: 401,
+                                code: "BFF_CSRF_TOKEN_MISSING"
+                        });
                 }
+                headers.set(BFF_CSRF_HEADER, csrfToken);
+        }
+
+        const response = await fetch(path, {
+                ...requestInit,
+                credentials: "include",
+                headers
         });
 
         if(!response.ok) {
@@ -276,4 +300,75 @@ export function queryMessages(payload: Record<string, unknown>): Promise<Message
                 method: "POST",
                 body: JSON.stringify(payload)
         });
+}
+
+export function sendTextMessage(payload: Record<string, unknown>): Promise<MessageSendResponse> {
+        return requestBffJson<MessageSendResponse>(BFF_PROXY_ROUTES.messageText, {
+                method: "POST",
+                body: JSON.stringify(payload),
+                includeCsrfToken: true
+        });
+}
+
+export async function downloadAttachment(
+        guid: string,
+        options: AttachmentDownloadOptions = {}
+): Promise<Response> {
+        const params = new URLSearchParams();
+        if(options.width !== undefined) {
+                params.set("width", String(Math.max(1, Math.floor(options.width))));
+        }
+        if(options.height !== undefined) {
+                params.set("height", String(Math.max(1, Math.floor(options.height))));
+        }
+        if(options.quality !== undefined) {
+                if(typeof options.quality === "string") {
+                        params.set("quality", options.quality);
+                } else {
+                        const clampedQuality = Math.min(100, Math.max(1, Math.floor(options.quality)));
+                        params.set("quality", String(clampedQuality));
+                }
+        }
+
+        const path = BFF_PROXY_ROUTES.attachmentDownloadByGuid.replace(":guid", encodeURIComponent(guid));
+        const fullPath = params.toString().length > 0 ? `${path}?${params.toString()}` : path;
+
+        const response = await fetch(fullPath, {
+                method: "GET",
+                credentials: "include",
+                signal: options.signal
+        });
+        if(!response.ok) {
+                await throwBffError(response);
+        }
+        return response;
+}
+
+export async function downloadAttachmentThumbnail(
+        guid: string,
+        options: AttachmentDownloadOptions = {}
+): Promise<Response> {
+        const defaulted: AttachmentDownloadOptions = {
+                width: options.width ?? 512,
+                quality: options.quality ?? "best",
+                signal: options.signal,
+                ...(options.height !== undefined ? {height: options.height} : {})
+        };
+
+        try {
+                return await downloadAttachment(guid, defaulted);
+        } catch(error) {
+                if(
+                        defaulted.quality === "best"
+                        && error instanceof BffApiError
+                        && error.status === 400
+                ) {
+                        const fallback: AttachmentDownloadOptions = {
+                                ...defaulted,
+                                quality: 70
+                        };
+                        return downloadAttachment(guid, fallback);
+                }
+                throw error;
+        }
 }

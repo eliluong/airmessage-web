@@ -7,6 +7,7 @@ export interface BffSessionRecord {
         serverUrl: string;
         deviceName?: string;
         authMode: UpstreamAuthMode;
+        csrfToken: string;
         accessToken?: string;
         refreshToken?: string;
         expiresAt?: number;
@@ -19,4 +20,5 @@ export interface SessionStatusPayload {
         serverUrl?: string;
         deviceName?: string;
         authMode?: UpstreamAuthMode;
+        csrfToken?: string;
 }

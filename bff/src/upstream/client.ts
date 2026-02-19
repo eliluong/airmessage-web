@@ -4,11 +4,14 @@ import {BffSessionRecord} from "../session/types";
 
 type QueryValue = string | number | boolean | undefined | null | string[] | number[] | boolean[];
 
-interface UpstreamJsonRequest {
+interface UpstreamRequest {
         method: "GET" | "POST";
         path: string;
         query?: Record<string, QueryValue>;
         body?: unknown;
+        rawBody?: BodyInit | null;
+        headers?: Record<string, string | undefined>;
+        signal?: AbortSignal;
 }
 
 interface UpstreamErrorPayload {
@@ -17,12 +20,35 @@ interface UpstreamErrorPayload {
         code?: string | number;
 }
 
-export async function requestUpstreamJson<T>(session: BffSessionRecord, request: UpstreamJsonRequest): Promise<T> {
+export async function requestUpstreamJson<T>(session: BffSessionRecord, request: UpstreamRequest): Promise<T> {
+        const response = await requestUpstreamResponse(session, request);
+        const payload = await readResponsePayload(response);
+        if(payload === undefined) {
+                throw new BffHttpError({
+                        code: "BFF_UPSTREAM_INVALID_RESPONSE",
+                        status: 502,
+                        message: "Upstream returned an invalid JSON payload."
+                });
+        }
+        return payload as T;
+}
+
+export async function requestUpstreamResponse(session: BffSessionRecord, request: UpstreamRequest): Promise<Response> {
+        if(request.body !== undefined && request.rawBody !== undefined) {
+                throw new BffHttpError({
+                        code: "BFF_INVALID_UPSTREAM_REQUEST",
+                        status: 500,
+                        message: "Invalid upstream proxy request body configuration."
+                });
+        }
+
         const url = buildUpstreamUrl(session.serverUrl, request.path);
         applyQuery(url.searchParams, request.query);
         injectSessionAuth(url.searchParams, session);
 
         const headers = new Headers();
+        applyHeaders(headers, request.headers);
+
         if(session.authMode === "modern-token") {
                 const token = session.accessToken;
                 if(!token) {
@@ -35,17 +61,29 @@ export async function requestUpstreamJson<T>(session: BffSessionRecord, request:
                 headers.set("Authorization", `Bearer ${token}`);
         }
 
-        if(request.body !== undefined) {
-                headers.set("Content-Type", "application/json");
+        let requestBody: BodyInit | null | undefined;
+        if(request.rawBody !== undefined) {
+                requestBody = request.rawBody;
+        } else if(request.body !== undefined) {
+                if(!headers.has("Content-Type")) {
+                        headers.set("Content-Type", "application/json");
+                }
+                requestBody = JSON.stringify(request.body);
+        }
+
+        const fetchInit: RequestInit = {
+                method: request.method,
+                headers,
+                body: requestBody,
+                signal: request.signal
+        };
+        if(requestBody !== undefined && requestBody !== null && requiresDuplex(requestBody)) {
+                (fetchInit as RequestInit & {duplex: "half";}).duplex = "half";
         }
 
         let response: Response;
         try {
-                response = await fetch(url.toString(), {
-                        method: request.method,
-                        headers,
-                        body: request.body !== undefined ? JSON.stringify(request.body) : undefined
-                });
+                response = await fetch(url.toString(), fetchInit);
         } catch(error) {
                 throw new BffHttpError({
                         code: "BFF_UPSTREAM_UNREACHABLE",
@@ -59,15 +97,7 @@ export async function requestUpstreamJson<T>(session: BffSessionRecord, request:
                 throw await buildProxyError(response);
         }
 
-        const payload = await readResponsePayload(response);
-        if(payload === undefined) {
-                throw new BffHttpError({
-                        code: "BFF_UPSTREAM_INVALID_RESPONSE",
-                        status: 502,
-                        message: "Upstream returned an invalid JSON payload."
-                });
-        }
-        return payload as T;
+        return response;
 }
 
 export function toUpstreamQuery(rawQuery: unknown): Record<string, QueryValue> | undefined {
@@ -122,6 +152,14 @@ function applyQuery(params: URLSearchParams, query?: Record<string, QueryValue>)
                 }
 
                 params.append(key, String(value));
+        }
+}
+
+function applyHeaders(headers: Headers, overrides?: Record<string, string | undefined>): void {
+        if(!overrides) return;
+        for(const [name, value] of Object.entries(overrides)) {
+                if(value === undefined) continue;
+                headers.set(name, value);
         }
 }
 
@@ -184,4 +222,21 @@ function readUpstreamErrorMessage(payload: UpstreamErrorPayload | undefined): st
                 return payload.error.message;
         }
         return undefined;
+}
+
+function requiresDuplex(body: BodyInit): boolean {
+        if(typeof body === "string") return false;
+        if(body instanceof URLSearchParams) return false;
+        if(body instanceof ArrayBuffer) return false;
+        if(ArrayBuffer.isView(body)) return false;
+        if(body instanceof Blob) return false;
+        if(body instanceof FormData) return false;
+
+        if(typeof body !== "object" || body === null) return false;
+
+        const streamLike = body as {getReader?: unknown; pipe?: unknown; on?: unknown};
+        if(typeof streamLike.getReader === "function") return true;
+        if(typeof streamLike.pipe === "function" || typeof streamLike.on === "function") return true;
+
+        return false;
 }
