@@ -139,8 +139,9 @@ Keep existing architectural invariant: UI -> `connectionManager` -> transport.
 ## 6.1 Transport addition
 
 Add a new transport path in `src/connection/bluebubbles/`:
-- `bffApi.ts`: calls `/bff/*` instead of direct BlueBubbles `/api/v1/*`.
-- `bffRealtimeChannel.ts`: connects to `/bff/socket`.
+- `bff/api.ts`: calls `/bff/*` instead of direct BlueBubbles `/api/v1/*`.
+- `bff/sessionApi.ts`: handles `/bff/session/*` auth/status/logout flows.
+- `bff/realtimeChannel.ts`: Phase 1 placeholder channel that keeps polling active until socket bridging lands.
 
 `connectionManager` remains the orchestration entrypoint.
 
@@ -213,25 +214,40 @@ Delivered artifacts:
 - `WPEnv.BFF_ENABLED` is wired through `webpack.config.js`, `index.d.ts`, and `.env.example`.
 - `connectionManager` and `bluebubblesCommunicationsManager` now use the transport seam instead of directly instantiating API/realtime modules.
 - `SignInGate`/`Messaging`/session types now carry `transportMode` so runtime path selection is explicit.
-- Guardrail: if `BFF_ENABLED` is turned on before Phase 1, runtime fails explicitly with a not-implemented BFF error (no silent fallback to direct credentials flow).
+- Guardrail: direct and BFF paths stay explicit (`transportMode`) so rollout remains feature-flag controlled.
 
 Exit criteria:
 - No behavior change in production path.
 - CI green.
 
 ## Phase 1: Minimal BFF with session auth + core read APIs
+Status (2026-02-19): COMPLETE
+
 - Implement `POST /bff/session/login`, `GET /bff/session/status`, `POST /bff/session/logout`.
 - Implement read-only proxy routes needed for initial app load:
+  - general ping
   - server info/features
   - chat query/count/single
   - chat messages
+  - message query (required for polling/thread bootstrap compatibility)
 - Web client behind flag uses BFF for login + chat/thread bootstrap.
+
+Delivered artifacts:
+- Added Node BFF scaffold under `bff/` (`app.ts`, `server.ts`, `config.ts`, session typing, error middleware, request IDs, allowlisted route handlers).
+- Added upstream auth/proxy modules implementing modern-login fallback and legacy-guid probe behavior server-side.
+- Added Phase 1 proxy routes: `/bff/general/ping`, `/bff/server/info`, `/bff/server/features`, `/bff/chat/query`, `/bff/chat/count`, `/bff/chat/:guid`, `/bff/chat/:guid/message`, `/bff/message/query`.
+- Added web-side BFF clients: `src/connection/bluebubbles/bff/api.ts`, `src/connection/bluebubbles/bff/sessionApi.ts`, `src/connection/bluebubbles/bff/realtimeChannel.ts`.
+- Updated `src/connection/bluebubbles/transport.ts` to route read paths through BFF mode while keeping Phase 2 write/media calls explicit not-implemented errors (no silent fallback).
+- Updated `src/components/SignInGate.tsx` to authenticate via `/bff/session/login`, restore via `/bff/session/status`, and persist only non-secret metadata in browser storage when in BFF mode.
+- Added regression coverage for BFF web clients/channels (`test/connection/bluebubbles/bffApi.test.ts`, `test/connection/bluebubbles/bffSessionApi.test.ts`, `test/connection/bluebubbles/bffRealtimeChannel.test.ts`).
 
 Exit criteria:
 - Browser no longer calls BlueBubbles directly when flag is enabled.
 - Chat list and thread open work end-to-end.
 
 ## Phase 2: Message send/search + attachment transfer
+Status (2026-02-19): ACTIVE NEXT
+
 - Add message mutation routes (`/message/text`, `/message/query`, `/message/attachment`).
 - Add attachment download proxy streaming with abort support.
 - Implement CSRF protections for mutating endpoints.
@@ -298,8 +314,8 @@ If same-origin is not possible, enforce strict CORS and cookie domain policy.
 
 ## 12) Immediate Next Work Items
 
-1. Create `bff/` service scaffold with TypeScript + Express + Socket.IO.
-2. Implement `POST /bff/session/login`, `GET /bff/session/status`, and `POST /bff/session/logout` with server-side session storage.
-3. Implement read-only proxy routes for metadata/chat/thread bootstrap (`/bff/server/*`, `/bff/chat/*`).
-4. Add web-side `bffApi.ts` and `bffRealtimeChannel.ts`, then route the existing seam (`src/connection/bluebubbles/transport.ts`) to these implementations when `BFF_ENABLED=true`.
-5. Validate Phase 1 end-to-end against a legacy-auth-only server and capture Playwright evidence.
+1. Implement Phase 2 mutation/media routes in BFF: `/bff/message/text`, `/bff/message/attachment`, `/bff/attachment/:guid/download` (plus upload/download helpers).
+2. Route web send/search/attachment flows through BFF mode and remove current Phase 1 explicit not-implemented errors for those actions.
+3. Add CSRF protection for mutating BFF routes and wire corresponding browser headers/tokens.
+4. Validate Phase 1 read-path behavior end-to-end against a legacy-auth-only deployment and capture Playwright evidence.
+5. Add Phase 2 regression coverage (web + BFF integration) for send, upload, download, and message search via BFF transport.

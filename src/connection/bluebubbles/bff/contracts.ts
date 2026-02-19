@@ -7,6 +7,7 @@ export const BFF_SESSION_ROUTES = {
 } as const;
 
 export const BFF_PROXY_ROUTES = {
+        generalPing: `${BFF_API_PREFIX}/general/ping`,
         serverInfo: `${BFF_API_PREFIX}/server/info`,
         serverFeatures: `${BFF_API_PREFIX}/server/features`,
         chatQuery: `${BFF_API_PREFIX}/chat/query`,
@@ -21,6 +22,19 @@ export const BFF_PROXY_ROUTES = {
 
 export const BFF_SOCKET_ROUTE = `${BFF_API_PREFIX}/socket` as const;
 
+export type BffSessionAuthMode = "modern-token" | "legacy-guid";
+
+export interface BffSessionStatusData {
+        authenticated: boolean;
+        serverUrl?: string;
+        deviceName?: string;
+        authMode?: BffSessionAuthMode;
+}
+
+export interface BffSessionStatusResponse {
+        data: BffSessionStatusData;
+}
+
 export interface BffErrorEnvelope {
         error: {
                 code: string;
@@ -30,4 +44,3 @@ export interface BffErrorEnvelope {
                 retriable?: boolean;
         };
 }
-

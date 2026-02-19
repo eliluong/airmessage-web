@@ -15,8 +15,9 @@
 - 2026-02-18 [USER] Goal: Eliminate plaintext password usage from browser BlueBubbles REST requests (e.g., `query`, `download`).
 - 2026-02-18 [USER] Constraint: Target deployment consistently returns `404` for `/api/v1/auth/login` and `/api/v1/login`; token-only browser flow is not viable.
 - 2026-02-18 [CODE] Completed: Node BFF Phase 0 landed (route/error contract scaffold + `BFF_ENABLED` flag + swappable transport seam in web client).
-- 2026-02-18 [CODE] Now: Phase 1 implementation is next (Node BFF session routes + read-only proxy routes + web login/bootstrap through BFF path).
-- 2026-02-18 [CODE] Next: Build `bff/` service scaffold and route the existing web transport seam to concrete BFF API/socket implementations.
+- 2026-02-19 [CODE] Completed: Node BFF Phase 1 landed (session auth routes + read/bootstrap proxy routes + web BFF login/bootstrap path).
+- 2026-02-19 [CODE] Now: Phase 2 is active next (message send/search + attachment upload/download + CSRF for mutating BFF routes).
+- 2026-02-19 [CODE] Next: Route web send/media paths through BFF and remove current Phase 1 explicit not-implemented mutations.
 - 2026-02-18 [ASSUMPTION] Frequency of encrypted realtime payloads (`encrypted: true`) across deployments is UNCONFIRMED.
 
 ## Invariants / Constraints
@@ -35,16 +36,17 @@
 - 2026-02-18 [CODE] D018 ACTIVE: Phase 6 closure requires explicit documentation of remaining realtime risks (no silent “fully done” claims when behavior is UNCONFIRMED).
 - 2026-02-18 [CODE] D019 ACTIVE: Query-style bootstrap/history/media retrieval remains REST-backed until server provides a documented, versioned socket query contract with `where`/pagination parity.
 - 2026-02-18 [CODE] D020 ACTIVE: Legacy-auth environments use a Node BFF credential boundary (browser holds only BFF session state; BlueBubbles password/guid/token stays server-side).
-- 2026-02-18 [CODE] D021 ACTIVE: Web transport selection is explicit (`direct` vs `bff`) via `WPEnv.BFF_ENABLED` + auth `transportMode`; enabling `bff` before Phase 1 throws explicit not-implemented errors (no silent fallback).
+- 2026-02-18 [CODE] D021 SUPERSEDED: Pre-Phase-1 guardrail that hard-failed all BFF runtime usage is retired after Phase 1 implementation.
+- 2026-02-19 [CODE] D022 ACTIVE: In BFF mode, read/bootstrap paths are enabled (`session`, `server`, `chat`, `message/query`), while Phase 2 mutation/media actions throw explicit not-implemented errors (no silent fallback to direct credentialed calls).
 
 ## Done (recent)
-- 2026-02-18 [CODE] Added `src/connection/bluebubbles/bff/contracts.ts` with canonical `/bff` route constants and normalized `BffErrorEnvelope`.
-- 2026-02-18 [CODE] Added `src/connection/bluebubbles/transport.ts` as the web-side direct/BFF seam for REST/realtime wiring.
-- 2026-02-18 [CODE] Wired `WPEnv.BFF_ENABLED` through `webpack.config.js`, `index.d.ts`, and `.env.example`.
-- 2026-02-18 [CODE] Rewired `connectionManager` + `bluebubblesCommunicationsManager` + upload/download/realtime creation to use the transport seam.
-- 2026-02-18 [CODE] Added explicit `transportMode` threading in `SignInGate`/`Messaging`/session state without changing default direct behavior.
-- 2026-02-18 [CODE] Updated `BLUEBUBBLES_BFF_IMPLEMENTATION_PLAN.md` and `project.md` to mark Phase 0 complete and Phase 1 as active next work.
-- 2026-02-18 [TOOL] Validation passed after Phase 0 changes: `npm test -- --runInBand` (14 suites, 92 tests) and `npm run build` (webpack success; warnings only).
+- 2026-02-19 [CODE] Added Node BFF Phase 1 scaffold under `bff/` (`app.ts`, `server.ts`, config, middleware, session typing, allowlisted routes).
+- 2026-02-19 [CODE] Implemented BFF session/auth and read proxy routes (`/bff/session/*`, `/bff/general/ping`, `/bff/server/*`, `/bff/chat/*`, `/bff/message/query`).
+- 2026-02-19 [CODE] Added web-side BFF clients (`src/connection/bluebubbles/bff/api.ts`, `sessionApi.ts`, `realtimeChannel.ts`) and routed read paths in `transport.ts`.
+- 2026-02-19 [CODE] Updated `SignInGate` BFF path to login/restore/logout through `/bff/session/*` and persist only non-secret metadata in browser storage.
+- 2026-02-19 [CODE] Added BFF regression tests (`test/connection/bluebubbles/bffApi.test.ts`, `bffSessionApi.test.ts`, `bffRealtimeChannel.test.ts`).
+- 2026-02-19 [CODE] Updated `BLUEBUBBLES_BFF_IMPLEMENTATION_PLAN.md` and `project.md` to mark Phase 1 complete and Phase 2 as active next work.
+- 2026-02-19 [TOOL] Validation passed after Phase 1 changes: `npm test -- --runInBand` (17 suites, 98 tests) and `npm run build` (webpack success; warnings only).
 
 ## Open Questions
 - 2026-02-18 [ASSUMPTION] For all target server versions, is configured password always valid as socket `guid` when token-auth endpoints are present? UNCONFIRMED.
@@ -54,18 +56,18 @@
 - 2026-02-18 [ASSUMPTION] Should BFF deployment be same-origin with web assets (recommended) or cross-origin with strict CORS/cookie policy? UNCONFIRMED.
 
 ## Working set
-- 2026-02-18 [CODE] `src/connection/bluebubbles/transport.ts`
-- 2026-02-18 [CODE] `src/connection/bluebubbles/bff/contracts.ts`
-- 2026-02-18 [CODE] `src/connection/bluebubbles/bluebubblesCommunicationsManager.ts`
-- 2026-02-18 [CODE] `src/connection/connectionManager.ts`
-- 2026-02-18 [CODE] `src/components/SignInGate.tsx`
-- 2026-02-18 [CODE] `src/components/messaging/master/Messaging.tsx`
-- 2026-02-18 [CODE] `src/state/mediaCache.ts`
-- 2026-02-18 [CODE] `src/connection/bluebubbles/session.ts`
-- 2026-02-18 [CODE] `webpack.config.js`
-- 2026-02-18 [CODE] `BLUEBUBBLES_BFF_IMPLEMENTATION_PLAN.md`
-- 2026-02-18 [CODE] `project.md`
-- 2026-02-18 [CODE] `CONTINUITY.md`
+- 2026-02-19 [CODE] `bff/src/server.ts`
+- 2026-02-19 [CODE] `bff/src/app.ts`
+- 2026-02-19 [CODE] `bff/src/upstream/auth.ts`
+- 2026-02-19 [CODE] `bff/src/upstream/client.ts`
+- 2026-02-19 [CODE] `bff/src/routes/sessionRoutes.ts`
+- 2026-02-19 [CODE] `bff/src/routes/serverRoutes.ts`
+- 2026-02-19 [CODE] `bff/src/routes/chatRoutes.ts`
+- 2026-02-19 [CODE] `bff/src/routes/messageRoutes.ts`
+- 2026-02-19 [CODE] `src/components/SignInGate.tsx`
+- 2026-02-19 [CODE] `src/connection/bluebubbles/transport.ts`
+- 2026-02-19 [CODE] `src/connection/bluebubbles/bff/api.ts`
+- 2026-02-19 [CODE] `BLUEBUBBLES_BFF_IMPLEMENTATION_PLAN.md`
 
 ## Receipts
 - 2026-02-18 [TOOL] Static trace: interval polling is disabled when realtime state is `connected` in `bluebubblesCommunicationsManager.ts`.
@@ -91,3 +93,8 @@
 - 2026-02-18 [TOOL] Static trace: direct BlueBubbles REST/realtime callsites now route through `src/connection/bluebubbles/transport.ts` (manager + connection manager).
 - 2026-02-18 [TOOL] `npm test -- --runInBand` passed after Phase 0 seam changes (14 suites, 92 tests).
 - 2026-02-18 [TOOL] `npm run build` passed after Phase 0 seam changes (webpack success; warnings only).
+- 2026-02-19 [TOOL] `npm test -- --runInBand test/connection/bluebubbles/bffApi.test.ts test/connection/bluebubbles/bffSessionApi.test.ts test/connection/bluebubbles/bffRealtimeChannel.test.ts` passed (3 suites, 6 tests).
+- 2026-02-19 [TOOL] `npm test -- --runInBand` passed after Phase 1 updates (17 suites, 98 tests).
+- 2026-02-19 [TOOL] `npm run build` passed after Phase 1 updates (webpack success; warnings only).
+- 2026-02-19 [TOOL] `npm --prefix bff run build` currently fails in this workspace until BFF dependencies are installed (`helmet`, `express-session`, `pino`, related types); frontend validation remains green.
+- 2026-02-19 [CODE] Added Node BFF package scaffold (`bff/package.json`, `bff/tsconfig.json`) and Phase 1 route implementation under `bff/src/*`.

@@ -33,8 +33,19 @@ import {
         ServerMetadataResponse,
         SingleChatResponse
 } from "./types";
+import BffRealtimeChannel from "./bff/realtimeChannel";
+import {
+        BffApiError,
+        fetchChat as fetchChatBff,
+        fetchChatCount as fetchChatCountBff,
+        fetchChatMessages as fetchChatMessagesBff,
+        fetchChats as fetchChatsBff,
+        fetchServerMetadata as fetchServerMetadataBff,
+        pingServer as pingServerBff,
+        queryMessages as queryMessagesBff
+} from "./bff/api";
 
-const BFF_NOT_IMPLEMENTED_MESSAGE = "BFF transport mode is enabled but not implemented yet. Complete Phase 1 before enabling WPEnv.BFF_ENABLED.";
+const BFF_PHASE2_NOT_IMPLEMENTED_MESSAGE = "This action requires BFF Phase 2 routes and is not available in Phase 1.";
 
 export interface BlueBubblesRealtimeChannelLike {
         connect(): void;
@@ -66,19 +77,21 @@ function resolveTransportMode(auth: BlueBubblesAuthState): BlueBubblesTransportM
         return auth.transportMode ?? getConfiguredBlueBubblesTransportMode();
 }
 
-function assertDirectTransport(auth: BlueBubblesAuthState): void {
-        if(resolveTransportMode(auth) === "bff") {
-                throw new Error(BFF_NOT_IMPLEMENTED_MESSAGE);
-        }
+function createPhase2NotImplementedError(action: string): Error {
+        return new Error(`${action} failed: ${BFF_PHASE2_NOT_IMPLEMENTED_MESSAGE}`);
 }
 
 export function fetchServerMetadata(auth: BlueBubblesAuthState): Promise<ServerMetadataResponse> {
-        assertDirectTransport(auth);
+        if(resolveTransportMode(auth) === "bff") {
+                return fetchServerMetadataBff();
+        }
         return fetchServerMetadataDirect(auth);
 }
 
 export function pingServer(auth: BlueBubblesAuthState): Promise<void> {
-        assertDirectTransport(auth);
+        if(resolveTransportMode(auth) === "bff") {
+                return pingServerBff();
+        }
         return pingServerDirect(auth);
 }
 
@@ -88,7 +101,9 @@ export function fetchChats(
 ): Promise<ChatQueryPageResponse>;
 export function fetchChats(auth: BlueBubblesAuthState, options?: FetchChatsOptions): Promise<ChatQueryResponse>;
 export function fetchChats(auth: BlueBubblesAuthState, options: FetchChatsOptions = {}): Promise<ChatQueryResponse> {
-        assertDirectTransport(auth);
+        if(resolveTransportMode(auth) === "bff") {
+                return fetchChatsBff(options);
+        }
         return fetchChatsDirect(auth, options);
 }
 
@@ -96,17 +111,23 @@ export function fetchChatCount(
         auth: BlueBubblesAuthState,
         options: FetchChatCountOptions = {}
 ): Promise<ChatCountResponse> {
-        assertDirectTransport(auth);
+        if(resolveTransportMode(auth) === "bff") {
+                return fetchChatCountBff(options);
+        }
         return fetchChatCountDirect(auth, options);
 }
 
 export function fetchChat(auth: BlueBubblesAuthState, guid: string): Promise<SingleChatResponse> {
-        assertDirectTransport(auth);
+        if(resolveTransportMode(auth) === "bff") {
+                return fetchChatBff(guid);
+        }
         return fetchChatDirect(auth, guid);
 }
 
 export function createChat(auth: BlueBubblesAuthState, body: Record<string, unknown>): Promise<ChatCreateResponse> {
-        assertDirectTransport(auth);
+        if(resolveTransportMode(auth) === "bff") {
+                return Promise.reject(createPhase2NotImplementedError("Create chat"));
+        }
         return createChatDirect(auth, body);
 }
 
@@ -115,17 +136,23 @@ export function fetchChatMessages(
         guid: string,
         options: {limit?: number; before?: number; after?: number; sort?: "ASC" | "DESC";} = {}
 ): Promise<MessageQueryResponse> {
-        assertDirectTransport(auth);
+        if(resolveTransportMode(auth) === "bff") {
+                return fetchChatMessagesBff(guid, options);
+        }
         return fetchChatMessagesDirect(auth, guid, options);
 }
 
 export function queryMessages(auth: BlueBubblesAuthState, payload: Record<string, unknown>): Promise<MessageQueryResponse> {
-        assertDirectTransport(auth);
+        if(resolveTransportMode(auth) === "bff") {
+                return queryMessagesBff(payload);
+        }
         return queryMessagesDirect(auth, payload);
 }
 
 export function sendTextMessage(auth: BlueBubblesAuthState, payload: Record<string, unknown>): Promise<MessageSendResponse> {
-        assertDirectTransport(auth);
+        if(resolveTransportMode(auth) === "bff") {
+                return Promise.reject(createPhase2NotImplementedError("Send message"));
+        }
         return sendTextMessageDirect(auth, payload);
 }
 
@@ -134,7 +161,9 @@ export function downloadAttachment(
         guid: string,
         options: AttachmentDownloadOptions = {}
 ): Promise<Response> {
-        assertDirectTransport(auth);
+        if(resolveTransportMode(auth) === "bff") {
+                return Promise.reject(createPhase2NotImplementedError("Download attachment"));
+        }
         return downloadAttachmentDirect(auth, guid, options);
 }
 
@@ -143,7 +172,9 @@ export function downloadAttachmentThumbnail(
         guid: string,
         options: AttachmentDownloadOptions = {}
 ): Promise<Response> {
-        assertDirectTransport(auth);
+        if(resolveTransportMode(auth) === "bff") {
+                return Promise.reject(createPhase2NotImplementedError("Download attachment thumbnail"));
+        }
         return downloadAttachmentThumbnailDirect(auth, guid, options);
 }
 
@@ -151,12 +182,16 @@ export function createRealtimeChannel(
         auth: BlueBubblesAuthState,
         options: BlueBubblesRealtimeChannelOptions = {}
 ): BlueBubblesRealtimeChannelLike {
-        assertDirectTransport(auth);
+        if(resolveTransportMode(auth) === "bff") {
+                return new BffRealtimeChannel(options);
+        }
         return new BlueBubblesRealtimeChannel(auth, options);
 }
 
 export function resolveAttachmentUploadTarget(auth: BlueBubblesAuthState): AttachmentUploadTarget {
-        assertDirectTransport(auth);
+        if(resolveTransportMode(auth) === "bff") {
+                throw createPhase2NotImplementedError("Upload attachment");
+        }
         const path = appendLegacyAuthParams(auth, "/api/v1/message/attachment");
         const normalizedServer = auth.serverUrl.replace(/\/$/, "");
         return {
@@ -167,8 +202,8 @@ export function resolveAttachmentUploadTarget(auth: BlueBubblesAuthState): Attac
         };
 }
 
-export function isBlueBubblesTransportApiError(error: unknown): error is BlueBubblesApiError {
-        return error instanceof BlueBubblesApiError;
+export function isBlueBubblesTransportApiError(error: unknown): error is BlueBubblesApiError | BffApiError {
+        return error instanceof BlueBubblesApiError || error instanceof BffApiError;
 }
 
 export type {

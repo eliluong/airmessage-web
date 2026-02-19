@@ -20,6 +20,14 @@ import {
 } from "shared/util/bluebubblesAuth";
 import type {BlueBubblesTransportMode} from "shared/connection/bluebubbles/session";
 import {getConfiguredBlueBubblesTransportMode} from "shared/connection/bluebubbles/transport";
+import {
+        BFF_SESSION_ACCESS_TOKEN_PLACEHOLDER,
+        fetchBffSessionStatus,
+        loginBffSession,
+        logoutBffSession
+} from "shared/connection/bluebubbles/bff/sessionApi";
+import {BffApiError} from "shared/connection/bluebubbles/bff/api";
+import {BffSessionStatusData} from "shared/connection/bluebubbles/bff/contracts";
 
 interface BlueBubblesSessionState {
         serverUrl: string;
@@ -65,11 +73,28 @@ export default function SignInGate() {
                         getSecureLS(SecureStorageKey.BlueBubblesLegacyAuth)
                 ]);
 
+                const initialServerUrl = serverUrl ?? "";
+                const initialDeviceName = deviceName ?? "";
                 setInitialValues({
-                        serverUrl: serverUrl ?? "",
+                        serverUrl: initialServerUrl,
                         password: "",
-                        deviceName: deviceName ?? ""
+                        deviceName: initialDeviceName
                 });
+
+                if(transportMode === "bff") {
+                        const status = await fetchBffSessionStatus();
+                        const bffSession = buildBffSession(status, transportMode, initialServerUrl, initialDeviceName);
+                        if(bffSession) {
+                                setSession(bffSession);
+                                setState(SignInState.SignedIn);
+                                applySentryUser(bffSession);
+                        } else {
+                                setSession(null);
+                                setState(SignInState.SignedOut);
+                                applySentryUser(null);
+                        }
+                        return;
+                }
 
                 if(serverUrl && token) {
                         const parsedExpiry = expiresAt !== undefined ? Number(expiresAt) : undefined;
@@ -102,6 +127,19 @@ export default function SignInGate() {
         }, [loadStoredSession]);
 
         const persistSession = useCallback(async (value: BlueBubblesSessionState | null) => {
+                if(transportMode === "bff") {
+                        await Promise.all([
+                                setSecureLS(SecureStorageKey.BlueBubblesServerUrl, value?.serverUrl),
+                                setSecureLS(SecureStorageKey.BlueBubblesToken, undefined),
+                                setSecureLS(SecureStorageKey.BlueBubblesSocketGuid, undefined),
+                                setSecureLS(SecureStorageKey.BlueBubblesRefreshToken, undefined),
+                                setSecureLS(SecureStorageKey.BlueBubblesDeviceName, value?.deviceName),
+                                setSecureLS(SecureStorageKey.BlueBubblesTokenExpiry, undefined),
+                                setSecureLS(SecureStorageKey.BlueBubblesLegacyAuth, undefined)
+                        ]);
+                        return;
+                }
+
                 await Promise.all([
                         setSecureLS(SecureStorageKey.BlueBubblesServerUrl, value?.serverUrl),
                         setSecureLS(SecureStorageKey.BlueBubblesToken, value?.accessToken),
@@ -117,7 +155,7 @@ export default function SignInGate() {
                                 value?.legacyPasswordAuth ? "true" : undefined
                         )
                 ]);
-        }, []);
+        }, [transportMode]);
 
         const handleAuthResult = useCallback(async (
                 credentials: BlueBubblesCredentialValues,
@@ -155,7 +193,7 @@ export default function SignInGate() {
                         message = "The server certificate is invalid or untrusted. Try installing a trusted certificate or connecting over http:// if your network is secure.";
                 } else if(error instanceof MissingPrivateApiError) {
                         message = "This BlueBubbles server is missing required private API features.";
-                } else if(error instanceof BlueBubblesAuthError) {
+                } else if(error instanceof BlueBubblesAuthError || error instanceof BffApiError) {
                         message = error.message;
                 } else if(error instanceof Error && error.message) {
                         message = error.message;
@@ -175,27 +213,59 @@ export default function SignInGate() {
                                 deviceName: values.deviceName?.trim() ?? undefined
                         };
 
-                        const authResult = action === "register"
-                                ? await registerBlueBubblesDevice(payload)
-                                : await loginBlueBubblesDevice(payload);
+                        if(transportMode === "bff") {
+                                const sessionStatus = await loginBffSession({
+                                        serverUrl: payload.serverUrl,
+                                        password: payload.password,
+                                        deviceName: payload.deviceName,
+                                        action
+                                });
+                                const bffSession = buildBffSession(sessionStatus, transportMode, payload.serverUrl, payload.deviceName ?? "");
+                                if(!bffSession) {
+                                        throw new Error("BFF login succeeded but no authenticated session was returned.");
+                                }
 
-                        await handleAuthResult(payload, authResult, payload.password);
+                                await persistSession(bffSession);
+                                setSession(bffSession);
+                                setState(SignInState.SignedIn);
+                                setInitialValues({
+                                        serverUrl: bffSession.serverUrl,
+                                        password: "",
+                                        deviceName: bffSession.deviceName ?? ""
+                                });
+                                applySentryUser(bffSession);
+                        } else {
+                                const authResult = action === "register"
+                                        ? await registerBlueBubblesDevice(payload)
+                                        : await loginBlueBubblesDevice(payload);
+                                await handleAuthResult(payload, authResult, payload.password);
+                        }
+
                         setSubmitState({submitting: false});
                 } catch(error) {
                         handleError(error);
                         setState(SignInState.SignedOut);
                 }
-        }, [handleAuthResult, handleError]);
+        }, [handleAuthResult, handleError, persistSession, transportMode]);
 
         const signOutAccount = useCallback(async () => {
+                if(transportMode === "bff") {
+                        try {
+                                await logoutBffSession();
+                        } catch(error) {
+                                console.warn("Failed to sign out BFF session", error);
+                        }
+                }
+
                 await persistSession(null);
                 setSession(null);
                 setState(SignInState.SignedOut);
                 setSubmitState({submitting: false});
                 applySentryUser(null);
-        }, [persistSession]);
+        }, [persistSession, transportMode]);
 
         useEffect(() => {
+                if(transportMode === "bff") return;
                 if(state !== SignInState.SignedIn || !session?.refreshToken || session.legacyPasswordAuth) return;
                 if(!shouldRefreshToken({
                         accessToken: session.accessToken,
@@ -225,7 +295,7 @@ export default function SignInGate() {
                 return () => {
                         cancelled = true;
                 };
-        }, [state, session, handleAuthResult, handleError, signOutAccount]);
+        }, [state, session, handleAuthResult, handleError, signOutAccount, transportMode]);
 
         const onboardingInitialValues = useMemo<BlueBubblesCredentialValues>(() => initialValues, [initialValues]);
 
@@ -289,4 +359,26 @@ function applySentryUser(session: BlueBubblesSessionState | null) {
 function normalizeSocketGuid(value: string | undefined): string | undefined {
         const normalized = value?.trim();
         return normalized && normalized.length > 0 ? normalized : undefined;
+}
+
+function buildBffSession(
+        status: BffSessionStatusData,
+        transportMode: BlueBubblesTransportMode,
+        fallbackServerUrl: string,
+        fallbackDeviceName: string
+): BlueBubblesSessionState | null {
+        if(!status.authenticated) return null;
+
+        const serverUrl = status.serverUrl?.trim() || fallbackServerUrl.trim();
+        if(!serverUrl) {
+                throw new Error("BFF session status is missing server URL.");
+        }
+
+        const deviceName = status.deviceName?.trim() || fallbackDeviceName.trim() || undefined;
+        return {
+                serverUrl,
+                accessToken: BFF_SESSION_ACCESS_TOKEN_PLACEHOLDER,
+                deviceName,
+                transportMode
+        };
 }
