@@ -1,6 +1,5 @@
-import express, {Express, Request, Response, NextFunction} from "express";
+import express, {Express, NextFunction, Request, RequestHandler, Response} from "express";
 import helmet from "helmet";
-import session from "express-session";
 import {BffConfig} from "./config";
 import {requestIdMiddleware} from "./middleware/requestId";
 import {errorHandler, notFoundHandler} from "./middleware/errorHandler";
@@ -10,7 +9,7 @@ import chatRoutes from "./routes/chatRoutes";
 import messageRoutes from "./routes/messageRoutes";
 import attachmentRoutes from "./routes/attachmentRoutes";
 
-export function createApp(config: BffConfig): Express {
+export function createApp(config: BffConfig, sessionMiddleware: RequestHandler): Express {
         const app = express();
         if(config.trustProxy) {
                 app.set("trust proxy", 1);
@@ -42,19 +41,7 @@ export function createApp(config: BffConfig): Express {
                 next();
         });
 
-        app.use(session({
-                name: config.sessionCookieName,
-                secret: config.sessionSecret,
-                resave: false,
-                saveUninitialized: false,
-                rolling: true,
-                cookie: {
-                        httpOnly: true,
-                        secure: config.cookieSecure,
-                        sameSite: "strict",
-                        maxAge: config.sessionMaxAgeMs
-                }
-        }));
+        app.use(sessionMiddleware);
 
         app.use("/bff", sessionRoutes);
         app.use("/bff", serverRoutes);

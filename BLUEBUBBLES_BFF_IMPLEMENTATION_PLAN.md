@@ -264,12 +264,20 @@ Exit criteria:
 - Send text, search, upload attachment, and download attachment all work through BFF.
 
 ## Phase 3: Realtime socket bridge
-Status (2026-02-19): ACTIVE NEXT
+Status (2026-02-19): COMPLETE
 
 - BFF maintains upstream socket auth (`guid`/`socketGuid`) server-side.
 - Browser subscribes to `/bff/socket`.
 - Forward required events and ack/error handling.
 - Keep health-driven fallback logic in client transport.
+
+Delivered artifacts:
+- Added BFF realtime bridge bootstrap (`bff/src/realtime/bridge.ts`, `bff/src/realtime/contracts.ts`) mounted on Socket.IO path `/bff/socket`.
+- Refactored session middleware wiring so Express routes and the Socket.IO engine share the same authenticated session context (`bff/src/session/middleware.ts`, `bff/src/app.ts`, `bff/src/server.ts`).
+- Removed the Phase 1 placeholder `/bff/socket` HTTP route and replaced it with session-gated Socket.IO auth middleware plus upstream bridge lifecycle handling.
+- BFF now creates upstream BlueBubbles sockets from server-side session credentials, forwards `new-message`/`updated-message`, propagates browser acks when provided, and emits bridge health updates via `bff-realtime-state`.
+- Replaced web Phase 1 realtime placeholder with a real BFF Socket.IO client channel (`src/connection/bluebubbles/bff/realtimeChannel.ts`) that consumes bridge health updates to preserve poll fallback behavior.
+- Added/updated regression coverage for server and web realtime bridge behavior (`test/bff/realtime/bridge.test.ts`, `test/bff/upstream/realtimeSocket.test.ts`, `test/connection/bluebubbles/bffRealtimeChannel.test.ts`).
 
 Exit criteria:
 - Realtime receive path functions without direct browser socket to BlueBubbles.
@@ -324,8 +332,8 @@ If same-origin is not possible, enforce strict CORS and cookie domain policy.
 
 ## 12) Immediate Next Work Items
 
-1. Implement Phase 3 realtime bridge (`/bff/socket`) with upstream auth and event forwarding parity for `new-message` / `updated-message`.
-2. Add BFF integration tests (Node-side route + mocked upstream) for attachment upload/download streaming and CSRF rejection paths.
-3. Run Playwright E2E evidence capture in BFF mode: login, chat bootstrap, send text, upload/download attachment.
-4. Move session storage from in-memory to Redis-backed persistence (`connect-redis`) and document ops requirements.
-5. Add hardened rate limiting + upstream host allowlist controls for production deployment.
+1. Add BFF integration tests (Node-side route + mocked upstream) for attachment upload/download streaming and CSRF rejection paths.
+2. Run Playwright E2E evidence capture in BFF mode: login, chat bootstrap, send text, receive realtime updates, upload/download attachment.
+3. Move session storage from in-memory to Redis-backed persistence (`connect-redis`) and document ops requirements.
+4. Add hardened rate limiting + upstream host allowlist controls for production deployment.
+5. Capture longer-session reconnect behavior evidence (especially tunnel/cloud deployments) before default-on rollout.

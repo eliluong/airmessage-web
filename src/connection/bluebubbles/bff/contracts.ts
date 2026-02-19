@@ -22,6 +22,14 @@ export const BFF_PROXY_ROUTES = {
 } as const;
 
 export const BFF_SOCKET_ROUTE = `${BFF_API_PREFIX}/socket` as const;
+export const BFF_REALTIME_STATE_EVENT = "bff-realtime-state" as const;
+
+export type BffRealtimeState = "connecting" | "connected" | "disconnected" | "error";
+
+export interface BffRealtimeStatePayload {
+        state: BffRealtimeState;
+        details?: unknown;
+}
 
 export type BffSessionAuthMode = "modern-token" | "legacy-guid";
 

@@ -17,8 +17,10 @@
 - 2026-02-18 [CODE] Completed: Node BFF Phase 0 landed (route/error contract scaffold + `BFF_ENABLED` flag + swappable transport seam in web client).
 - 2026-02-19 [CODE] Completed: Node BFF Phase 1 landed (session auth routes + read/bootstrap proxy routes + web BFF login/bootstrap path).
 - 2026-02-19 [CODE] Completed: Node BFF Phase 2 landed (send/search/media parity routes + CSRF + web transport wiring + regression coverage).
-- 2026-02-19 [CODE] Now: Phase 3 is active next (BFF realtime socket bridge at `/bff/socket`).
-- 2026-02-19 [CODE] Next: Validate BFF mode end-to-end with Playwright (login/bootstrap/send/upload/download) and implement socket forwarding.
+- 2026-02-19 [USER] Goal: Proceed with Node BFF Phase 3 (`/bff/socket` realtime bridge) and update roadmap docs.
+- 2026-02-19 [CODE] Completed: Node BFF Phase 3 landed (server-side socket bridge + browser BFF realtime channel + regression tests).
+- 2026-02-19 [CODE] Now: Phase 4 hardening is next (Redis session persistence + rate limits + upstream host allowlist).
+- 2026-02-19 [CODE] Next: Run Playwright BFF-mode E2E evidence capture for login/bootstrap/send/realtime/upload/download.
 - 2026-02-18 [ASSUMPTION] Frequency of encrypted realtime payloads (`encrypted: true`) across deployments is UNCONFIRMED.
 
 ## Invariants / Constraints
@@ -40,15 +42,16 @@
 - 2026-02-18 [CODE] D021 SUPERSEDED: Pre-Phase-1 guardrail that hard-failed all BFF runtime usage is retired after Phase 1 implementation.
 - 2026-02-19 [CODE] D022 SUPERSEDED: Phase-1 guardrail that left BFF mutation/media actions explicitly not-implemented was retired once Phase 2 parity landed.
 - 2026-02-19 [CODE] D023 ACTIVE: BFF mode now serves send/search/media via `/bff` routes with CSRF-enforced mutating endpoints (`session/logout`, `message/text`, `message/attachment`); `createChat` remains explicitly unsupported in BFF until a later phase.
+- 2026-02-19 [CODE] D024 ACTIVE: BFF realtime health is bridged via explicit `bff-realtime-state` events so client poll fallback tracks upstream BlueBubbles socket health (not merely browser-to-BFF socket transport status).
 
 ## Done (recent)
-- 2026-02-19 [CODE] Added BFF CSRF session/token plumbing (`csrfToken` on session records, token issue via `/bff/session/login` and `/bff/session/status`, enforcement middleware on mutating routes).
-- 2026-02-19 [CODE] Implemented Phase 2 BFF proxy routes for send/media (`POST /bff/message/text`, `POST /bff/message/attachment`, `GET /bff/attachment/:guid/download`) including upstream abort propagation on download disconnect.
-- 2026-02-19 [CODE] Extended BFF upstream client to support JSON + raw stream proxying and raw response passthrough.
-- 2026-02-19 [CODE] Routed web BFF transport send/upload/download through Phase 2 endpoints and removed prior Phase-1 not-implemented behavior for those paths.
-- 2026-02-19 [CODE] Added web-side BFF CSRF token cache/header wiring (`X-CSRF-Token`) for logout/send/upload flows.
-- 2026-02-19 [CODE] Added Phase 2 regression tests (`test/connection/bluebubbles/bffApi.test.ts`, `test/connection/bluebubbles/bffSessionApi.test.ts`, `test/connection/bluebubbles/transport.test.ts`).
-- 2026-02-19 [CODE] Updated `BLUEBUBBLES_BFF_IMPLEMENTATION_PLAN.md` and `project.md` to mark Phase 2 complete and Phase 3 active next.
+- 2026-02-19 [CODE] Added shared BFF session middleware factory so Express routes and Socket.IO engine use the same authenticated session state (`bff/src/session/middleware.ts`).
+- 2026-02-19 [CODE] Implemented BFF realtime bridge bootstrap on `/bff/socket` with upstream socket lifecycle wiring, state forwarding, and event ack passthrough (`bff/src/realtime/bridge.ts`).
+- 2026-02-19 [CODE] Added BFF realtime bridge contracts (`bff/src/realtime/contracts.ts`) and removed the old `/bff/socket` HTTP 501 placeholder route.
+- 2026-02-19 [CODE] Updated BFF server startup to attach Socket.IO bridge on the shared HTTP server (`bff/src/server.ts`).
+- 2026-02-19 [CODE] Replaced web BFF realtime placeholder with Socket.IO client channel that tracks `bff-realtime-state` and preserves health-driven fallback semantics (`src/connection/bluebubbles/bff/realtimeChannel.ts`).
+- 2026-02-19 [CODE] Added/updated realtime bridge tests (`test/bff/realtime/bridge.test.ts`, `test/bff/upstream/realtimeSocket.test.ts`, `test/connection/bluebubbles/bffRealtimeChannel.test.ts`).
+- 2026-02-19 [CODE] Updated `BLUEBUBBLES_BFF_IMPLEMENTATION_PLAN.md` + `project.md` to mark Phase 3 complete and move next focus to Phase 4 hardening.
 
 ## Open Questions
 - 2026-02-18 [ASSUMPTION] For all target server versions, is configured password always valid as socket `guid` when token-auth endpoints are present? UNCONFIRMED.
@@ -59,16 +62,16 @@
 
 ## Working set
 - 2026-02-19 [CODE] `bff/src/app.ts`
-- 2026-02-19 [CODE] `bff/src/routes/attachmentRoutes.ts`
-- 2026-02-19 [CODE] `bff/src/upstream/client.ts`
-- 2026-02-19 [CODE] `bff/src/middleware/csrf.ts`
-- 2026-02-19 [CODE] `bff/src/routes/sessionRoutes.ts`
-- 2026-02-19 [CODE] `bff/src/routes/messageRoutes.ts`
-- 2026-02-19 [CODE] `bff/src/session/csrf.ts`
+- 2026-02-19 [CODE] `bff/src/server.ts`
+- 2026-02-19 [CODE] `bff/src/realtime/bridge.ts`
+- 2026-02-19 [CODE] `bff/src/realtime/contracts.ts`
+- 2026-02-19 [CODE] `bff/src/session/middleware.ts`
+- 2026-02-19 [CODE] `bff/src/upstream/realtimeSocket.ts`
 - 2026-02-19 [CODE] `src/connection/bluebubbles/transport.ts`
-- 2026-02-19 [CODE] `src/connection/bluebubbles/bff/api.ts`
-- 2026-02-19 [CODE] `src/connection/bluebubbles/bff/sessionApi.ts`
-- 2026-02-19 [CODE] `src/connection/bluebubbles/bff/csrf.ts`
+- 2026-02-19 [CODE] `src/connection/bluebubbles/bff/realtimeChannel.ts`
+- 2026-02-19 [CODE] `src/connection/bluebubbles/bff/contracts.ts`
+- 2026-02-19 [CODE] `test/bff/realtime/bridge.test.ts`
+- 2026-02-19 [CODE] `test/connection/bluebubbles/bffRealtimeChannel.test.ts`
 - 2026-02-19 [CODE] `BLUEBUBBLES_BFF_IMPLEMENTATION_PLAN.md`
 
 ## Receipts
@@ -103,3 +106,7 @@
 - 2026-02-19 [TOOL] `npm test -- --runInBand test/connection/bluebubbles/bffApi.test.ts test/connection/bluebubbles/bffSessionApi.test.ts test/connection/bluebubbles/transport.test.ts` passed (3 suites, 9 tests).
 - 2026-02-19 [TOOL] `npm test -- --runInBand` passed after Phase 2 implementation (18 suites, 103 tests).
 - 2026-02-19 [TOOL] `npm run build` passed after Phase 2 implementation (webpack success; warnings only).
+- 2026-02-19 [TOOL] `npm test -- --runInBand test/connection/bluebubbles/bffRealtimeChannel.test.ts test/bff/upstream/realtimeSocket.test.ts test/bff/realtime/bridge.test.ts` passed after Phase 3 bridge implementation (3 suites, 12 tests).
+- 2026-02-19 [TOOL] `npm test -- --runInBand test/connection/bluebubbles/bffApi.test.ts test/connection/bluebubbles/bffSessionApi.test.ts test/connection/bluebubbles/transport.test.ts test/connection/bluebubbles/bffRealtimeChannel.test.ts test/bff/upstream/realtimeSocket.test.ts test/bff/realtime/bridge.test.ts` passed (6 suites, 21 tests).
+- 2026-02-19 [TOOL] `npm test -- --runInBand` passed after Phase 3 implementation (20 suites, 113 tests).
+- 2026-02-19 [TOOL] `npm run build` and `npm --prefix bff run build` passed after Phase 3 implementation (webpack success with existing warnings; BFF TypeScript build success).

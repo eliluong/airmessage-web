@@ -35,14 +35,4 @@ router.get("/server/features", requireAuthenticatedSession, asyncRoute(async (re
         res.json(payload);
 }));
 
-router.get("/socket", requireAuthenticatedSession, (_req, res) => {
-        res.status(501).json({
-                error: {
-                        code: "BFF_SOCKET_NOT_IMPLEMENTED",
-                        message: "Realtime socket proxy is not implemented in Phase 1.",
-                        status: 501
-                }
-        });
-});
-
 export default router;
