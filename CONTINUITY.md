@@ -9,7 +9,6 @@
 - 2026-02-18 [CODE] Completed: Phases 1-5 landed (socket lifecycle/gating, direct ingestion, dedupe/reconciliation, tapback consistency, health-driven polling fallback).
 - 2026-02-18 [USER] Goal: Eliminate sustained poll traffic when realtime is healthy.
 - 2026-02-18 [CODE] Completed: Compatibility hardening landed (`socketGuid`, `<basePath>/socket.io`, `allowEIO3`, explicit connect timeout, metadata normalization, fallback diagnostics).
-- 2026-02-18 [USER] Observed: Runtime reaches realtime `connected` with `serverVersion: 1.9.7` and no sustained periodic polling.
 - 2026-02-18 [USER] Goal: Proceed with Phase 6.
 - 2026-02-18 [CODE] Completed: Phase 6 code/test/doc closure implemented (new mixed socket/poll edge tests + roadmap updates).
 - 2026-02-18 [USER] Goal: Eliminate plaintext password usage from browser BlueBubbles REST requests (e.g., `query`, `download`).
@@ -23,8 +22,14 @@
 - 2026-02-19 [CODE] Completed: Node BFF Phase 4 landed (Redis session-store support + rate limits + upstream allowlist + metrics + security checklist + verification tests).
 - 2026-02-19 [CODE] Completed: Playwright BFF evidence captured for login/bootstrap/send/realtime/upload/download; browser traffic remained on `/bff/*` during validated run.
 - 2026-02-19 [CODE] Completed: Hotfix landed for nullable attachment MIME previews to prevent `ListConversation` runtime crash after incoming/uploaded attachment updates.
-- 2026-02-19 [CODE] Now: Phase 5 rollout planning remains (default-on BFF transport + direct-mode deprecation).
-- 2026-02-19 [CODE] Next: Execute Phase 5 defaults cleanup and add regression coverage for nullable MIME preview rendering.
+- 2026-02-19 [USER] Goal: Fix intermittent first-login `Failed to fetch conversations` / retry-loop behavior on legacy-auth server `air.thecemetary.org`.
+- 2026-02-19 [CODE] Completed: Connection bootstrap hardening now includes active-manager callback scoping, a 30s conversation-bootstrap timeout (was 10s), and deferred Messaging teardown to avoid StrictMode remount disconnect/auth flapping during login.
+- 2026-02-19 [USER] Goal: Re-observe first-login message-loading failure in live Playwright MCP while reproducing `air.thecemetary.org` login.
+- 2026-02-19 [TOOL] User-provided browser log confirms proxied-host bootstrap pattern: expected legacy-auth 404s, `Failed to fetch conversations {code: 3}` at ~30s, then delayed `net::ERR_QUIC_PROTOCOL_ERROR` on `https://air.thecemetary.org/api/v1/chat/query`.
+- 2026-02-19 [CODE] Completed: Bootstrap resilience hardening landed (`chat/query` per-request timeout+retry, `requestLiteConversations` fatal-error propagation, conversation bootstrap timeout increased to 60s).
+- 2026-02-19 [TOOL] Post-patch Playwright runtime on `https://air.thecemetary.org` currently reaches fully loaded conversation/thread UI; intermittent `ERR_QUIC_PROTOCOL_ERROR` still appears in history but subsequent `/chat/query` + `/message/query` requests succeed and messages render.
+- 2026-02-19 [TOOL] Browser-context cross-origin validation from `http://debian-dev.lan:8080` to `https://air.thecemetary.org/api/v1/chat/query` returned readable `200` JSON payloads repeatedly (no CORS exception thrown), indicating CORS is not the primary blocker for the observed login issue.
+- 2026-02-19 [USER] Deployment delta: login/bootstrap succeeds through BlueBubbles `trycloudflare.com` tunnel but intermittently stalls/fails through `air.thecemetary.org` (Cloudflare + Nginx Proxy Manager), including transient `net::ERR_QUIC_PROTOCOL_ERROR 200` before eventual message load.
 - 2026-02-18 [ASSUMPTION] Frequency of encrypted realtime payloads (`encrypted: true`) across deployments is UNCONFIRMED.
 
 ## Invariants / Constraints
@@ -51,9 +56,9 @@
 - 2026-02-19 [CODE] D026 ACTIVE: Phase 4 observability standard uses Prometheus-style `/bff/metrics` counters/histograms for auth failures, upstream latency/errors, and realtime reconnect churn.
 
 ## Done (recent)
+- 2026-02-19 [CODE] Patched connection bootstrap race/timeout behavior: reconnect now replaces managers with active-listener scoping, initial conversation fetch timeout is 30s, and Messaging teardown is deferred/cancelable across StrictMode remount replay; regression coverage added (`src/connection/connectionManager.ts`, `src/components/messaging/master/Messaging.tsx`, `test/connection/connectionManager.test.ts`).
 - 2026-02-19 [CODE] Added configurable Redis-backed session runtime with TTL and clean shutdown lifecycle (`bff/src/session/middleware.ts`, `bff/src/server.ts`).
 - 2026-02-19 [CODE] Added upstream allowlist + rate-limiting + metrics hardening controls for production BFF deployments (`bff/src/security/urlValidation.ts`, `bff/src/security/rateLimit.ts`, `bff/src/observability/metrics.ts`).
-- 2026-02-19 [CODE] Expanded logger redaction coverage and added redaction verification test (`bff/src/observability/logger.ts`, `test/bff/observability/logger.test.ts`).
 - 2026-02-19 [CODE] Added Phase 4 regression coverage for allowlist/rate-limit/metrics (`test/bff/security/urlValidation.test.ts`, `test/bff/security/rateLimit.test.ts`, `test/bff/observability/metrics.test.ts`).
 - 2026-02-19 [CODE] Updated roadmap and operations docs for Phase 4 completion (`BLUEBUBBLES_BFF_IMPLEMENTATION_PLAN.md`, `project.md`, `bff/SECURITY_CHECKLIST.md`, `bff/.env.example`).
 - 2026-02-19 [TOOL] Captured Playwright evidence for BFF login/bootstrap/send/realtime/upload/download; request logs showed `/bff/*` usage and no direct upstream REST calls in validated run, with in-repo handoff at `evidence/phase4-playwright-evidence.md`.
@@ -67,6 +72,8 @@
 - 2026-02-18 [ASSUMPTION] Should BFF deployment be same-origin with web assets (recommended) or cross-origin with strict CORS/cookie policy? UNCONFIRMED.
 
 ## Working set
+- 2026-02-19 [CODE] `src/components/messaging/master/Messaging.tsx`
+- 2026-02-19 [CODE] `src/connection/connectionManager.ts`
 - 2026-02-19 [CODE] `bff/src/app.ts`
 - 2026-02-19 [CODE] `bff/src/config.ts`
 - 2026-02-19 [CODE] `bff/src/session/middleware.ts`
@@ -75,9 +82,7 @@
 - 2026-02-19 [CODE] `bff/src/observability/metrics.ts`
 - 2026-02-19 [CODE] `bff/src/observability/logger.ts`
 - 2026-02-19 [CODE] `bff/src/upstream/client.ts`
-- 2026-02-19 [CODE] `bff/SECURITY_CHECKLIST.md`
-- 2026-02-19 [CODE] `src/util/conversationUtils.ts`
-- 2026-02-19 [CODE] `test/bff/security/rateLimit.test.ts`
+- 2026-02-19 [CODE] `project.md`
 - 2026-02-19 [CODE] `BLUEBUBBLES_BFF_IMPLEMENTATION_PLAN.md`
 
 ## Receipts
@@ -122,3 +127,17 @@
 - 2026-02-19 [TOOL] Playwright evidence run observed `POST /bff/message/text`, `POST /bff/message/attachment`, and `GET /bff/attachment/:guid/download` with inbound realtime message logs and no direct browser requests to `xilexs-imac-pro.lan/api/v1/*` during validated BFF session (summarized in `evidence/phase4-playwright-evidence.md`).
 - 2026-02-19 [TOOL] Playwright runtime incident captured: `ListConversation` crashed on `mimeTypeToPreview(null)` after attachment update; fixed by accepting nullable MIME types with safe fallback labels.
 - 2026-02-19 [TOOL] `npm run build` and `npm --prefix bff run build` passed after nullable-MIME preview hotfix.
+- 2026-02-19 [TOOL] Static trace: `Failed to fetch conversations {code: 3}` maps to `MessageErrorCode.LocalNetwork`; stale/overlapping reconnect callbacks could race bootstrap requests before manager-scoping hardening.
+- 2026-02-19 [TOOL] `npm test -- --runInBand test/connection/connectionManager.test.ts test/connection/bluebubbles/transport.test.ts` passed after connection bootstrap fix (2 suites, 4 tests).
+- 2026-02-19 [TOOL] `npm run build` passed after connection bootstrap fix (webpack success; existing asset-size warnings only).
+- 2026-02-19 [TOOL] `npm test -- --runInBand test/connection/connectionManager.test.ts` and `npm run build` passed after Messaging StrictMode teardown hardening (existing webpack size warnings only).
+- 2026-02-19 [TOOL] Playwright MCP remained unavailable in-session: all browser calls (`tabs`, `navigate`, `snapshot`, `console`) failed with transport error `Unexpected content type: None`; live-browser observation is blocked until MCP transport is restored.
+- 2026-02-19 [TOOL] Playwright MCP connectivity restored in-session: `mcp__playwright__browser_tabs` with `action=list` returned active tabs (`AirMessage`, `DevTools`), confirming the browser transport is currently reachable; supersedes prior unavailable status unless the incident recurs.
+- 2026-02-19 [TOOL] Live Playwright reproduction on `air.thecemetary.org`: UI moved from sign-in to `Getting your messages…` and then transitioned to `AirMessage can't be reached` with console error `Failed to fetch conversations {code: 3}`.
+- 2026-02-19 [TOOL] Network trace for failing `air.thecemetary.org` login showed expected legacy-auth fallback (`/auth/login` + `/login` + `/server/features` 404, `/ping` + `/server/info` 200) and `/chat/query` 200, but no `/message/query` request before the conversation-load failure state.
+- 2026-02-19 [TOOL] `npm test -- --runInBand test/connection/bluebubbles/api.test.ts test/connection/bluebubbles/bluebubblesCommunicationsManager.test.ts test/connection/connectionManager.test.ts` passed after proxy-bootstrap hardening (3 suites, 44 tests).
+- 2026-02-19 [TOOL] `npm run build` passed after proxy-bootstrap hardening (webpack success; existing asset-size/performance warnings only).
+- 2026-02-19 [TOOL] Post-patch Playwright MCP check on `air.thecemetary.org` observed occasional `net::ERR_QUIC_PROTOCOL_ERROR` in console history, but active session remained loaded with successful proxied `POST /api/v1/chat/query` and `POST /api/v1/message/query` responses plus attachment fetches (`200`) in network history.
+- 2026-02-19 [TOOL] Automated clean login attempt (50s observation window) recorded sequence: initial `POST /api/v1/chat/query` `200`, later `requestfailed` `net::ERR_QUIC_PROTOCOL_ERROR`, then recovery with `POST /api/v1/chat/query` `200` and multiple `POST /api/v1/message/query` `200` responses.
+- 2026-02-19 [TOOL] Browser-run direct `fetch()` probe with nonce query to `https://air.thecemetary.org/api/v1/chat/query` succeeded (`status: 200`, JSON body accessible) from app origin, further ruling out active CORS denial on this endpoint.
+- 2026-02-19 [USER] Runtime symptom update: with `air.thecemetary.org`, client may show `POST /api/v1/chat/query ... net::ERR_QUIC_PROTOCOL_ERROR 200` for ~15s before conversations begin loading; same flow works reliably via BlueBubbles `trycloudflare.com` tunnel.

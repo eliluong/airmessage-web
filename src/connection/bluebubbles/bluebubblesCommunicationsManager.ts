@@ -193,7 +193,7 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
         }
 
         public override requestLiteConversations(limit?: number): boolean {
-                this.fetchLiteConversations(limit);
+                this.fetchLiteConversations(limit).catch((error) => this.handleFatalError(error));
                 return true;
         }
 
