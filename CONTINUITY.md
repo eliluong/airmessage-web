@@ -20,6 +20,10 @@
 - 2026-02-19 [CODE] Local-dev fix: webpack `/bff` proxy now defaults to `BFF_ENABLED` when `BFF_DEV_PROXY_ENABLED` is unset, with explicit env override retained.
 - 2026-02-19 [USER] Local-dev workflow request: run web dev server and BFF dev server with one root command.
 - 2026-02-19 [CODE] Local-dev workflow update: root `npm run dev` now launches both (`npm run dev:web` + `npm run dev:bff`) via `concurrently`.
+- 2026-02-19 [TOOL] Reproduced `https://air2.thecemetary.org` login-page websocket failures: repeated `wss://air2.thecemetary.org:8080/ws` -> `net::ERR_SSL_PROTOCOL_ERROR`, emitted by `webpack-dev-server` client in `index.js`.
+- 2026-02-19 [ASSUMPTION] `air2` websocket errors are HMR/dev-server transport noise (dev bundle in public hosting path), not the BlueBubbles `/bff/socket` realtime channel.
+- 2026-02-19 [USER] Confirmed: this recurring `air2` websocket error pattern is expected for dev-bundle hosting and does not affect normal application function.
+- 2026-02-19 [CODE] Supersedes prior assumption: `wss://air2.thecemetary.org:8080/ws` failures are expected webpack HMR/dev-server reconnect noise, not a `/bff/socket` or BlueBubbles transport fault.
 
 ## Invariants / Constraints
 - 2026-02-17 [USER] Preserve architecture: UI calls `connectionManager`; transport-specific behavior stays in `bluebubblesCommunicationsManager`.
@@ -36,6 +40,7 @@
 - 2026-02-19 [CODE] D026 ACTIVE: observability baseline is Prometheus-style `/bff/metrics` for auth failures, upstream latency/errors, and realtime reconnect churn.
 - 2026-02-19 [CODE] D027 ACTIVE: default web transport is BFF; direct browser mode requires explicit dual-flag opt-in (`BFF_ENABLED=false` and `BFF_DIRECT_MODE_ENABLED=true`) and otherwise fails closed.
 - 2026-02-19 [CODE] D028 ACTIVE: onboarding copy must surface direct-mode deprecation warnings whenever direct mode is intentionally enabled.
+- 2026-02-19 [CODE] D029 ACTIVE: recurring `wss://<host>:8080/ws` `ERR_SSL_PROTOCOL_ERROR` logs on publicly hosted dev bundles are classified as expected webpack HMR noise unless accompanied by `/bff/*` or `/bff/socket` failures.
 
 ## Done (recent)
 - 2026-02-19 [CODE] Fixed local-dev BFF routing mismatch by defaulting webpack `/bff` proxy enablement to the resolved BFF transport mode (`webpack.config.js`).
@@ -83,3 +88,4 @@
 - 2026-02-19 [TOOL] Playwright local-dev reproduction on `http://debian-dev.lan:8080` captured duplicate `GET /bff/session/status -> 404 Not Found` while login UI loaded.
 - 2026-02-19 [TOOL] `npm run build` passed after webpack proxy-default fix (webpack success; existing asset-size/service-worker warnings only).
 - 2026-02-19 [TOOL] `npm run dev -- --help` succeeded, confirming root `dev` script resolves `concurrently` and exposes the combined startup command.
+- 2026-02-19 [TOOL] Playwright reproduction on `https://air2.thecemetary.org` captured `webpack-dev-server` reconnect loop with `WebSocket connection to 'wss://air2.thecemetary.org:8080/ws' failed: net::ERR_SSL_PROTOCOL_ERROR`; concurrent network traces still showed healthy `GET /bff/session/status -> 200` on login load.
