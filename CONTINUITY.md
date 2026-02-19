@@ -16,6 +16,8 @@
 - 2026-02-19 [TOOL] Validation: Phase-5 transport tests passed; web production build passed (existing webpack asset-size warnings only).
 - 2026-02-19 [USER] Deployment delta: Cloudflare/Nginx path (`air.thecemetary.org`) can show transient `ERR_QUIC_PROTOCOL_ERROR` while tunnel path is steadier; root cause remains UNCONFIRMED.
 - 2026-02-19 [CODE] Next: add deeper route-level BFF integration coverage and capture longer-session reconnect evidence under default-on rollout.
+- 2026-02-19 [USER] Local-dev regression: login on `http://debian-dev.lan:8080` shows `Not Found` due to `/bff/session/*` returning `404`.
+- 2026-02-19 [CODE] Local-dev fix: webpack `/bff` proxy now defaults to `BFF_ENABLED` when `BFF_DEV_PROXY_ENABLED` is unset, with explicit env override retained.
 
 ## Invariants / Constraints
 - 2026-02-17 [USER] Preserve architecture: UI calls `connectionManager`; transport-specific behavior stays in `bluebubblesCommunicationsManager`.
@@ -34,13 +36,13 @@
 - 2026-02-19 [CODE] D028 ACTIVE: onboarding copy must surface direct-mode deprecation warnings whenever direct mode is intentionally enabled.
 
 ## Done (recent)
+- 2026-02-19 [CODE] Fixed local-dev BFF routing mismatch by defaulting webpack `/bff` proxy enablement to the resolved BFF transport mode (`webpack.config.js`).
+- 2026-02-19 [TOOL] Reproduced local `404` failure in Playwright (`GET /bff/session/status` on `http://debian-dev.lan:8080`) and validated root-cause signal.
 - 2026-02-19 [CODE] Implemented Phase 5 transport default/gating (`src/connection/bluebubbles/transport.ts`, `webpack.config.js`, `index.d.ts`, `.env.example`).
 - 2026-02-19 [CODE] Updated onboarding UX for BFF-first messaging with direct-mode deprecation warning states (`src/components/Onboarding.tsx`, `src/components/SignInGate.tsx`).
 - 2026-02-19 [CODE] Updated media-cache scope fallback to configured transport mode rather than hardcoded direct fallback (`src/state/mediaCache.ts`).
 - 2026-02-19 [CODE] Added transport configuration regression coverage and updated existing BlueBubbles manager tests to set explicit direct mode where intended (`test/connection/bluebubbles/transportConfig.test.ts`, `test/connection/bluebubbles/bluebubblesCommunicationsManager.test.ts`).
 - 2026-02-19 [CODE] Updated BFF rollout docs/roadmap to mark Phase 5 complete and refresh post-rollout work (`BLUEBUBBLES_BFF_IMPLEMENTATION_PLAN.md`, `project.md`).
-- 2026-02-19 [CODE] Updated contributor-facing setup guidance for BFF-first local development and direct-mode deprecation (`README.md`).
-- 2026-02-19 [TOOL] Verified Phase-5 changes via targeted tests and production build (`npm test ...transportConfig...`, `npm run build`).
 
 ## Open Questions
 - 2026-02-19 [ASSUMPTION] Root cause and frequency of Cloudflare/Nginx `ERR_QUIC_PROTOCOL_ERROR` on `air.thecemetary.org` remain UNCONFIRMED.
@@ -75,3 +77,5 @@
 - 2026-02-19 [TOOL] `npm run build` passed after Phase 5 updates (webpack success; existing asset-size/service-worker warnings only).
 - 2026-02-19 [TOOL] First post-Phase-5 `npm test -- --runInBand` run failed in `test/connection/bluebubbles/bluebubblesCommunicationsManager.test.ts` because implicit transport default switched to BFF (`fetch` missing / CSRF expectations), confirming tests relied on old default assumptions.
 - 2026-02-19 [TOOL] After setting explicit direct transport in that suite, `npm test -- --runInBand test/connection/bluebubbles/bluebubblesCommunicationsManager.test.ts` and full `npm test -- --runInBand` both passed (26 suites, 130 tests).
+- 2026-02-19 [TOOL] Playwright local-dev reproduction on `http://debian-dev.lan:8080` captured duplicate `GET /bff/session/status -> 404 Not Found` while login UI loaded.
+- 2026-02-19 [TOOL] `npm run build` passed after webpack proxy-default fix (webpack success; existing asset-size/service-worker warnings only).
