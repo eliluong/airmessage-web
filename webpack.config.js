@@ -10,6 +10,12 @@ const ForkTsCheckerWebpackPlugin = require("fork-ts-checker-webpack-plugin");
 const CopyPlugin = require("copy-webpack-plugin");
 const WorkboxPlugin = require("workbox-webpack-plugin");
 
+function parseBooleanEnv(value) {
+        if(typeof value !== "string") return false;
+        const normalized = value.trim().toLowerCase();
+        return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
+}
+
 module.exports = (env) => ({
 	entry: "./src/index.tsx",
 	target: "web",
@@ -110,6 +116,7 @@ module.exports = (env) => ({
                         "WPEnv.PACKAGE_VERSION": JSON.stringify(process.env.npm_package_version),
                         "WPEnv.RELEASE_HASH": "\"undefined\"",
                         "WPEnv.BUILD_DATE": Date.now(),
+                        "WPEnv.BFF_ENABLED": JSON.stringify(parseBooleanEnv(process.env.BFF_ENABLED)),
                         "WPEnv.SENTRY_DSN": JSON.stringify(process.env.SENTRY_DSN ?? ""),
                         "WPEnv.LINK_PREVIEW_API_KEY": JSON.stringify(process.env.LINK_PREVIEW_API_KEY ?? "")
                 }),

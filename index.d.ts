@@ -24,6 +24,7 @@ declare const WPEnv: {
         RELEASE_HASH: string | undefined;
         BUILD_DATE: number;
         WINRT: boolean;
+        BFF_ENABLED: boolean;
         SENTRY_DSN?: string;
         LINK_PREVIEW_API_KEY?: string;
 };

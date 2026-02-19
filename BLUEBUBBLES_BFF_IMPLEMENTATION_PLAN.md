@@ -201,9 +201,19 @@ bff/
 ## 8) Phased Implementation Plan
 
 ## Phase 0: Design freeze + contract scaffold
+Status (2026-02-18): COMPLETE
+
 - Finalize route contracts and error envelope.
 - Add `BFF_ENABLED` flag in web app.
 - Introduce transport abstraction hooks so direct/BFF paths are swappable.
+
+Delivered artifacts:
+- `src/connection/bluebubbles/bff/contracts.ts` defines the `/bff` route constants and normalized `BffErrorEnvelope`.
+- `src/connection/bluebubbles/transport.ts` centralizes BlueBubbles API/realtime construction behind a transport-mode seam (`direct` vs `bff`).
+- `WPEnv.BFF_ENABLED` is wired through `webpack.config.js`, `index.d.ts`, and `.env.example`.
+- `connectionManager` and `bluebubblesCommunicationsManager` now use the transport seam instead of directly instantiating API/realtime modules.
+- `SignInGate`/`Messaging`/session types now carry `transportMode` so runtime path selection is explicit.
+- Guardrail: if `BFF_ENABLED` is turned on before Phase 1, runtime fails explicitly with a not-implemented BFF error (no silent fallback to direct credentials flow).
 
 Exit criteria:
 - No behavior change in production path.
@@ -289,8 +299,7 @@ If same-origin is not possible, enforce strict CORS and cookie domain policy.
 ## 12) Immediate Next Work Items
 
 1. Create `bff/` service scaffold with TypeScript + Express + Socket.IO.
-2. Implement session routes and upstream auth adapter first.
-3. Switch web login flow to BFF session mode under `BFF_ENABLED`.
-4. Implement read APIs for chat bootstrap/thread fetch.
-5. Validate with a legacy-auth-only server before expanding mutation routes.
-
+2. Implement `POST /bff/session/login`, `GET /bff/session/status`, and `POST /bff/session/logout` with server-side session storage.
+3. Implement read-only proxy routes for metadata/chat/thread bootstrap (`/bff/server/*`, `/bff/chat/*`).
+4. Add web-side `bffApi.ts` and `bffRealtimeChannel.ts`, then route the existing seam (`src/connection/bluebubbles/transport.ts`) to these implementations when `BFF_ENABLED=true`.
+5. Validate Phase 1 end-to-end against a legacy-auth-only server and capture Playwright evidence.

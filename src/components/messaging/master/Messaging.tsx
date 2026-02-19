@@ -21,6 +21,7 @@ import {ThreadFocusTarget} from "shared/components/messaging/thread/types";
 import {PeopleContext} from "shared/state/peopleState";
 import {logSelectedConversationPayload} from "shared/connection/bluebubbles/debugLogging";
 import {searchCache} from "shared/state/searchCache";
+import type {BlueBubblesTransportMode} from "shared/connection/bluebubbles/session";
 
 export default function Messaging(props: {
         serverUrl: string;
@@ -29,9 +30,10 @@ export default function Messaging(props: {
         refreshToken?: string;
         legacyPasswordAuth?: boolean;
         deviceName?: string;
+        transportMode?: BlueBubblesTransportMode;
         onReset?: VoidFunction;
 }) {
-        const {serverUrl, accessToken, socketGuid, refreshToken, legacyPasswordAuth, deviceName, onReset} = props;
+        const {serverUrl, accessToken, socketGuid, refreshToken, legacyPasswordAuth, deviceName, transportMode, onReset} = props;
         const [detailPane, setDetailPane] = useState<DetailPane>({type: DetailType.Loading});
         const [sidebarBanner, setSidebarBanner] = useState<ConnectionErrorCode | "connecting" | undefined>(undefined);
         const {
@@ -51,14 +53,15 @@ export default function Messaging(props: {
                         socketGuid,
                         refreshToken,
                         legacyPasswordAuth,
-                        deviceName
+                        deviceName,
+                        transportMode
                 });
 
                 return () => {
                         searchCache.clear();
                         ConnectionManager.setBlueBubblesAuth(undefined);
                 };
-        }, [serverUrl, accessToken, socketGuid, refreshToken, legacyPasswordAuth, deviceName]);
+        }, [serverUrl, accessToken, socketGuid, refreshToken, legacyPasswordAuth, deviceName, transportMode]);
 	
         const lastLoggedConversationIDRef = useRef<number | undefined>(undefined);
 

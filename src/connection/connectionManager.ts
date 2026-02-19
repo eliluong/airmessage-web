@@ -14,7 +14,8 @@ import ClientComm5 from "./comm5/clientComm5";
 import DataProxy from "./dataProxy";
 import BlueBubblesCommunicationsManager from "./bluebubbles/bluebubblesCommunicationsManager";
 import BlueBubblesDataProxy from "./bluebubbles/bluebubblesDataProxy";
-import {fetchChats as fetchChatsApi, fetchChatCount as fetchChatCountApi, FetchChatsOptions} from "./bluebubbles/api";
+import type {BlueBubblesTransportMode} from "./bluebubbles/session";
+import {fetchChats as fetchChatsApi, fetchChatCount as fetchChatCountApi, FetchChatsOptions} from "./bluebubbles/transport";
 import {convertChatResponse} from "./bluebubbles/chatTransformers";
 import {ChatQueryResponse} from "./bluebubbles/types";
 import {Conversation, ConversationItem, LinkedConversation, MessageItem, MessageModifier, MessageSearchHit} from "../data/blocks";
@@ -83,6 +84,7 @@ interface BlueBubblesAuthConfig {
         refreshToken?: string;
         legacyPasswordAuth?: boolean;
         deviceName?: string;
+        transportMode?: BlueBubblesTransportMode;
 }
 
 let blueBubblesAuthConfig: BlueBubblesAuthConfig | undefined;

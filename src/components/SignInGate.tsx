@@ -18,6 +18,8 @@ import {
         registerBlueBubblesDevice,
         shouldRefreshToken
 } from "shared/util/bluebubblesAuth";
+import type {BlueBubblesTransportMode} from "shared/connection/bluebubbles/session";
+import {getConfiguredBlueBubblesTransportMode} from "shared/connection/bluebubbles/transport";
 
 interface BlueBubblesSessionState {
         serverUrl: string;
@@ -27,6 +29,7 @@ interface BlueBubblesSessionState {
         expiresAt?: number;
         deviceName?: string;
         legacyPasswordAuth?: boolean;
+        transportMode: BlueBubblesTransportMode;
 }
 
 enum SignInState {
@@ -41,6 +44,7 @@ interface SubmitState {
 }
 
 export default function SignInGate() {
+        const transportMode = getConfiguredBlueBubblesTransportMode();
         const [state, setState] = useState(SignInState.Waiting);
         const [session, setSession] = useState<BlueBubblesSessionState | null>(null);
         const [submitState, setSubmitState] = useState<SubmitState>({submitting: false});
@@ -76,7 +80,8 @@ export default function SignInGate() {
                                 refreshToken: refreshToken ?? undefined,
                                 expiresAt: Number.isFinite(parsedExpiry) ? parsedExpiry : undefined,
                                 deviceName: deviceName ?? undefined,
-                                legacyPasswordAuth: legacyAuth === "true"
+                                legacyPasswordAuth: legacyAuth === "true",
+                                transportMode
                         };
 
                         setSession(storedSession);
@@ -87,7 +92,7 @@ export default function SignInGate() {
                         setState(SignInState.SignedOut);
                         applySentryUser(null);
                 }
-        }, []);
+        }, [transportMode]);
 
         useEffect(() => {
                 loadStoredSession().catch((error: unknown) => {
@@ -129,7 +134,8 @@ export default function SignInGate() {
                         refreshToken: authResult.refreshToken,
                         expiresAt: authResult.expiresAt,
                         deviceName: sanitizedDevice,
-                        legacyPasswordAuth: authResult.legacyPasswordAuth
+                        legacyPasswordAuth: authResult.legacyPasswordAuth,
+                        transportMode
                 };
 
                 await persistSession(nextSession);
@@ -141,7 +147,7 @@ export default function SignInGate() {
                         deviceName: sanitizedDevice ?? ""
                 });
                 applySentryUser(nextSession);
-        }, [persistSession]);
+        }, [persistSession, transportMode]);
 
         const handleError = useCallback((error: unknown) => {
                 let message = "Unable to connect to the BlueBubbles server.";
@@ -250,6 +256,7 @@ export default function SignInGate() {
                                                 refreshToken={session.refreshToken}
                                                 legacyPasswordAuth={session.legacyPasswordAuth}
                                                 deviceName={session.deviceName}
+                                                transportMode={session.transportMode}
                                                 onReset={signOutAccount}
                                         />
                                 );

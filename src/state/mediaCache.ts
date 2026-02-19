@@ -37,7 +37,8 @@ export function getConversationMediaCacheScopeKey(): string {
                                 auth.accessToken,
                                 auth.refreshToken ?? "",
                                 auth.deviceName ?? "",
-                                auth.legacyPasswordAuth ? "legacy" : "modern"
+                                auth.legacyPasswordAuth ? "legacy" : "modern",
+                                auth.transportMode ?? "direct"
                         ].join("|");
                         return `${proxyType}:${accountKey}`;
                 }
