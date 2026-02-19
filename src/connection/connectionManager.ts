@@ -14,7 +14,8 @@ import ClientComm5 from "./comm5/clientComm5";
 import DataProxy from "./dataProxy";
 import BlueBubblesCommunicationsManager from "./bluebubbles/bluebubblesCommunicationsManager";
 import BlueBubblesDataProxy from "./bluebubbles/bluebubblesDataProxy";
-import {fetchChats as fetchChatsApi, fetchChatCount as fetchChatCountApi, FetchChatsOptions} from "./bluebubbles/api";
+import type {BlueBubblesTransportMode} from "./bluebubbles/session";
+import {fetchChats as fetchChatsApi, fetchChatCount as fetchChatCountApi, FetchChatsOptions} from "./bluebubbles/transport";
 import {convertChatResponse} from "./bluebubbles/chatTransformers";
 import {ChatQueryResponse} from "./bluebubbles/types";
 import {Conversation, ConversationItem, LinkedConversation, MessageItem, MessageModifier, MessageSearchHit} from "../data/blocks";
@@ -49,6 +50,7 @@ export const targetCommVerString = targetCommVer.join(".");
 //How often to try reconnecting when disconnected
 const reconnectInterval = 8 * 1000;
 const requestTimeoutMillis = 10 * 1000;
+const conversationRequestTimeoutMillis = 60 * 1000;
 
 type ConnectionState = "disconnected" | "connecting" | "connected";
 
@@ -83,6 +85,7 @@ interface BlueBubblesAuthConfig {
         refreshToken?: string;
         legacyPasswordAuth?: boolean;
         deviceName?: string;
+        transportMode?: BlueBubblesTransportMode;
 }
 
 let blueBubblesAuthConfig: BlueBubblesAuthConfig | undefined;
@@ -501,6 +504,20 @@ const communicationsManagerListener: CommunicationsManagerListener = {
 	}
 };
 
+function createScopedCommunicationsManagerListener(manager: CommunicationsManager): CommunicationsManagerListener {
+        type ListenerFunction = (...args: unknown[]) => unknown;
+        const sourceListener = communicationsManagerListener as unknown as Record<keyof CommunicationsManagerListener, ListenerFunction>;
+        const scopedListener = {} as Record<keyof CommunicationsManagerListener, ListenerFunction>;
+        for(const key of Object.keys(sourceListener) as (keyof CommunicationsManagerListener)[]) {
+                const handler = sourceListener[key];
+                scopedListener[key] = (...args: unknown[]) => {
+                        if(communicationsManager !== manager) return;
+                        return handler(...args);
+                };
+        }
+        return scopedListener as CommunicationsManagerListener;
+}
+
 function updateStateDisconnected(reason: ConnectionErrorCode) {
 	connState = "disconnected";
 	for(const listener of connectionListenerArray) listener.onClose(reason);
@@ -572,19 +589,30 @@ function connectPassive() {
 }
 
 function connectFromList(index: number) {
+        const previousManager = communicationsManager;
+
+        let nextManager: CommunicationsManager;
         if(blueBubblesAuthConfig) {
                 if(!(dataProxy instanceof BlueBubblesDataProxy)) {
                         dataProxy = new BlueBubblesDataProxy();
                 }
-                communicationsManager = new BlueBubblesCommunicationsManager(dataProxy, blueBubblesAuthConfig);
+                nextManager = new BlueBubblesCommunicationsManager(dataProxy, blueBubblesAuthConfig);
         } else {
                 if(!(dataProxy instanceof DataProxyConnect)) {
                         dataProxy = new DataProxyConnect();
                 }
-                communicationsManager = new communicationsPriorityList[index](dataProxy);
+                nextManager = new communicationsPriorityList[index](dataProxy);
         }
-        communicationsManager.listener = communicationsManagerListener;
-        communicationsManager.connect();
+
+        communicationsManager = nextManager;
+        nextManager.listener = createScopedCommunicationsManagerListener(nextManager);
+
+        if(previousManager && previousManager !== nextManager) {
+                previousManager.listener = undefined;
+                previousManager.disconnect(ConnectionErrorCode.Connection);
+        }
+
+        nextManager.connect();
 }
 
 export function disconnect() {
@@ -599,14 +627,25 @@ export function isDisconnected(): boolean {
 	return connState === "disconnected";
 }
 
-function requestTimeoutMap<T, K>(key: K, map: Map<K, any>, timeoutReason: any | undefined = messageErrorNetwork, promise: Promise<T>): Promise<T> {
-	const timedPromise = promiseTimeout(requestTimeoutMillis, timeoutReason, promise);
+function requestTimeoutMap<T, K>(
+        key: K,
+        map: Map<K, any>,
+        timeoutReason: any | undefined = messageErrorNetwork,
+        promise: Promise<T>,
+        timeoutMillis: number = requestTimeoutMillis
+): Promise<T> {
+	const timedPromise = promiseTimeout(timeoutMillis, timeoutReason, promise);
 	timedPromise.catch(() => map.delete(key)); //Remove the promise from the map on error
 	return timedPromise;
 }
 
-function requestTimeoutArray<T, K>(array: K[], timeoutReason: any | undefined = messageErrorNetwork, promise: Promise<T>): Promise<T> {
-	const timedPromise = promiseTimeout(requestTimeoutMillis, timeoutReason, promise);
+function requestTimeoutArray<T, K>(
+        array: K[],
+        timeoutReason: any | undefined = messageErrorNetwork,
+        promise: Promise<T>,
+        timeoutMillis: number = requestTimeoutMillis
+): Promise<T> {
+	const timedPromise = promiseTimeout(timeoutMillis, timeoutReason, promise);
 	timedPromise.catch(() => array.length = 0); //Clear the array on error
 	return timedPromise;
 }
@@ -682,7 +721,7 @@ export function fetchConversations(limit?: number): Promise<LinkedConversation[]
 
                 //Recording the promise
                 liteConversationPromiseArray.push({resolve: resolve, reject: reject});
-        }));
+        }), conversationRequestTimeoutMillis);
 }
 
 export function fetchConversationInfo(chatGUIDs: string[]): Promise<[string, LinkedConversation | undefined][]> {

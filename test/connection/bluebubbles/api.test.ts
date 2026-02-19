@@ -115,3 +115,62 @@ describe("bluebubbles api metadata normalization", () => {
                 expect(metadata.features).toBeUndefined();
         });
 });
+
+describe("bluebubbles api chat query resilience", () => {
+        const originalFetch = globalThis.fetch;
+
+        afterEach(() => {
+                if(originalFetch) {
+                        (globalThis as typeof globalThis & {fetch: typeof fetch}).fetch = originalFetch;
+                } else {
+                        const globalAny = globalThis as Record<string, unknown>;
+                        // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+                        delete globalAny.fetch;
+                }
+                jest.resetModules();
+        });
+
+        test("retries chat query once after a transient network failure", async () => {
+                const fetchMock = jest.fn()
+                        .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+                        .mockResolvedValueOnce({
+                                ok: true,
+                                status: 200,
+                                statusText: "OK",
+                                json: jest.fn().mockResolvedValue({
+                                        data: [],
+                                        metadata: {count: 0, total: 0, offset: 0, limit: 1000}
+                                })
+                        } as unknown as Response);
+                (globalThis as typeof globalThis & {fetch: typeof fetch}).fetch = fetchMock as unknown as typeof fetch;
+
+                const {fetchChats} = await import("../../../src/connection/bluebubbles/api");
+                const auth: BlueBubblesAuthState = {
+                        serverUrl: "https://example.com",
+                        accessToken: "token"
+                };
+
+                const response = await fetchChats(auth);
+                expect(response.data).toEqual([]);
+                expect(fetchMock).toHaveBeenCalledTimes(2);
+        });
+
+        test("does not retry chat query on server response errors", async () => {
+                const fetchMock = jest.fn().mockResolvedValue({
+                        ok: false,
+                        status: 500,
+                        statusText: "Internal Server Error",
+                        json: jest.fn().mockResolvedValue({message: "broken"})
+                } as unknown as Response);
+                (globalThis as typeof globalThis & {fetch: typeof fetch}).fetch = fetchMock as unknown as typeof fetch;
+
+                const {fetchChats, BlueBubblesApiError} = await import("../../../src/connection/bluebubbles/api");
+                const auth: BlueBubblesAuthState = {
+                        serverUrl: "https://example.com",
+                        accessToken: "token"
+                };
+
+                await expect(fetchChats(auth)).rejects.toBeInstanceOf(BlueBubblesApiError);
+                expect(fetchMock).toHaveBeenCalledTimes(1);
+        });
+});

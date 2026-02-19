@@ -21,6 +21,29 @@ import {ThreadFocusTarget} from "shared/components/messaging/thread/types";
 import {PeopleContext} from "shared/state/peopleState";
 import {logSelectedConversationPayload} from "shared/connection/bluebubbles/debugLogging";
 import {searchCache} from "shared/state/searchCache";
+import type {BlueBubblesTransportMode} from "shared/connection/bluebubbles/session";
+
+let activeMessagingInstanceCount = 0;
+let pendingMessagingTeardownID: number | undefined;
+
+function cancelPendingMessagingTeardown() {
+        if(pendingMessagingTeardownID !== undefined) {
+                clearTimeout(pendingMessagingTeardownID);
+                pendingMessagingTeardownID = undefined;
+        }
+}
+
+function scheduleMessagingTeardown() {
+        cancelPendingMessagingTeardown();
+        pendingMessagingTeardownID = window.setTimeout(() => {
+                pendingMessagingTeardownID = undefined;
+                if(activeMessagingInstanceCount > 0) return;
+
+                searchCache.clear();
+                ConnectionManager.disconnect();
+                ConnectionManager.setBlueBubblesAuth(undefined);
+        });
+}
 
 export default function Messaging(props: {
         serverUrl: string;
@@ -29,9 +52,10 @@ export default function Messaging(props: {
         refreshToken?: string;
         legacyPasswordAuth?: boolean;
         deviceName?: string;
+        transportMode?: BlueBubblesTransportMode;
         onReset?: VoidFunction;
 }) {
-        const {serverUrl, accessToken, socketGuid, refreshToken, legacyPasswordAuth, deviceName, onReset} = props;
+        const {serverUrl, accessToken, socketGuid, refreshToken, legacyPasswordAuth, deviceName, transportMode, onReset} = props;
         const [detailPane, setDetailPane] = useState<DetailPane>({type: DetailType.Loading});
         const [sidebarBanner, setSidebarBanner] = useState<ConnectionErrorCode | "connecting" | undefined>(undefined);
         const {
@@ -44,6 +68,8 @@ export default function Messaging(props: {
                 markConversationRead
         } = useConversationState(detailPane.type === DetailType.Thread ? detailPane.conversationID : undefined, true);
         useEffect(() => {
+                activeMessagingInstanceCount += 1;
+                cancelPendingMessagingTeardown();
                 searchCache.clear();
                 ConnectionManager.setBlueBubblesAuth({
                         serverUrl,
@@ -51,14 +77,15 @@ export default function Messaging(props: {
                         socketGuid,
                         refreshToken,
                         legacyPasswordAuth,
-                        deviceName
+                        deviceName,
+                        transportMode
                 });
 
                 return () => {
-                        searchCache.clear();
-                        ConnectionManager.setBlueBubblesAuth(undefined);
+                        activeMessagingInstanceCount = Math.max(0, activeMessagingInstanceCount - 1);
+                        scheduleMessagingTeardown();
                 };
-        }, [serverUrl, accessToken, socketGuid, refreshToken, legacyPasswordAuth, deviceName]);
+        }, [serverUrl, accessToken, socketGuid, refreshToken, legacyPasswordAuth, deviceName, transportMode]);
 	
         const lastLoggedConversationIDRef = useRef<number | undefined>(undefined);
 
@@ -137,11 +164,6 @@ export default function Messaging(props: {
 	useEffect(() => {
 		//Initialize notifications
 		getNotificationUtils().initialize();
-		
-		return () => {
-			//Disconnect
-			ConnectionManager.disconnect();
-		};
 	}, []);
 	
 	//Register for notification response events

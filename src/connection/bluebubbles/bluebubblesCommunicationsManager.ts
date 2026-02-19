@@ -39,9 +39,11 @@ import {
         ServerMetadataResponse
 } from "./types";
 import {
-        BlueBubblesApiError,
-        appendLegacyAuthParams,
+        BlueBubblesRealtimeChannelLike,
+        BlueBubblesRealtimeConnectionState,
+        BlueBubblesRealtimeEventName,
         createChat as createChatApi,
+        createRealtimeChannel,
         downloadAttachment,
         downloadAttachmentThumbnail,
         fetchChat,
@@ -49,16 +51,14 @@ import {
         fetchChats,
         FetchChatsOptions,
         fetchServerMetadata,
+        isBlueBubblesTransportApiError,
         pingServer,
         queryMessages,
+        resolveAttachmentUploadTarget,
         sendTextMessage
-} from "./api";
+} from "./transport";
 import {convertChatResponse} from "./chatTransformers";
 import {logBlueBubblesDebug} from "./debugLogging";
-import BlueBubblesRealtimeChannel, {
-        BlueBubblesRealtimeConnectionState,
-        BlueBubblesRealtimeEventName
-} from "./realtimeChannel";
 import {
         needsRealtimeHydration,
         parseBlueBubblesRealtimePayload
@@ -141,7 +141,7 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
         private supportsDeliveredReceipts = false;
         private supportsReadReceipts = false;
         private readonly conversationGuidCache = new Map<string, string>();
-        private realtimeChannel: BlueBubblesRealtimeChannel | undefined;
+        private realtimeChannel: BlueBubblesRealtimeChannelLike | undefined;
         private realtimeChannelState: BlueBubblesRealtimeConnectionState = "idle";
         private lastRealtimeErrorMessage: string | undefined;
         private isIntervalPollingActive = false;
@@ -193,7 +193,7 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
         }
 
         public override requestLiteConversations(limit?: number): boolean {
-                this.fetchLiteConversations(limit);
+                this.fetchLiteConversations(limit).catch((error) => this.handleFatalError(error));
                 return true;
         }
 
@@ -611,7 +611,7 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                         return;
                 }
 
-                const channel = new BlueBubblesRealtimeChannel(this.auth, {
+                const channel = createRealtimeChannel(this.auth, {
                         onStateChange: (state, details) => this.handleRealtimeChannelStateChange(state, details),
                         onError: (error) => this.handleRealtimeChannelError(error)
                 });
@@ -1613,7 +1613,7 @@ export default class BlueBubblesCommunicationsManager extends CommunicationsMana
                         this.listener?.onFileRequestComplete(requestID);
                 } catch(error) {
                         console.warn("Failed to download attachment", error);
-                        const code = error instanceof BlueBubblesApiError && error.status === 404
+                        const code = isBlueBubblesTransportApiError(error) && error.status === 404
                                 ? AttachmentRequestErrorCode.ServerNotFound
                                 : AttachmentRequestErrorCode.ServerIO;
                         this.listener?.onFileRequestFail(requestID, code);
@@ -2144,8 +2144,7 @@ function buildConversationKey(members: string[], service: string): string {
 }
 
 async function uploadAttachmentWithProgress(auth: BlueBubblesAuthState, payload: FormData, progressCallback: (bytesUploaded: number) => void): Promise<AttachmentSendResponse> {
-        const path = appendLegacyAuthParams(auth, "/api/v1/message/attachment");
-        const url = auth.serverUrl.replace(/\/$/, "") + path;
+        const uploadTarget = resolveAttachmentUploadTarget(auth);
         return new Promise<AttachmentSendResponse>((resolve, reject) => {
                 const xhr = new XMLHttpRequest();
                 xhr.responseType = "json";
@@ -2181,8 +2180,13 @@ async function uploadAttachmentWithProgress(auth: BlueBubblesAuthState, payload:
                                 reject(new Error(message));
                         }
                 });
-                xhr.open("POST", url, true);
-                xhr.setRequestHeader("Authorization", `Bearer ${auth.accessToken}`);
+                xhr.open("POST", uploadTarget.url, true);
+                if(uploadTarget.withCredentials) {
+                        xhr.withCredentials = true;
+                }
+                for(const [header, value] of Object.entries(uploadTarget.headers)) {
+                        xhr.setRequestHeader(header, value);
+                }
                 xhr.send(payload);
         });
 }

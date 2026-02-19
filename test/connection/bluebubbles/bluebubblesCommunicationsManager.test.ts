@@ -166,7 +166,7 @@ describe("processMessages SMS tapbacks", () => {
                 public override send(_data: ArrayBuffer, _encrypt: boolean): void {/* no-op */}
         }
 
-        const auth: BlueBubblesAuthState = {serverUrl: "", accessToken: ""};
+        const auth: BlueBubblesAuthState = {serverUrl: "", accessToken: "", transportMode: "direct"};
         const chatGuid = "chat-guid";
 
         const createChat = (): ChatResponse => ({
@@ -331,7 +331,7 @@ describe("processMessages iMessage emoji tapbacks", () => {
                 public override send(_data: ArrayBuffer, _encrypt: boolean): void {/* no-op */}
         }
 
-        const auth: BlueBubblesAuthState = {serverUrl: "", accessToken: ""};
+        const auth: BlueBubblesAuthState = {serverUrl: "", accessToken: "", transportMode: "direct"};
         const chatGuid = "imessage-chat-guid";
         const baseMessageGuid = "E2BB8654-24D6-4931-BA43-10D1CADF3E6D";
         const baseText = "Hello friends, my wife sarah and I are both turning 40 soon this year.";
@@ -498,7 +498,7 @@ describe("polling catch-up", () => {
                 public override send(_data: ArrayBuffer, _encrypt: boolean): void {/* no-op */}
         }
 
-        const auth: BlueBubblesAuthState = {serverUrl: "", accessToken: ""};
+        const auth: BlueBubblesAuthState = {serverUrl: "", accessToken: "", transportMode: "direct"};
         const chatGuid = "chat-guid";
 
         const createPollMessage = (rowId: number): MessageResponse => ({
@@ -625,7 +625,7 @@ describe("realtime message ingestion", () => {
                 public override send(_data: ArrayBuffer, _encrypt: boolean): void {/* no-op */}
         }
 
-        const auth: BlueBubblesAuthState = {serverUrl: "", accessToken: "guid-token"};
+        const auth: BlueBubblesAuthState = {serverUrl: "", accessToken: "guid-token", transportMode: "direct"};
         const chatGuid = "chat-guid";
 
         const createRealtimeMessage = (rowId: number, overrides: Partial<MessageResponse> = {}): MessageResponse => ({
@@ -903,7 +903,7 @@ describe("realtime channel lifecycle", () => {
                 public override send(_data: ArrayBuffer, _encrypt: boolean): void {/* no-op */}
         }
 
-        const auth: BlueBubblesAuthState = {serverUrl: "", accessToken: "guid-token"};
+        const auth: BlueBubblesAuthState = {serverUrl: "", accessToken: "guid-token", transportMode: "direct"};
 
         const createMetadata = (serverVersion: string): ServerMetadataResponse => ({
                 computer_id: "computer",
@@ -967,7 +967,7 @@ describe("phase 5 fallback and resilience", () => {
                 public override send(_data: ArrayBuffer, _encrypt: boolean): void {/* no-op */}
         }
 
-        const auth: BlueBubblesAuthState = {serverUrl: "", accessToken: "guid-token"};
+        const auth: BlueBubblesAuthState = {serverUrl: "", accessToken: "guid-token", transportMode: "direct"};
 
         const createMetadata = (serverVersion: string): ServerMetadataResponse => ({
                 computer_id: "computer",
@@ -1079,7 +1079,7 @@ describe("outbound and attachment stability", () => {
                 public override send(_data: ArrayBuffer, _encrypt: boolean): void {/* no-op */}
         }
 
-        const auth: BlueBubblesAuthState = {serverUrl: "https://example.com", accessToken: "guid-token"};
+        const auth: BlueBubblesAuthState = {serverUrl: "https://example.com", accessToken: "guid-token", transportMode: "direct"};
         const chatGuid = "chat-guid";
         const createListener = () => ({
                 onMessageUpdate: jest.fn(),

@@ -36,16 +36,29 @@ Follow these steps:
 2. **Install dependencies**
    ```bash
    npm install
+   npm --prefix bff install
    ```
-3. **Start the development server**
+3. **Configure environment**
+   
+   Copy `.env.example` to `.env`. BFF mode is now the default:
+   - `BFF_ENABLED=true`
+   - `BFF_DIRECT_MODE_ENABLED=false`
+   - `BFF_DEV_PROXY_ENABLED=true` with `BFF_PROXY_TARGET=http://127.0.0.1:3100` for local webpack-to-BFF proxying
+   
+   Direct browser auth is deprecated and should only be enabled for emergency fallback/testing (`BFF_ENABLED=false` + `BFF_DIRECT_MODE_ENABLED=true`).
+4. **Start the BFF**
+   ```bash
+   npm --prefix bff run dev
+   ```
+5. **Start the web development server**
    ```bash
    npm start
    ```
-5. **Open the app**
+6. **Open the app**
    
    Navigate to [http://localhost:8080](http://localhost:8080) to use the web
    client. When you're ready to create an optimized bundle, run `npm run build`.
-6. **Address Book instructions**
+7. **Address Book instructions**
    
    Go to https://contacts.google.com and export as Google CSV. Baikal is also another option that is supported.
    
@@ -55,7 +68,7 @@ Follow these steps:
    
    Load the address book(s) under Settings.
    
-7. **LinkPreview API integration**
+8. **LinkPreview API integration**
    
    Create account at [LinkPreview](https://www.linkpreview.net/) and get API key.
    

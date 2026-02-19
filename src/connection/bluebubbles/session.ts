@@ -1,3 +1,5 @@
+export type BlueBubblesTransportMode = "direct" | "bff";
+
 export interface BlueBubblesAuthState {
         serverUrl: string;
         accessToken: string;
@@ -5,4 +7,5 @@ export interface BlueBubblesAuthState {
         refreshToken?: string;
         legacyPasswordAuth?: boolean;
         deviceName?: string;
+        transportMode?: BlueBubblesTransportMode;
 }

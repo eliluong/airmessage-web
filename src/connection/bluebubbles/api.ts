@@ -13,6 +13,9 @@ import {
 } from "./types";
 
 const API_ROOT = "/api/v1";
+const CHAT_QUERY_TIMEOUT_MS = 20_000;
+const CHAT_QUERY_MAX_ATTEMPTS = 2;
+const CHAT_QUERY_RETRY_DELAY_MS = 250;
 
 export type AttachmentQualityPreset = "good" | "better" | "best";
 
@@ -66,22 +69,107 @@ async function parseError(response: Response): Promise<never> {
         throw new BlueBubblesApiError(message, response.status, details);
 }
 
-async function requestJson<T>(auth: BlueBubblesAuthState, path: string, init?: RequestInit): Promise<T> {
-        const requestPath = appendLegacyAuthParams(auth, `${API_ROOT}${path}`);
-        const response = await fetch(buildEndpoint(auth, requestPath), {
-                ...init,
-                headers: {
-                        "Authorization": `Bearer ${auth.accessToken}`,
-                        "Content-Type": "application/json",
-                        ...(init?.headers ?? {})
-                }
-        });
+interface RequestRetryOptions {
+        maxAttempts?: number;
+        delayMs?: number;
+}
 
-        if(!response.ok) {
-                await parseError(response);
+interface RequestJsonOptions extends RequestInit {
+        timeoutMs?: number;
+        retry?: RequestRetryOptions;
+}
+
+function isAbortError(error: unknown): boolean {
+        return error instanceof DOMException && error.name === "AbortError";
+}
+
+function isRetryableNetworkError(error: unknown, upstreamSignal?: AbortSignal): boolean {
+        if(upstreamSignal?.aborted) return false;
+        if(error instanceof BlueBubblesApiError) return false;
+        if(isAbortError(error)) return true;
+        return error instanceof TypeError;
+}
+
+async function sleep(delayMs: number): Promise<void> {
+        if(delayMs <= 0) return;
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+}
+
+function buildRequestSignal(
+        upstreamSignal: AbortSignal | undefined,
+        timeoutMs: number | undefined
+): {signal: AbortSignal | undefined; cleanup: () => void} {
+        if(timeoutMs === undefined) {
+                return {signal: upstreamSignal, cleanup: () => undefined};
         }
 
-        return response.json() as Promise<T>;
+        const timeoutController = new AbortController();
+        const timeoutID = setTimeout(() => timeoutController.abort(), timeoutMs);
+        const handleUpstreamAbort = () => timeoutController.abort();
+
+        if(upstreamSignal) {
+                if(upstreamSignal.aborted) {
+                        timeoutController.abort();
+                } else {
+                        upstreamSignal.addEventListener("abort", handleUpstreamAbort);
+                }
+        }
+
+        return {
+                signal: timeoutController.signal,
+                cleanup: () => {
+                        clearTimeout(timeoutID);
+                        upstreamSignal?.removeEventListener("abort", handleUpstreamAbort);
+                }
+        };
+}
+
+async function requestJsonOnce<T>(auth: BlueBubblesAuthState, path: string, init: RequestJsonOptions = {}): Promise<T> {
+        const {timeoutMs, retry: _retry, ...requestInit} = init;
+        const requestPath = appendLegacyAuthParams(auth, `${API_ROOT}${path}`);
+        const upstreamSignal = requestInit.signal ?? undefined;
+        const {signal, cleanup} = buildRequestSignal(upstreamSignal, timeoutMs);
+
+        try {
+                const response = await fetch(buildEndpoint(auth, requestPath), {
+                        ...requestInit,
+                        signal,
+                        headers: {
+                                "Authorization": `Bearer ${auth.accessToken}`,
+                                "Content-Type": "application/json",
+                                ...(requestInit.headers ?? {})
+                        }
+                });
+
+                if(!response.ok) {
+                        await parseError(response);
+                }
+
+                return response.json() as Promise<T>;
+        } finally {
+                cleanup();
+        }
+}
+
+async function requestJson<T>(auth: BlueBubblesAuthState, path: string, init: RequestJsonOptions = {}): Promise<T> {
+        const maxAttempts = Math.max(1, Math.floor(init.retry?.maxAttempts ?? 1));
+        const retryDelayMs = Math.max(0, Math.floor(init.retry?.delayMs ?? 0));
+        let lastError: unknown;
+
+        for(let attempt = 1; attempt <= maxAttempts; attempt++) {
+                try {
+                        return await requestJsonOnce<T>(auth, path, init);
+                } catch(error) {
+                        lastError = error;
+                        const upstreamSignal = init.signal ?? undefined;
+                        if(attempt >= maxAttempts || !isRetryableNetworkError(error, upstreamSignal)) {
+                                throw error;
+                        }
+                        await sleep(retryDelayMs);
+                }
+        }
+
+        throw lastError;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -243,7 +331,12 @@ export async function fetchChats(auth: BlueBubblesAuthState, options: FetchChats
         return requestJson<ChatQueryResponse>(auth, "/chat/query", {
                 method: "POST",
                 body: JSON.stringify(body),
-                signal: options.signal
+                signal: options.signal,
+                timeoutMs: CHAT_QUERY_TIMEOUT_MS,
+                retry: {
+                        maxAttempts: CHAT_QUERY_MAX_ATTEMPTS,
+                        delayMs: CHAT_QUERY_RETRY_DELAY_MS
+                }
         });
 }
 
