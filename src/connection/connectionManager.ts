@@ -353,7 +353,7 @@ const communicationsManagerListener: CommunicationsManagerListener = {
 		const promiseArray = conversationDetailsPromiseMap.get(promiseMapKey);
 		if(promiseArray) {
 			for(const promise of promiseArray) promise.resolve(data);
-			threadPromiseMap.delete(promiseMapKey);
+			conversationDetailsPromiseMap.delete(promiseMapKey);
 		}
 	}, onModifierUpdate(data: MessageModifier[]): void {
 		//Notifying the listeners
@@ -1094,6 +1094,17 @@ export function getActiveCommVer(): number[] | undefined {
 export function getActiveProxyType(): string {
 	return dataProxy.proxyType;
 }
+
+export const __testables = {
+	getConversationDetailsQueueSize(chatGUIDs: string[]): number {
+		const key = chatGUIDs.join(" ");
+		return conversationDetailsPromiseMap.get(key)?.length ?? 0;
+	},
+	getThreadQueueSize(chatGUID: string, options?: ThreadFetchOptions): number {
+		const key = buildThreadPromiseKey(chatGUID, options);
+		return threadPromiseMap.get(key)?.length ?? 0;
+	}
+};
 
 function pushKeyedArray<K, R>(map: Map<K, R[]>, key: K, value: R): void {
 	//Finding the array in the map

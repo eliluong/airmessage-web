@@ -10,7 +10,6 @@
 - 2026-02-19 [CODE] Completed: Phase 3 landed (`/bff/socket` realtime bridge + browser BFF realtime channel + health propagation).
 - 2026-02-19 [CODE] Completed: Phase 4 landed (Redis session-store option, rate limits, upstream allowlist, `/bff/metrics`, security checklist).
 - 2026-02-19 [TOOL] Operational evidence: Playwright BFF run captured login/bootstrap/send/realtime/upload/download with browser traffic on `/bff/*`.
-- 2026-02-19 [CODE] Completed: nullable attachment MIME sidebar crash hotfix landed.
 - 2026-02-19 [CODE] Completed: Phase 5 landed; BFF is default-on, direct browser auth is explicit emergency opt-in only, onboarding shows direct-mode deprecation warnings.
 - 2026-02-19 [TOOL] Validation: Phase-5 transport tests passed; web production build passed (existing webpack asset-size warnings only).
 - 2026-02-19 [USER] Deployment delta: Cloudflare/Nginx path (`air.thecemetary.org`) can show transient `ERR_QUIC_PROTOCOL_ERROR` while tunnel path is steadier; root cause remains UNCONFIRMED.
@@ -23,9 +22,10 @@
 - 2026-02-19 [CODE] Supersedes prior assumption: `wss://air2.thecemetary.org:8080/ws` failures are expected webpack HMR/dev-server reconnect noise, not a `/bff/socket` or BlueBubbles transport fault.
 - 2026-02-19 [USER] Goal: add a browser-tab favicon red-dot indicator for incoming messages received while the tab is unfocused; clear the dot when the tab regains focus/visibility even if per-conversation unread state is unchanged.
 - 2026-02-19 [CODE] Research complete: incoming-message eligibility is already filtered in `useConversationState` interactive notification flow; focus detection currently uses page visibility via `BrowserPlatformUtils.hasFocus()`.
-- 2026-02-20 [USER] Direction: proceed with favicon Phase 0 edits only and ignore unrelated dirty-worktree files.
-- 2026-02-20 [CODE] Completed: favicon Phase 0 contract scaffold landed in `src/util/faviconBadge.ts`; app wiring/rendering intentionally deferred to Phase 1.
+- 2026-02-20 [USER] Goal: complete a planning-only inefficiency/optimization/feature review and preserve results as an itemized deep-dive backlog document (no runtime code changes).
+- 2026-02-20 [USER] Goal: execute `PERF-001` deep dive from `OPTIMIZATION_DEEP_DIVE_BACKLOG.md`, implement a fix, and update the implementation plan artifacts.
 - 2026-02-20 [CODE] Completed: favicon Phases 1-5 landed (rendering/toggle internals + background-trigger wiring + clear-on-return lifecycle + deterministic tests + manual QA/docs closure), with user-confirmed inactive-tab badge behavior captured in `evidence/phase5-favicon-playwright-evidence.md`.
+- 2026-02-20 [CODE] Completed: `PERF-001` landed (`onConversationUpdate` now clears `conversationDetailsPromiseMap`, targeted regression coverage added, backlog status advanced to Done, deep-dive note captured in `notes/PERF-001.md`).
 
 ## Invariants / Constraints
 - 2026-02-17 [USER] Preserve architecture: UI calls `connectionManager`; transport-specific behavior stays in `bluebubblesCommunicationsManager`.
@@ -47,12 +47,13 @@
 - 2026-02-20 [CODE] D031 ACTIVE: favicon badge renderer prefers the `32x32` favicon source, caches a single generated badged data URL, and applies href changes idempotently across all `rel~="icon"` links.
 - 2026-02-20 [CODE] D032 ACTIVE: favicon badge activation for background message arrivals is sourced from the existing interactive `notificationMessages` path in `useConversationState`, avoiding duplicate new-message qualification logic.
 - 2026-02-20 [CODE] D033 ACTIVE: clear-on-return ownership lives in `Messaging` lifecycle (mount initializes favicon manager; `visibilitychange` + `focus` clear badge when tab is active; unmount cleanup clears stale badge state).
+- 2026-02-20 [CODE] D034 ACTIVE: conversation-info executor ownership stays within `conversationDetailsPromiseMap`; success/timeout/close paths must not mutate `threadPromiseMap`.
 
 ## Done (recent)
-- 2026-02-19 [CODE] Updated BFF rollout docs/roadmap to mark Phase 5 complete and refresh post-rollout work (`BLUEBUBBLES_BFF_IMPLEMENTATION_PLAN.md`, `project.md`).
-- 2026-02-19 [CODE] Added one-command local-dev orchestration scripts in root package (`dev`, `dev:web`, `dev:bff`) for concurrent web+BFF startup (`package.json`).
-- 2026-02-20 [CODE] Implemented favicon indicator Phase 0 utility scaffold and updated plan status notes (`src/util/faviconBadge.ts`, `FAVICON_BADGE_IMPLEMENTATION_PLAN.md`).
-- 2026-02-20 [CODE] Implemented favicon indicator Phase 1 rendering plus Phase 2 background-trigger wiring, and updated implementation status notes (`src/util/faviconBadge.ts`, `src/state/conversationState.ts`, `FAVICON_BADGE_IMPLEMENTATION_PLAN.md`).
+- 2026-02-20 [CODE] Completed `PERF-001` implementation/fix and validation (`src/connection/connectionManager.ts`, `test/connection/connectionManager.test.ts`).
+- 2026-02-20 [CODE] Captured `PERF-001` deep-dive findings and implementation rationale (`notes/PERF-001.md`).
+- 2026-02-20 [CODE] Updated optimization backlog status/checklist for `PERF-001` to Done (`OPTIMIZATION_DEEP_DIVE_BACKLOG.md`).
+- 2026-02-20 [CODE] Added deep-dive planning backlog documenting optimization findings, revision candidates, and proposed features with per-item checklists (`OPTIMIZATION_DEEP_DIVE_BACKLOG.md`).
 - 2026-02-20 [CODE] Implemented favicon indicator Phase 3 clear-on-return lifecycle wiring in `Messaging` and updated implementation status notes (`src/components/messaging/master/Messaging.tsx`, `FAVICON_BADGE_IMPLEMENTATION_PLAN.md`).
 - 2026-02-20 [CODE] Implemented favicon indicator Phase 4 deterministic test coverage and updated implementation status notes (`test/util/faviconBadge.test.ts`, `test/components/messaging/master/Messaging.faviconBadge.test.tsx`, `FAVICON_BADGE_IMPLEMENTATION_PLAN.md`).
 - 2026-02-20 [CODE] Completed favicon Phase 5 manual QA/evidence/docs closure and marked roadmap completion (`evidence/phase5-favicon-playwright-evidence.md`, `FAVICON_BADGE_IMPLEMENTATION_PLAN.md`, `project.md`).
@@ -64,13 +65,10 @@
 - 2026-02-18 [ASSUMPTION] Final production preference for same-origin vs strict cross-origin BFF deployment remains UNCONFIRMED.
 
 ## Working set
-- 2026-02-20 [CODE] `src/util/faviconBadge.ts`
-- 2026-02-20 [CODE] `src/state/conversationState.ts`
-- 2026-02-20 [CODE] `src/components/messaging/master/Messaging.tsx`
-- 2026-02-20 [CODE] `test/util/faviconBadge.test.ts`
-- 2026-02-20 [CODE] `test/components/messaging/master/Messaging.faviconBadge.test.tsx`
-- 2026-02-20 [CODE] `evidence/phase5-favicon-playwright-evidence.md`
-- 2026-02-20 [CODE] `FAVICON_BADGE_IMPLEMENTATION_PLAN.md`
+- 2026-02-20 [CODE] `src/connection/connectionManager.ts`
+- 2026-02-20 [CODE] `test/connection/connectionManager.test.ts`
+- 2026-02-20 [CODE] `OPTIMIZATION_DEEP_DIVE_BACKLOG.md`
+- 2026-02-20 [CODE] `notes/PERF-001.md`
 - 2026-02-20 [CODE] `CONTINUITY.md`
 - 2026-02-20 [CODE] `project.md`
 
@@ -95,3 +93,8 @@
 - 2026-02-20 [TOOL] `npm test -- --runInBand` passed after favicon Phase 4 updates (28 suites, 134 tests).
 - 2026-02-20 [USER] Manual QA run: user sent two incoming messages from distinct conversations and confirmed favicon badge appeared on inactive AirMessage tabs.
 - 2026-02-20 [TOOL] Playwright post-validation state check confirmed controlled-tab favicon links were restored to static non-badged URLs after visibility/focus return handling; evidence captured in `evidence/phase5-favicon-playwright-evidence.md`.
+- 2026-02-20 [TOOL] `npm run build` for architecture review completed with existing performance warnings (`index.js` 1.43 MiB, emoji fonts 1.79-4.41 MiB, notification audio 550 KiB) and Workbox large-asset precache exclusions, informing optimization backlog priorities.
+- 2026-02-20 [TOOL] `npm test -- --runInBand test/connection/connectionManager.test.ts` passed after `PERF-001` changes (1 suite, 5 tests).
+- 2026-02-20 [TOOL] `npx tsc --noEmit` passed after `PERF-001` changes.
+- 2026-02-20 [TOOL] `npm run build` passed after `PERF-001` changes (webpack success; existing asset-size/service-worker warnings only).
+- 2026-02-20 [TOOL] `npm test -- --runInBand` passed after `PERF-001` changes (28 suites, 137 tests).

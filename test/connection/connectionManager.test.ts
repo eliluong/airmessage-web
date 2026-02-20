@@ -5,6 +5,8 @@ type ConnectionManagerModule = typeof import("../../src/connection/connectionMan
 interface MockManagerInstance {
         listener?: {
                 onOpen?: (...args: unknown[]) => void;
+                onConversationUpdate?: (...args: unknown[]) => void;
+                onMessageThread?: (...args: unknown[]) => void;
                 [key: string]: unknown;
         };
 }
@@ -183,5 +185,72 @@ describe("connectionManager reconnect lifecycle", () => {
                 await expect(conversationsPromise).rejects.toEqual({code: MessageErrorCode.LocalNetwork});
 
                 connectionManager.removeConnectionListener(listener);
+        });
+
+        it("cleans conversation info promise queues after successful updates", async () => {
+                const {connectionManager, managerInstances} = await loadConnectionManagerWithMocks();
+                connectionManager.setBlueBubblesAuth({
+                        serverUrl: "https://example.test",
+                        accessToken: "token"
+                });
+
+                await connectionManager.connect();
+                managerInstances[0].listener?.onOpen?.("device", "os", "version", false);
+
+                const conversationKey = ["chat-cleanup"];
+                const response: [string, undefined][] = [[conversationKey[0], undefined]];
+
+                const firstPromise = connectionManager.fetchConversationInfo(conversationKey);
+                expect(connectionManager.__testables.getConversationDetailsQueueSize(conversationKey)).toBe(1);
+
+                managerInstances[0].listener?.onConversationUpdate?.(response);
+                await expect(firstPromise).resolves.toEqual(response);
+                expect(connectionManager.__testables.getConversationDetailsQueueSize(conversationKey)).toBe(0);
+
+                const secondPromise = connectionManager.fetchConversationInfo(conversationKey);
+                expect(connectionManager.__testables.getConversationDetailsQueueSize(conversationKey)).toBe(1);
+
+                managerInstances[0].listener?.onConversationUpdate?.(response);
+                await expect(secondPromise).resolves.toEqual(response);
+                expect(connectionManager.__testables.getConversationDetailsQueueSize(conversationKey)).toBe(0);
+        });
+
+        it("cleans conversation info promise queues on timeout failures", async () => {
+                jest.useFakeTimers();
+                const {connectionManager, managerInstances} = await loadConnectionManagerWithMocks();
+                connectionManager.setBlueBubblesAuth({
+                        serverUrl: "https://example.test",
+                        accessToken: "token"
+                });
+
+                await connectionManager.connect();
+                managerInstances[0].listener?.onOpen?.("device", "os", "version", false);
+
+                const conversationKey = ["chat-timeout"];
+                const pendingPromise = connectionManager.fetchConversationInfo(conversationKey);
+                expect(connectionManager.__testables.getConversationDetailsQueueSize(conversationKey)).toBe(1);
+
+                jest.advanceTimersByTime(10_000);
+                await flushMicrotasks();
+                await expect(pendingPromise).rejects.toEqual({code: MessageErrorCode.LocalNetwork});
+                expect(connectionManager.__testables.getConversationDetailsQueueSize(conversationKey)).toBe(0);
+        });
+
+        it("preserves thread promise cleanup semantics", async () => {
+                const {connectionManager, managerInstances} = await loadConnectionManagerWithMocks();
+                connectionManager.setBlueBubblesAuth({
+                        serverUrl: "https://example.test",
+                        accessToken: "token"
+                });
+
+                await connectionManager.connect();
+                managerInstances[0].listener?.onOpen?.("device", "os", "version", false);
+
+                const threadPromise = connectionManager.fetchThread("chat-thread");
+                expect(connectionManager.__testables.getThreadQueueSize("chat-thread")).toBe(1);
+
+                managerInstances[0].listener?.onMessageThread?.("chat-thread", undefined, [], undefined);
+                await expect(threadPromise).resolves.toEqual({items: [], metadata: undefined});
+                expect(connectionManager.__testables.getThreadQueueSize("chat-thread")).toBe(0);
         });
 });
