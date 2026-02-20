@@ -26,6 +26,7 @@
 - 2026-02-20 [USER] Goal: execute `PERF-001` deep dive from `OPTIMIZATION_DEEP_DIVE_BACKLOG.md`, implement a fix, and update the implementation plan artifacts.
 - 2026-02-20 [CODE] Completed: favicon Phases 1-5 landed (rendering/toggle internals + background-trigger wiring + clear-on-return lifecycle + deterministic tests + manual QA/docs closure), with user-confirmed inactive-tab badge behavior captured in `evidence/phase5-favicon-playwright-evidence.md`.
 - 2026-02-20 [CODE] Completed: `PERF-001` landed (`onConversationUpdate` now clears `conversationDetailsPromiseMap`, targeted regression coverage added, backlog status advanced to Done, deep-dive note captured in `notes/PERF-001.md`).
+- 2026-02-20 [USER] Goal: execute `PERF-005` deep dive, preserve evidence and fix proposal in backlog docs, and defer runtime code changes.
 
 ## Invariants / Constraints
 - 2026-02-17 [USER] Preserve architecture: UI calls `connectionManager`; transport-specific behavior stays in `bluebubblesCommunicationsManager`.
@@ -54,9 +55,8 @@
 - 2026-02-20 [CODE] Captured `PERF-001` deep-dive findings and implementation rationale (`notes/PERF-001.md`).
 - 2026-02-20 [CODE] Updated optimization backlog status/checklist for `PERF-001` to Done (`OPTIMIZATION_DEEP_DIVE_BACKLOG.md`).
 - 2026-02-20 [CODE] Added deep-dive planning backlog documenting optimization findings, revision candidates, and proposed features with per-item checklists (`OPTIMIZATION_DEEP_DIVE_BACKLOG.md`).
-- 2026-02-20 [CODE] Implemented favicon indicator Phase 3 clear-on-return lifecycle wiring in `Messaging` and updated implementation status notes (`src/components/messaging/master/Messaging.tsx`, `FAVICON_BADGE_IMPLEMENTATION_PLAN.md`).
-- 2026-02-20 [CODE] Implemented favicon indicator Phase 4 deterministic test coverage and updated implementation status notes (`test/util/faviconBadge.test.ts`, `test/components/messaging/master/Messaging.faviconBadge.test.tsx`, `FAVICON_BADGE_IMPLEMENTATION_PLAN.md`).
-- 2026-02-20 [CODE] Completed favicon Phase 5 manual QA/evidence/docs closure and marked roadmap completion (`evidence/phase5-favicon-playwright-evidence.md`, `FAVICON_BADGE_IMPLEMENTATION_PLAN.md`, `project.md`).
+- 2026-02-20 [CODE] Completed favicon indicator Phases 3-5 implementation/test/QA closure (`src/components/messaging/master/Messaging.tsx`, `test/util/faviconBadge.test.ts`, `test/components/messaging/master/Messaging.faviconBadge.test.tsx`, `evidence/phase5-favicon-playwright-evidence.md`, `FAVICON_BADGE_IMPLEMENTATION_PLAN.md`, `project.md`).
+- 2026-02-20 [CODE] Completed `PERF-005` planning deep-dive documentation: status advanced to Planned with quantified Playwright evidence, proposed virtualization/timer strategy, and dependency prerequisite (`OPTIMIZATION_DEEP_DIVE_BACKLOG.md`).
 
 ## Open Questions
 - 2026-02-19 [ASSUMPTION] Root cause and frequency of Cloudflare/Nginx `ERR_QUIC_PROTOCOL_ERROR` on `air.thecemetary.org` remain UNCONFIRMED.
@@ -98,3 +98,4 @@
 - 2026-02-20 [TOOL] `npx tsc --noEmit` passed after `PERF-001` changes.
 - 2026-02-20 [TOOL] `npm run build` passed after `PERF-001` changes (webpack success; existing asset-size/service-worker warnings only).
 - 2026-02-20 [TOOL] `npm test -- --runInBand` passed after `PERF-001` changes (28 suites, 137 tests).
+- 2026-02-20 [TOOL] Playwright `PERF-005` sampling on `https://air2.thecemetary.org`: conversation list grew `50/745` -> `250/3812` -> `300/4557` (rows/nodes) with about 12 visible rows; message search query `the` rendered 89 rows, 840 nodes, and 128 `<mark>` highlight nodes.

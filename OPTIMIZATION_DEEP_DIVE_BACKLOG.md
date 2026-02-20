@@ -33,7 +33,7 @@ This document captures the current optimization, revision, and feature opportuni
 | PERF-002 | P0 | Finding | Debug logging default-on with high-volume payload logs | Backlog |
 | PERF-003 | P0 | Finding | Client-side LinkPreview key exposure and sensitive URL logging | Backlog |
 | PERF-004 | P1 | Finding | Overly coarse chat/query scan pagination defaults | Backlog |
-| PERF-005 | P1 | Finding | Sidebar/search lists are not virtualized | Backlog |
+| PERF-005 | P1 | Finding | Sidebar/search lists are not virtualized | Planned |
 | PERF-006 | P1 | Finding | O(n^2)-style merge/update paths in state reducers | Backlog |
 | PERF-007 | P1 | Finding | Realtime hydration is serial and queue backpressure is weak | Backlog |
 | PERF-008 | P1 | Finding | Several caches can grow unbounded in long sessions | Backlog |
@@ -118,17 +118,30 @@ This document captures the current optimization, revision, and feature opportuni
 
 ## PERF-005: Sidebar/search lists are not virtualized
 - Priority: `P1`
-- Status: `Backlog`
+- Status: `Planned` (2026-02-20)
 - Problem: Full lists render all rows and use transitions/highlighting work that scales poorly.
 - Evidence:
 - `src/components/messaging/master/Sidebar.tsx:686`
 - `src/components/messaging/master/Sidebar.tsx:820`
+- `src/components/messaging/master/ListConversation.tsx:44`
 - `src/components/messaging/master/Sidebar.tsx:922`
 - `src/util/dateUtils.ts:58`
+- Runtime evidence (Playwright deep-dive, 2026-02-20, `https://air2.thecemetary.org`):
+- People mode row growth loaded into one non-virtualized DOM list: `50 rows / 745 nodes` -> `250 rows / 3812 nodes` -> `300 rows / 4557 nodes`.
+- Viewport shows about `12` conversation rows while up to `238` rows remain mounted offscreen.
+- At `300` rows, wrapper overhead from transitions is significant: `300` `.MuiCollapse-root`, `300` `.MuiCollapse-wrapper`, `300` `.MuiCollapse-wrapperInner`.
+- Message search with query `the` rendered `89` rows and `840` nodes with only about `11` visible rows; highlight segmentation added `128` `<mark>` nodes.
+- Approximate conversation-list DOM growth rate is linear at about `15.3` nodes per additional row.
+- Proposed fix (planning-only, no code changes yet):
+- Implementation prerequisite: install `@tanstack/react-virtual` (`npm install @tanstack/react-virtual`).
+- Replace people-mode conversation rendering (`TransitionGroup` + full `map`) with a virtualized window that renders only visible rows plus overscan.
+- Replace message-search results full `map` with the same virtualization model and maintain scroll persistence with existing `searchCache` view state.
+- Keep infinite loading behavior by triggering `onLoadMoreConversations` when the virtualizer nears the loaded range end.
+- Replace per-row `useLiveLastUpdateStatusTime` timers with a shared minute ticker per list surface so timestamp updates do not scale linearly with row count.
 - Deep-dive checklist:
-- [ ] Measure render and scroll performance with large datasets.
-- [ ] Introduce list virtualization for conversations and search results.
-- [ ] Replace per-row live timers with shared ticker where possible.
+- [x] Measure render and scroll performance with large datasets.
+- [x] Introduce list virtualization plan for conversations and search results.
+- [x] Replace per-row live timers with shared ticker plan.
 - [ ] Validate keyboard navigation and focus behavior post-virtualization.
 - Exit criteria:
 - Stable scroll and low commit cost on large conversation/search result sets.
