@@ -11,21 +11,20 @@
 - 2026-02-19 [CODE] Completed: Phase 4 landed (Redis session-store option, rate limits, upstream allowlist, `/bff/metrics`, security checklist).
 - 2026-02-19 [TOOL] Operational evidence: Playwright BFF run captured login/bootstrap/send/realtime/upload/download with browser traffic on `/bff/*`.
 - 2026-02-19 [CODE] Completed: nullable attachment MIME sidebar crash hotfix landed.
-- 2026-02-19 [USER] Goal: execute Phase 5 and update implementation docs.
 - 2026-02-19 [CODE] Completed: Phase 5 landed; BFF is default-on, direct browser auth is explicit emergency opt-in only, onboarding shows direct-mode deprecation warnings.
 - 2026-02-19 [TOOL] Validation: Phase-5 transport tests passed; web production build passed (existing webpack asset-size warnings only).
 - 2026-02-19 [USER] Deployment delta: Cloudflare/Nginx path (`air.thecemetary.org`) can show transient `ERR_QUIC_PROTOCOL_ERROR` while tunnel path is steadier; root cause remains UNCONFIRMED.
-- 2026-02-19 [CODE] Next: add deeper route-level BFF integration coverage and capture longer-session reconnect evidence under default-on rollout.
 - 2026-02-19 [USER] Local-dev regression: login on `http://debian-dev.lan:8080` shows `Not Found` due to `/bff/session/*` returning `404`.
 - 2026-02-19 [CODE] Local-dev fix: webpack `/bff` proxy now defaults to `BFF_ENABLED` when `BFF_DEV_PROXY_ENABLED` is unset, with explicit env override retained.
 - 2026-02-19 [USER] Local-dev workflow request: run web dev server and BFF dev server with one root command.
 - 2026-02-19 [CODE] Local-dev workflow update: root `npm run dev` now launches both (`npm run dev:web` + `npm run dev:bff`) via `concurrently`.
 - 2026-02-19 [TOOL] Reproduced `https://air2.thecemetary.org` login-page websocket failures: repeated `wss://air2.thecemetary.org:8080/ws` -> `net::ERR_SSL_PROTOCOL_ERROR`, emitted by `webpack-dev-server` client in `index.js`.
-- 2026-02-19 [ASSUMPTION] `air2` websocket errors are HMR/dev-server transport noise (dev bundle in public hosting path), not the BlueBubbles `/bff/socket` realtime channel.
 - 2026-02-19 [USER] Confirmed: this recurring `air2` websocket error pattern is expected for dev-bundle hosting and does not affect normal application function.
 - 2026-02-19 [CODE] Supersedes prior assumption: `wss://air2.thecemetary.org:8080/ws` failures are expected webpack HMR/dev-server reconnect noise, not a `/bff/socket` or BlueBubbles transport fault.
 - 2026-02-19 [USER] Goal: add a browser-tab favicon red-dot indicator for incoming messages received while the tab is unfocused; clear the dot when the tab regains focus/visibility even if per-conversation unread state is unchanged.
 - 2026-02-19 [CODE] Research complete: incoming-message eligibility is already filtered in `useConversationState` interactive notification flow; focus detection currently uses page visibility via `BrowserPlatformUtils.hasFocus()`.
+- 2026-02-20 [USER] Direction: proceed with favicon Phase 0 edits only and ignore unrelated dirty-worktree files.
+- 2026-02-20 [CODE] Completed: favicon Phase 0 contract scaffold landed in `src/util/faviconBadge.ts`; app wiring/rendering intentionally deferred to Phase 1.
 
 ## Invariants / Constraints
 - 2026-02-17 [USER] Preserve architecture: UI calls `connectionManager`; transport-specific behavior stays in `bluebubblesCommunicationsManager`.
@@ -43,6 +42,7 @@
 - 2026-02-19 [CODE] D027 ACTIVE: default web transport is BFF; direct browser mode requires explicit dual-flag opt-in (`BFF_ENABLED=false` and `BFF_DIRECT_MODE_ENABLED=true`) and otherwise fails closed.
 - 2026-02-19 [CODE] D028 ACTIVE: onboarding copy must surface direct-mode deprecation warnings whenever direct mode is intentionally enabled.
 - 2026-02-19 [CODE] D029 ACTIVE: recurring `wss://<host>:8080/ws` `ERR_SSL_PROTOCOL_ERROR` logs on publicly hosted dev bundles are classified as expected webpack HMR noise unless accompanied by `/bff/*` or `/bff/socket` failures.
+- 2026-02-20 [CODE] D030 ACTIVE: favicon badge state is owned by a module-scope singleton utility with explicit APIs (`initializeFaviconBadge`, `setFaviconBadgeVisible`, `clearFaviconBadge`) and safe no-op behavior when favicon links are unavailable.
 
 ## Done (recent)
 - 2026-02-19 [CODE] Implemented Phase 5 transport default/gating (`src/connection/bluebubbles/transport.ts`, `webpack.config.js`, `index.d.ts`, `.env.example`).
@@ -51,7 +51,7 @@
 - 2026-02-19 [CODE] Added transport configuration regression coverage and updated existing BlueBubbles manager tests to set explicit direct mode where intended (`test/connection/bluebubbles/transportConfig.test.ts`, `test/connection/bluebubbles/bluebubblesCommunicationsManager.test.ts`).
 - 2026-02-19 [CODE] Updated BFF rollout docs/roadmap to mark Phase 5 complete and refresh post-rollout work (`BLUEBUBBLES_BFF_IMPLEMENTATION_PLAN.md`, `project.md`).
 - 2026-02-19 [CODE] Added one-command local-dev orchestration scripts in root package (`dev`, `dev:web`, `dev:bff`) for concurrent web+BFF startup (`package.json`).
-- 2026-02-19 [CODE] Added phased favicon unread-indicator implementation plan doc (`FAVICON_BADGE_IMPLEMENTATION_PLAN.md`).
+- 2026-02-20 [CODE] Implemented favicon indicator Phase 0 utility scaffold and updated plan status notes (`src/util/faviconBadge.ts`, `FAVICON_BADGE_IMPLEMENTATION_PLAN.md`).
 
 ## Open Questions
 - 2026-02-19 [ASSUMPTION] Root cause and frequency of Cloudflare/Nginx `ERR_QUIC_PROTOCOL_ERROR` on `air.thecemetary.org` remain UNCONFIRMED.
@@ -70,6 +70,7 @@
 - 2026-02-19 [CODE] `CONTINUITY.md`
 - 2026-02-19 [CODE] `project.md`
 - 2026-02-19 [CODE] `FAVICON_BADGE_IMPLEMENTATION_PLAN.md`
+- 2026-02-20 [CODE] `src/util/faviconBadge.ts`
 
 ## Receipts
 - 2026-02-19 [TOOL] `npm test -- --runInBand test/connection/bluebubbles/bffApi.test.ts test/connection/bluebubbles/bffSessionApi.test.ts test/connection/bluebubbles/bffRealtimeChannel.test.ts` passed during Phase 1 rollout (3 suites, 6 tests).
@@ -90,3 +91,4 @@
 - 2026-02-19 [TOOL] Playwright reproduction on `https://air2.thecemetary.org` captured `webpack-dev-server` reconnect loop with `WebSocket connection to 'wss://air2.thecemetary.org:8080/ws' failed: net::ERR_SSL_PROTOCOL_ERROR`; concurrent network traces still showed healthy `GET /bff/session/status -> 200` on login load.
 - 2026-02-19 [TOOL] Playwright check on `https://air2.thecemetary.org` confirmed favicon links are static (`favicon-32/57/76/96/128/192.png`) and same-origin canvas overlay generation (`toDataURL`) succeeds for `/favicon-32.png`.
 - 2026-02-19 [TOOL] Created phased execution plan for favicon badge feature in `FAVICON_BADGE_IMPLEMENTATION_PLAN.md`.
+- 2026-02-20 [TOOL] `npx tsc --noEmit` passed after adding Phase 0 favicon badge scaffold.

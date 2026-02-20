@@ -3,6 +3,11 @@
 ## Objective
 Implement a browser-tab favicon indicator that shows a small red dot when one or more new incoming messages arrive while the tab is not in focus, and clears the dot when the user returns to the tab.
 
+## Status
+- 2026-02-20: Phase 0 completed.
+- 2026-02-20: `src/util/faviconBadge.ts` added with stable exported API and module-scope singleton manager ownership.
+- 2026-02-20: App wiring and canvas badge rendering remain intentionally deferred to Phase 1+.
+
 ## Requested Behavior (Source of Truth)
 - Show red dot in favicon area when new incoming message(s) arrive while tab is inactive.
 - Keep a single global indicator (not per-conversation badges).
@@ -46,6 +51,15 @@ Define a minimal API for favicon badge state management and select integration p
 ### Exit Criteria
 - API and ownership agreed.
 - Utility file scaffolded with no app wiring yet.
+
+### Phase 0 Outcome (2026-02-20)
+- Added `src/util/faviconBadge.ts` with module-level singleton ownership (`FaviconBadgeManager`).
+- Exported API contract is finalized as planned:
+  - `initializeFaviconBadge(): void`
+  - `setFaviconBadgeVisible(visible: boolean): void`
+  - `clearFaviconBadge(): void`
+- Missing favicon links are treated as safe no-op behavior.
+- Rendering/apply-badge logic is intentionally deferred to Phase 1.
 
 ## Phase 1: Favicon Badge Rendering
 ### Goal
@@ -135,10 +149,9 @@ Verify runtime behavior in browser and record implementation status.
   - Mitigation: centralized clear logic on visibility/focus events, idempotent toggles.
 
 ## Deliverables Checklist
-- [ ] `src/util/faviconBadge.ts` added.
+- [x] `src/util/faviconBadge.ts` added.
 - [ ] `src/state/conversationState.ts` wired to set badge on background incoming messages.
 - [ ] `src/components/messaging/master/Messaging.tsx` wired to clear badge on tab return.
 - [ ] Tests added and passing.
 - [ ] Manual QA evidence captured.
 - [ ] `project.md` updated after implementation completion.
-
