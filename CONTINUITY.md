@@ -24,6 +24,8 @@
 - 2026-02-19 [ASSUMPTION] `air2` websocket errors are HMR/dev-server transport noise (dev bundle in public hosting path), not the BlueBubbles `/bff/socket` realtime channel.
 - 2026-02-19 [USER] Confirmed: this recurring `air2` websocket error pattern is expected for dev-bundle hosting and does not affect normal application function.
 - 2026-02-19 [CODE] Supersedes prior assumption: `wss://air2.thecemetary.org:8080/ws` failures are expected webpack HMR/dev-server reconnect noise, not a `/bff/socket` or BlueBubbles transport fault.
+- 2026-02-19 [USER] Goal: add a browser-tab favicon red-dot indicator for incoming messages received while the tab is unfocused; clear the dot when the tab regains focus/visibility even if per-conversation unread state is unchanged.
+- 2026-02-19 [CODE] Research complete: incoming-message eligibility is already filtered in `useConversationState` interactive notification flow; focus detection currently uses page visibility via `BrowserPlatformUtils.hasFocus()`.
 
 ## Invariants / Constraints
 - 2026-02-17 [USER] Preserve architecture: UI calls `connectionManager`; transport-specific behavior stays in `bluebubblesCommunicationsManager`.
@@ -43,13 +45,13 @@
 - 2026-02-19 [CODE] D029 ACTIVE: recurring `wss://<host>:8080/ws` `ERR_SSL_PROTOCOL_ERROR` logs on publicly hosted dev bundles are classified as expected webpack HMR noise unless accompanied by `/bff/*` or `/bff/socket` failures.
 
 ## Done (recent)
-- 2026-02-19 [CODE] Fixed local-dev BFF routing mismatch by defaulting webpack `/bff` proxy enablement to the resolved BFF transport mode (`webpack.config.js`).
 - 2026-02-19 [CODE] Implemented Phase 5 transport default/gating (`src/connection/bluebubbles/transport.ts`, `webpack.config.js`, `index.d.ts`, `.env.example`).
 - 2026-02-19 [CODE] Updated onboarding UX for BFF-first messaging with direct-mode deprecation warning states (`src/components/Onboarding.tsx`, `src/components/SignInGate.tsx`).
 - 2026-02-19 [CODE] Updated media-cache scope fallback to configured transport mode rather than hardcoded direct fallback (`src/state/mediaCache.ts`).
 - 2026-02-19 [CODE] Added transport configuration regression coverage and updated existing BlueBubbles manager tests to set explicit direct mode where intended (`test/connection/bluebubbles/transportConfig.test.ts`, `test/connection/bluebubbles/bluebubblesCommunicationsManager.test.ts`).
 - 2026-02-19 [CODE] Updated BFF rollout docs/roadmap to mark Phase 5 complete and refresh post-rollout work (`BLUEBUBBLES_BFF_IMPLEMENTATION_PLAN.md`, `project.md`).
 - 2026-02-19 [CODE] Added one-command local-dev orchestration scripts in root package (`dev`, `dev:web`, `dev:bff`) for concurrent web+BFF startup (`package.json`).
+- 2026-02-19 [CODE] Added phased favicon unread-indicator implementation plan doc (`FAVICON_BADGE_IMPLEMENTATION_PLAN.md`).
 
 ## Open Questions
 - 2026-02-19 [ASSUMPTION] Root cause and frequency of Cloudflare/Nginx `ERR_QUIC_PROTOCOL_ERROR` on `air.thecemetary.org` remain UNCONFIRMED.
@@ -58,19 +60,16 @@
 - 2026-02-18 [ASSUMPTION] Final production preference for same-origin vs strict cross-origin BFF deployment remains UNCONFIRMED.
 
 ## Working set
-- 2026-02-19 [CODE] `src/connection/bluebubbles/transport.ts`
-- 2026-02-19 [CODE] `src/components/Onboarding.tsx`
-- 2026-02-19 [CODE] `src/components/SignInGate.tsx`
-- 2026-02-19 [CODE] `src/state/mediaCache.ts`
-- 2026-02-19 [CODE] `test/connection/bluebubbles/transportConfig.test.ts`
-- 2026-02-19 [CODE] `test/connection/bluebubbles/bluebubblesCommunicationsManager.test.ts`
-- 2026-02-19 [CODE] `.env.example`
-- 2026-02-19 [CODE] `webpack.config.js`
-- 2026-02-19 [CODE] `package.json`
-- 2026-02-19 [CODE] `package-lock.json`
-- 2026-02-19 [CODE] `BLUEBUBBLES_BFF_IMPLEMENTATION_PLAN.md`
+- 2026-02-19 [CODE] `src/state/conversationState.ts`
+- 2026-02-19 [CODE] `src/components/messaging/master/Messaging.tsx`
+- 2026-02-19 [CODE] `src/interface/platform/browserPlatformUtils.ts`
+- 2026-02-19 [CODE] `src/interface/notification/browserNotificationUtils.ts`
+- 2026-02-19 [CODE] `src/interface/notification/notificationUtils.ts`
+- 2026-02-19 [CODE] `src/index.tsx`
+- 2026-02-19 [CODE] `public/index.html`
+- 2026-02-19 [CODE] `CONTINUITY.md`
 - 2026-02-19 [CODE] `project.md`
-- 2026-02-19 [CODE] `index.d.ts`
+- 2026-02-19 [CODE] `FAVICON_BADGE_IMPLEMENTATION_PLAN.md`
 
 ## Receipts
 - 2026-02-19 [TOOL] `npm test -- --runInBand test/connection/bluebubbles/bffApi.test.ts test/connection/bluebubbles/bffSessionApi.test.ts test/connection/bluebubbles/bffRealtimeChannel.test.ts` passed during Phase 1 rollout (3 suites, 6 tests).
@@ -89,3 +88,5 @@
 - 2026-02-19 [TOOL] `npm run build` passed after webpack proxy-default fix (webpack success; existing asset-size/service-worker warnings only).
 - 2026-02-19 [TOOL] `npm run dev -- --help` succeeded, confirming root `dev` script resolves `concurrently` and exposes the combined startup command.
 - 2026-02-19 [TOOL] Playwright reproduction on `https://air2.thecemetary.org` captured `webpack-dev-server` reconnect loop with `WebSocket connection to 'wss://air2.thecemetary.org:8080/ws' failed: net::ERR_SSL_PROTOCOL_ERROR`; concurrent network traces still showed healthy `GET /bff/session/status -> 200` on login load.
+- 2026-02-19 [TOOL] Playwright check on `https://air2.thecemetary.org` confirmed favicon links are static (`favicon-32/57/76/96/128/192.png`) and same-origin canvas overlay generation (`toDataURL`) succeeds for `/favicon-32.png`.
+- 2026-02-19 [TOOL] Created phased execution plan for favicon badge feature in `FAVICON_BADGE_IMPLEMENTATION_PLAN.md`.
