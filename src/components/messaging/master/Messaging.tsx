@@ -22,6 +22,7 @@ import {PeopleContext} from "shared/state/peopleState";
 import {logSelectedConversationPayload} from "shared/connection/bluebubbles/debugLogging";
 import {searchCache} from "shared/state/searchCache";
 import type {BlueBubblesTransportMode} from "shared/connection/bluebubbles/session";
+import {clearFaviconBadge, initializeFaviconBadge} from "shared/util/faviconBadge";
 
 let activeMessagingInstanceCount = 0;
 let pendingMessagingTeardownID: number | undefined;
@@ -160,6 +161,27 @@ export default function Messaging(props: {
                 // Surface the reconfigure callback instead so the user can adjust their connection settings.
                 onReset?.();
         }, [onReset]);
+
+	useEffect(() => {
+		initializeFaviconBadge();
+
+		const handleTabActivation = () => {
+			if(document.visibilityState !== "visible" && !document.hasFocus()) {
+				return;
+			}
+
+			clearFaviconBadge();
+		};
+
+		document.addEventListener("visibilitychange", handleTabActivation);
+		window.addEventListener("focus", handleTabActivation);
+
+		return () => {
+			document.removeEventListener("visibilitychange", handleTabActivation);
+			window.removeEventListener("focus", handleTabActivation);
+			clearFaviconBadge();
+		};
+	}, []);
 	
 	useEffect(() => {
 		//Initialize notifications
