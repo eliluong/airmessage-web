@@ -6,7 +6,9 @@ Implement a browser-tab favicon indicator that shows a small red dot when one or
 ## Status
 - 2026-02-20: Phase 0 completed.
 - 2026-02-20: `src/util/faviconBadge.ts` added with stable exported API and module-scope singleton manager ownership.
-- 2026-02-20: App wiring and canvas badge rendering remain intentionally deferred to Phase 1+.
+- 2026-02-20: Phase 1 completed.
+- 2026-02-20: Canvas-based red-dot rendering and cached badged favicon data URL generation are now implemented in `src/util/faviconBadge.ts`.
+- 2026-02-20: App wiring for incoming-message triggers and clear-on-focus behavior remains deferred to Phases 2-3.
 
 ## Requested Behavior (Source of Truth)
 - Show red dot in favicon area when new incoming message(s) arrive while tab is inactive.
@@ -76,6 +78,14 @@ Render a red-dot favicon variant and support toggling between base and badged ic
 ### Exit Criteria
 - Calling `setFaviconBadgeVisible(true)` reliably shows a badged favicon.
 - Calling `setFaviconBadgeVisible(false)` restores original favicon href(s).
+
+### Phase 1 Outcome (2026-02-20)
+- `src/util/faviconBadge.ts` now:
+  - captures all `link[rel~="icon"]` nodes and preserves original hrefs.
+  - selects the 32x32 favicon when available (otherwise first icon link) as rendering source.
+  - generates a 32x32 canvas variant with a red top-right badge dot and white stroke.
+  - caches the generated badged data URL and reuses it across toggles.
+  - applies idempotent link updates when showing/hiding the badge and safely no-ops on icon load/canvas failures.
 
 ## Phase 2: Trigger on Background Incoming Messages
 ### Goal
@@ -150,6 +160,7 @@ Verify runtime behavior in browser and record implementation status.
 
 ## Deliverables Checklist
 - [x] `src/util/faviconBadge.ts` added.
+- [x] Phase 1 rendering/toggle internals implemented in `src/util/faviconBadge.ts`.
 - [ ] `src/state/conversationState.ts` wired to set badge on background incoming messages.
 - [ ] `src/components/messaging/master/Messaging.tsx` wired to clear badge on tab return.
 - [ ] Tests added and passing.
