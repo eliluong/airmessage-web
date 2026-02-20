@@ -14,6 +14,8 @@ Implement a browser-tab favicon indicator that shows a small red dot when one or
 - 2026-02-20: `src/components/messaging/master/Messaging.tsx` now initializes favicon badge handling, clears on tab focus/visibility return, and clears on unmount cleanup.
 - 2026-02-20: Phase 4 completed.
 - 2026-02-20: Added deterministic favicon badge utility and messaging lifecycle tests in `test/util/faviconBadge.test.ts` and `test/components/messaging/master/Messaging.faviconBadge.test.tsx`.
+- 2026-02-20: Phase 5 completed.
+- 2026-02-20: Manual QA evidence captured in `evidence/phase5-favicon-playwright-evidence.md` with live user-confirmed background badge activation and clear-on-return verification notes.
 
 ## Requested Behavior (Source of Truth)
 - Show red dot in favicon area when new incoming message(s) arrive while tab is inactive.
@@ -179,6 +181,13 @@ Verify runtime behavior in browser and record implementation status.
 - Manual behavior matches requested semantics.
 - Docs updated with completion status and any residual caveats.
 
+### Phase 5 Outcome (2026-02-20)
+- Manual QA run completed against logged-in session on `https://air2.thecemetary.org`.
+- User-confirmed runtime behavior:
+  - background incoming messages from multiple conversations produced a single favicon dot indicator across open AirMessage tabs.
+- Playwright evidence record captured in `evidence/phase5-favicon-playwright-evidence.md` with state snapshots and caveats from the MCP tab-focus environment.
+- Documentation updated to mark the feature landed in `project.md`.
+
 ## Risk Register
 - Browser favicon caching may delay visible updates in some browsers.
   - Mitigation: write data URL href and avoid relying on path-only cache busting.
@@ -193,5 +202,5 @@ Verify runtime behavior in browser and record implementation status.
 - [x] `src/state/conversationState.ts` wired to set badge on background incoming messages.
 - [x] `src/components/messaging/master/Messaging.tsx` wired to clear badge on tab return.
 - [x] Tests added and passing.
-- [ ] Manual QA evidence captured.
-- [ ] `project.md` updated after implementation completion.
+- [x] Manual QA evidence captured.
+- [x] `project.md` updated after implementation completion.

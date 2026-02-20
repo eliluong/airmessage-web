@@ -25,7 +25,7 @@
 - 2026-02-19 [CODE] Research complete: incoming-message eligibility is already filtered in `useConversationState` interactive notification flow; focus detection currently uses page visibility via `BrowserPlatformUtils.hasFocus()`.
 - 2026-02-20 [USER] Direction: proceed with favicon Phase 0 edits only and ignore unrelated dirty-worktree files.
 - 2026-02-20 [CODE] Completed: favicon Phase 0 contract scaffold landed in `src/util/faviconBadge.ts`; app wiring/rendering intentionally deferred to Phase 1.
-- 2026-02-20 [CODE] Completed: favicon Phases 1-4 landed (rendering/toggle internals + background-trigger wiring + clear-on-return lifecycle + deterministic test coverage) (`src/util/faviconBadge.ts`, `src/state/conversationState.ts`, `src/components/messaging/master/Messaging.tsx`, `test/util/faviconBadge.test.ts`, `test/components/messaging/master/Messaging.faviconBadge.test.tsx`).
+- 2026-02-20 [CODE] Completed: favicon Phases 1-5 landed (rendering/toggle internals + background-trigger wiring + clear-on-return lifecycle + deterministic tests + manual QA/docs closure), with user-confirmed inactive-tab badge behavior captured in `evidence/phase5-favicon-playwright-evidence.md`.
 
 ## Invariants / Constraints
 - 2026-02-17 [USER] Preserve architecture: UI calls `connectionManager`; transport-specific behavior stays in `bluebubblesCommunicationsManager`.
@@ -49,13 +49,13 @@
 - 2026-02-20 [CODE] D033 ACTIVE: clear-on-return ownership lives in `Messaging` lifecycle (mount initializes favicon manager; `visibilitychange` + `focus` clear badge when tab is active; unmount cleanup clears stale badge state).
 
 ## Done (recent)
-- 2026-02-19 [CODE] Added transport configuration regression coverage and updated existing BlueBubbles manager tests to set explicit direct mode where intended (`test/connection/bluebubbles/transportConfig.test.ts`, `test/connection/bluebubbles/bluebubblesCommunicationsManager.test.ts`).
 - 2026-02-19 [CODE] Updated BFF rollout docs/roadmap to mark Phase 5 complete and refresh post-rollout work (`BLUEBUBBLES_BFF_IMPLEMENTATION_PLAN.md`, `project.md`).
 - 2026-02-19 [CODE] Added one-command local-dev orchestration scripts in root package (`dev`, `dev:web`, `dev:bff`) for concurrent web+BFF startup (`package.json`).
 - 2026-02-20 [CODE] Implemented favicon indicator Phase 0 utility scaffold and updated plan status notes (`src/util/faviconBadge.ts`, `FAVICON_BADGE_IMPLEMENTATION_PLAN.md`).
 - 2026-02-20 [CODE] Implemented favicon indicator Phase 1 rendering plus Phase 2 background-trigger wiring, and updated implementation status notes (`src/util/faviconBadge.ts`, `src/state/conversationState.ts`, `FAVICON_BADGE_IMPLEMENTATION_PLAN.md`).
 - 2026-02-20 [CODE] Implemented favicon indicator Phase 3 clear-on-return lifecycle wiring in `Messaging` and updated implementation status notes (`src/components/messaging/master/Messaging.tsx`, `FAVICON_BADGE_IMPLEMENTATION_PLAN.md`).
 - 2026-02-20 [CODE] Implemented favicon indicator Phase 4 deterministic test coverage and updated implementation status notes (`test/util/faviconBadge.test.ts`, `test/components/messaging/master/Messaging.faviconBadge.test.tsx`, `FAVICON_BADGE_IMPLEMENTATION_PLAN.md`).
+- 2026-02-20 [CODE] Completed favicon Phase 5 manual QA/evidence/docs closure and marked roadmap completion (`evidence/phase5-favicon-playwright-evidence.md`, `FAVICON_BADGE_IMPLEMENTATION_PLAN.md`, `project.md`).
 
 ## Open Questions
 - 2026-02-19 [ASSUMPTION] Root cause and frequency of Cloudflare/Nginx `ERR_QUIC_PROTOCOL_ERROR` on `air.thecemetary.org` remain UNCONFIRMED.
@@ -69,13 +69,12 @@
 - 2026-02-20 [CODE] `src/components/messaging/master/Messaging.tsx`
 - 2026-02-20 [CODE] `test/util/faviconBadge.test.ts`
 - 2026-02-20 [CODE] `test/components/messaging/master/Messaging.faviconBadge.test.tsx`
+- 2026-02-20 [CODE] `evidence/phase5-favicon-playwright-evidence.md`
 - 2026-02-20 [CODE] `FAVICON_BADGE_IMPLEMENTATION_PLAN.md`
 - 2026-02-20 [CODE] `CONTINUITY.md`
 - 2026-02-20 [CODE] `project.md`
 
 ## Receipts
-- 2026-02-19 [TOOL] `npm run build` and `npm --prefix bff run build` passed after nullable-MIME preview hotfix (success; existing warnings only).
-- 2026-02-19 [TOOL] Playwright follow-up on `air.thecemetary.org` observed transient `ERR_QUIC_PROTOCOL_ERROR` but subsequent `/chat/query` and `/message/query` calls recovered with `200`.
 - 2026-02-19 [TOOL] `npm test -- --runInBand test/connection/bluebubbles/transportConfig.test.ts test/connection/bluebubbles/transport.test.ts test/connection/bluebubbles/bffSessionApi.test.ts test/connection/bluebubbles/bffApi.test.ts` passed after Phase 5 updates (4 suites, 13 tests).
 - 2026-02-19 [TOOL] `npm run build` passed after Phase 5 updates (webpack success; existing asset-size/service-worker warnings only).
 - 2026-02-19 [TOOL] First post-Phase-5 `npm test -- --runInBand` run failed in `test/connection/bluebubbles/bluebubblesCommunicationsManager.test.ts` because implicit transport default switched to BFF (`fetch` missing / CSRF expectations), confirming tests relied on old default assumptions.
@@ -94,3 +93,5 @@
 - 2026-02-20 [TOOL] `npm test -- --runInBand test/util/faviconBadge.test.ts test/components/messaging/master/Messaging.faviconBadge.test.tsx` passed after favicon Phase 4 test coverage updates (2 suites, 4 tests).
 - 2026-02-20 [TOOL] `npx tsc --noEmit` passed after favicon Phase 4 test coverage updates.
 - 2026-02-20 [TOOL] `npm test -- --runInBand` passed after favicon Phase 4 updates (28 suites, 134 tests).
+- 2026-02-20 [USER] Manual QA run: user sent two incoming messages from distinct conversations and confirmed favicon badge appeared on inactive AirMessage tabs.
+- 2026-02-20 [TOOL] Playwright post-validation state check confirmed controlled-tab favicon links were restored to static non-badged URLs after visibility/focus return handling; evidence captured in `evidence/phase5-favicon-playwright-evidence.md`.
