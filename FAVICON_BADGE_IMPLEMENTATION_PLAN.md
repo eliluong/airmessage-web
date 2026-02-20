@@ -12,6 +12,8 @@ Implement a browser-tab favicon indicator that shows a small red dot when one or
 - 2026-02-20: `src/state/conversationState.ts` now enables the favicon badge for qualifying incoming messages while the tab is inactive.
 - 2026-02-20: Phase 3 completed.
 - 2026-02-20: `src/components/messaging/master/Messaging.tsx` now initializes favicon badge handling, clears on tab focus/visibility return, and clears on unmount cleanup.
+- 2026-02-20: Phase 4 completed.
+- 2026-02-20: Added deterministic favicon badge utility and messaging lifecycle tests in `test/util/faviconBadge.test.ts` and `test/components/messaging/master/Messaging.faviconBadge.test.tsx`.
 
 ## Requested Behavior (Source of Truth)
 - Show red dot in favicon area when new incoming message(s) arrive while tab is inactive.
@@ -147,6 +149,20 @@ Add deterministic tests for badge state transitions and integration hooks.
 - New tests pass with `npm test -- --runInBand`.
 - Existing relevant tests remain green.
 
+### Phase 4 Outcome (2026-02-20)
+- Added utility tests in `test/util/faviconBadge.test.ts` covering:
+  - initialization with icon links + show/hide transitions.
+  - no-op behavior before initialization.
+  - image-load failure tolerance.
+- Added integration test in `test/components/messaging/master/Messaging.faviconBadge.test.tsx` covering:
+  - `initializeFaviconBadge()` call on `Messaging` mount.
+  - badge clearing on tab-return via `visibilitychange`/`focus` conditions.
+  - cleanup-time `clearFaviconBadge()` on unmount.
+- Validation completed:
+  - `npm test -- --runInBand test/util/faviconBadge.test.ts test/components/messaging/master/Messaging.faviconBadge.test.tsx`
+  - `npm test -- --runInBand`
+  - `npx tsc --noEmit`
+
 ## Phase 5: Manual Validation and Documentation
 ### Goal
 Verify runtime behavior in browser and record implementation status.
@@ -176,6 +192,6 @@ Verify runtime behavior in browser and record implementation status.
 - [x] Phase 1 rendering/toggle internals implemented in `src/util/faviconBadge.ts`.
 - [x] `src/state/conversationState.ts` wired to set badge on background incoming messages.
 - [x] `src/components/messaging/master/Messaging.tsx` wired to clear badge on tab return.
-- [ ] Tests added and passing.
+- [x] Tests added and passing.
 - [ ] Manual QA evidence captured.
 - [ ] `project.md` updated after implementation completion.

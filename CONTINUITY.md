@@ -25,7 +25,7 @@
 - 2026-02-19 [CODE] Research complete: incoming-message eligibility is already filtered in `useConversationState` interactive notification flow; focus detection currently uses page visibility via `BrowserPlatformUtils.hasFocus()`.
 - 2026-02-20 [USER] Direction: proceed with favicon Phase 0 edits only and ignore unrelated dirty-worktree files.
 - 2026-02-20 [CODE] Completed: favicon Phase 0 contract scaffold landed in `src/util/faviconBadge.ts`; app wiring/rendering intentionally deferred to Phase 1.
-- 2026-02-20 [CODE] Completed: favicon Phases 1-3 landed (rendering/toggle internals + background-trigger wiring + clear-on-return lifecycle in Messaging) (`src/util/faviconBadge.ts`, `src/state/conversationState.ts`, `src/components/messaging/master/Messaging.tsx`).
+- 2026-02-20 [CODE] Completed: favicon Phases 1-4 landed (rendering/toggle internals + background-trigger wiring + clear-on-return lifecycle + deterministic test coverage) (`src/util/faviconBadge.ts`, `src/state/conversationState.ts`, `src/components/messaging/master/Messaging.tsx`, `test/util/faviconBadge.test.ts`, `test/components/messaging/master/Messaging.faviconBadge.test.tsx`).
 
 ## Invariants / Constraints
 - 2026-02-17 [USER] Preserve architecture: UI calls `connectionManager`; transport-specific behavior stays in `bluebubblesCommunicationsManager`.
@@ -49,13 +49,13 @@
 - 2026-02-20 [CODE] D033 ACTIVE: clear-on-return ownership lives in `Messaging` lifecycle (mount initializes favicon manager; `visibilitychange` + `focus` clear badge when tab is active; unmount cleanup clears stale badge state).
 
 ## Done (recent)
-- 2026-02-19 [CODE] Updated media-cache scope fallback to configured transport mode rather than hardcoded direct fallback (`src/state/mediaCache.ts`).
 - 2026-02-19 [CODE] Added transport configuration regression coverage and updated existing BlueBubbles manager tests to set explicit direct mode where intended (`test/connection/bluebubbles/transportConfig.test.ts`, `test/connection/bluebubbles/bluebubblesCommunicationsManager.test.ts`).
 - 2026-02-19 [CODE] Updated BFF rollout docs/roadmap to mark Phase 5 complete and refresh post-rollout work (`BLUEBUBBLES_BFF_IMPLEMENTATION_PLAN.md`, `project.md`).
 - 2026-02-19 [CODE] Added one-command local-dev orchestration scripts in root package (`dev`, `dev:web`, `dev:bff`) for concurrent web+BFF startup (`package.json`).
 - 2026-02-20 [CODE] Implemented favicon indicator Phase 0 utility scaffold and updated plan status notes (`src/util/faviconBadge.ts`, `FAVICON_BADGE_IMPLEMENTATION_PLAN.md`).
 - 2026-02-20 [CODE] Implemented favicon indicator Phase 1 rendering plus Phase 2 background-trigger wiring, and updated implementation status notes (`src/util/faviconBadge.ts`, `src/state/conversationState.ts`, `FAVICON_BADGE_IMPLEMENTATION_PLAN.md`).
 - 2026-02-20 [CODE] Implemented favicon indicator Phase 3 clear-on-return lifecycle wiring in `Messaging` and updated implementation status notes (`src/components/messaging/master/Messaging.tsx`, `FAVICON_BADGE_IMPLEMENTATION_PLAN.md`).
+- 2026-02-20 [CODE] Implemented favicon indicator Phase 4 deterministic test coverage and updated implementation status notes (`test/util/faviconBadge.test.ts`, `test/components/messaging/master/Messaging.faviconBadge.test.tsx`, `FAVICON_BADGE_IMPLEMENTATION_PLAN.md`).
 
 ## Open Questions
 - 2026-02-19 [ASSUMPTION] Root cause and frequency of Cloudflare/Nginx `ERR_QUIC_PROTOCOL_ERROR` on `air.thecemetary.org` remain UNCONFIRMED.
@@ -64,25 +64,16 @@
 - 2026-02-18 [ASSUMPTION] Final production preference for same-origin vs strict cross-origin BFF deployment remains UNCONFIRMED.
 
 ## Working set
-- 2026-02-19 [CODE] `src/state/conversationState.ts`
-- 2026-02-19 [CODE] `src/components/messaging/master/Messaging.tsx`
-- 2026-02-19 [CODE] `src/interface/platform/browserPlatformUtils.ts`
-- 2026-02-19 [CODE] `src/interface/notification/browserNotificationUtils.ts`
-- 2026-02-19 [CODE] `src/interface/notification/notificationUtils.ts`
-- 2026-02-19 [CODE] `src/index.tsx`
-- 2026-02-19 [CODE] `public/index.html`
-- 2026-02-19 [CODE] `CONTINUITY.md`
-- 2026-02-19 [CODE] `project.md`
-- 2026-02-19 [CODE] `FAVICON_BADGE_IMPLEMENTATION_PLAN.md`
 - 2026-02-20 [CODE] `src/util/faviconBadge.ts`
+- 2026-02-20 [CODE] `src/state/conversationState.ts`
+- 2026-02-20 [CODE] `src/components/messaging/master/Messaging.tsx`
+- 2026-02-20 [CODE] `test/util/faviconBadge.test.ts`
+- 2026-02-20 [CODE] `test/components/messaging/master/Messaging.faviconBadge.test.tsx`
+- 2026-02-20 [CODE] `FAVICON_BADGE_IMPLEMENTATION_PLAN.md`
+- 2026-02-20 [CODE] `CONTINUITY.md`
+- 2026-02-20 [CODE] `project.md`
 
 ## Receipts
-- 2026-02-19 [TOOL] `npm test -- --runInBand test/connection/bluebubbles/bffApi.test.ts test/connection/bluebubbles/bffSessionApi.test.ts test/connection/bluebubbles/bffRealtimeChannel.test.ts` passed during Phase 1 rollout (3 suites, 6 tests).
-- 2026-02-19 [TOOL] `npm test -- --runInBand test/connection/bluebubbles/bffApi.test.ts test/connection/bluebubbles/bffSessionApi.test.ts test/connection/bluebubbles/transport.test.ts` passed during Phase 2 rollout (3 suites, 9 tests).
-- 2026-02-19 [TOOL] `npm test -- --runInBand test/connection/bluebubbles/bffRealtimeChannel.test.ts test/bff/upstream/realtimeSocket.test.ts test/bff/realtime/bridge.test.ts` passed during Phase 3 rollout (3 suites, 12 tests).
-- 2026-02-19 [TOOL] `npm test -- --runInBand test/connection/bluebubbles/bffApi.test.ts test/connection/bluebubbles/bffSessionApi.test.ts test/connection/bluebubbles/bffRealtimeChannel.test.ts test/connection/bluebubbles/transport.test.ts test/bff/realtime/bridge.test.ts test/bff/upstream/realtimeSocket.test.ts test/bff/security/urlValidation.test.ts test/bff/security/rateLimit.test.ts test/bff/observability/metrics.test.ts test/bff/observability/logger.test.ts` passed during Phase 4 rollout (10 suites, 30 tests).
-- 2026-02-19 [TOOL] `npm run build` passed during Phase 4 rollout (webpack success; existing warnings only).
-- 2026-02-19 [TOOL] Playwright Phase 4 evidence run recorded `/bff/*` login/bootstrap/send/realtime/upload/download activity with no direct browser->upstream REST traffic (`evidence/phase4-playwright-evidence.md`).
 - 2026-02-19 [TOOL] `npm run build` and `npm --prefix bff run build` passed after nullable-MIME preview hotfix (success; existing warnings only).
 - 2026-02-19 [TOOL] Playwright follow-up on `air.thecemetary.org` observed transient `ERR_QUIC_PROTOCOL_ERROR` but subsequent `/chat/query` and `/message/query` calls recovered with `200`.
 - 2026-02-19 [TOOL] `npm test -- --runInBand test/connection/bluebubbles/transportConfig.test.ts test/connection/bluebubbles/transport.test.ts test/connection/bluebubbles/bffSessionApi.test.ts test/connection/bluebubbles/bffApi.test.ts` passed after Phase 5 updates (4 suites, 13 tests).
@@ -91,14 +82,15 @@
 - 2026-02-19 [TOOL] After setting explicit direct transport in that suite, `npm test -- --runInBand test/connection/bluebubbles/bluebubblesCommunicationsManager.test.ts` and full `npm test -- --runInBand` both passed (26 suites, 130 tests).
 - 2026-02-19 [TOOL] Playwright local-dev reproduction on `http://debian-dev.lan:8080` captured duplicate `GET /bff/session/status -> 404 Not Found` while login UI loaded.
 - 2026-02-19 [TOOL] `npm run build` passed after webpack proxy-default fix (webpack success; existing asset-size/service-worker warnings only).
-- 2026-02-19 [TOOL] `npm run dev -- --help` succeeded, confirming root `dev` script resolves `concurrently` and exposes the combined startup command.
 - 2026-02-19 [TOOL] Playwright reproduction on `https://air2.thecemetary.org` captured `webpack-dev-server` reconnect loop with `WebSocket connection to 'wss://air2.thecemetary.org:8080/ws' failed: net::ERR_SSL_PROTOCOL_ERROR`; concurrent network traces still showed healthy `GET /bff/session/status -> 200` on login load.
 - 2026-02-19 [TOOL] Playwright check on `https://air2.thecemetary.org` confirmed favicon links are static (`favicon-32/57/76/96/128/192.png`) and same-origin canvas overlay generation (`toDataURL`) succeeds for `/favicon-32.png`.
 - 2026-02-19 [TOOL] Created phased execution plan for favicon badge feature in `FAVICON_BADGE_IMPLEMENTATION_PLAN.md`.
-- 2026-02-20 [TOOL] `npx tsc --noEmit` passed after adding Phase 0 favicon badge scaffold.
 - 2026-02-20 [TOOL] `npx tsc --noEmit` passed after implementing favicon Phase 1 rendering/toggle internals.
 - 2026-02-20 [TOOL] `npx tsc --noEmit` passed after wiring favicon Phase 2 background incoming-message activation.
 - 2026-02-20 [TOOL] `npm run build` passed after favicon Phase 2 updates (webpack success; existing asset-size/service-worker warnings only).
 - 2026-02-20 [TOOL] `npm test -- --runInBand` passed after favicon Phase 2 updates (26 suites, 130 tests).
 - 2026-02-20 [TOOL] `npx tsc --noEmit` passed after implementing favicon Phase 3 clear-on-return lifecycle wiring.
 - 2026-02-20 [TOOL] `npm run build` passed after favicon Phase 3 updates (webpack success; existing asset-size/service-worker warnings only).
+- 2026-02-20 [TOOL] `npm test -- --runInBand test/util/faviconBadge.test.ts test/components/messaging/master/Messaging.faviconBadge.test.tsx` passed after favicon Phase 4 test coverage updates (2 suites, 4 tests).
+- 2026-02-20 [TOOL] `npx tsc --noEmit` passed after favicon Phase 4 test coverage updates.
+- 2026-02-20 [TOOL] `npm test -- --runInBand` passed after favicon Phase 4 updates (28 suites, 134 tests).
