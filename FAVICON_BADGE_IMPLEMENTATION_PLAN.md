@@ -8,7 +8,9 @@ Implement a browser-tab favicon indicator that shows a small red dot when one or
 - 2026-02-20: `src/util/faviconBadge.ts` added with stable exported API and module-scope singleton manager ownership.
 - 2026-02-20: Phase 1 completed.
 - 2026-02-20: Canvas-based red-dot rendering and cached badged favicon data URL generation are now implemented in `src/util/faviconBadge.ts`.
-- 2026-02-20: App wiring for incoming-message triggers and clear-on-focus behavior remains deferred to Phases 2-3.
+- 2026-02-20: Phase 2 completed.
+- 2026-02-20: `src/state/conversationState.ts` now enables the favicon badge for qualifying incoming messages while the tab is inactive.
+- 2026-02-20: Clear-on-focus behavior remains deferred to Phase 3.
 
 ## Requested Behavior (Source of Truth)
 - Show red dot in favicon area when new incoming message(s) arrive while tab is inactive.
@@ -102,11 +104,16 @@ Turn the badge on only when qualifying incoming messages arrive while tab is ina
 - Badge is activated for background new-message events.
 - No regression to existing notification/sound logic.
 
+### Phase 2 Outcome (2026-02-20)
+- `src/state/conversationState.ts` now calls `setFaviconBadgeVisible(true)` in the existing `notificationMessages.size > 0` and `hasFocus === false` branch.
+- Existing notification-sound behavior for focused tabs and browser notification behavior for background tabs remains unchanged.
+
 ## Phase 3: Clear Badge on Tab Return
 ### Goal
 Clear the badge when the user returns to the tab.
 
 ### Tasks
+- In `src/components/messaging/master/Messaging.tsx`, call `initializeFaviconBadge()` during mount so the phase-2 trigger can apply rendered favicon updates.
 - In `src/components/messaging/master/Messaging.tsx`, register listeners for:
   - `document.visibilitychange`
   - `window.focus`
@@ -161,7 +168,7 @@ Verify runtime behavior in browser and record implementation status.
 ## Deliverables Checklist
 - [x] `src/util/faviconBadge.ts` added.
 - [x] Phase 1 rendering/toggle internals implemented in `src/util/faviconBadge.ts`.
-- [ ] `src/state/conversationState.ts` wired to set badge on background incoming messages.
+- [x] `src/state/conversationState.ts` wired to set badge on background incoming messages.
 - [ ] `src/components/messaging/master/Messaging.tsx` wired to clear badge on tab return.
 - [ ] Tests added and passing.
 - [ ] Manual QA evidence captured.

@@ -22,6 +22,7 @@ import {getNotificationUtils} from "shared/interface/notification/notificationUt
 import {playSoundMessageIn, playSoundNotification, playSoundTapback} from "shared/util/soundUtils";
 import {normalizeAddress} from "shared/util/addressHelper";
 import {arrayContainsAll} from "shared/util/arrayUtils";
+import {setFaviconBadgeVisible} from "shared/util/faviconBadge";
 import localMessageCache from "shared/state/localMessageCache";
 import {PeopleContext} from "shared/state/peopleState";
 import {useSettings} from "shared/components/settings/SettingsProvider";
@@ -381,6 +382,8 @@ export default function useConversationState(activeConversationID: LocalConversa
                                                 messages: notificationContextEntries.flatMap((entry) => entry.messages)
                                         });
                                 } else {
+                                        setFaviconBadgeVisible(true);
+
                                         //Otherwise show notifications
                                         for(const [chatGUID, messages] of notificationMessages.entries()) {
 						//Finding the conversation

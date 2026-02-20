@@ -25,7 +25,7 @@
 - 2026-02-19 [CODE] Research complete: incoming-message eligibility is already filtered in `useConversationState` interactive notification flow; focus detection currently uses page visibility via `BrowserPlatformUtils.hasFocus()`.
 - 2026-02-20 [USER] Direction: proceed with favicon Phase 0 edits only and ignore unrelated dirty-worktree files.
 - 2026-02-20 [CODE] Completed: favicon Phase 0 contract scaffold landed in `src/util/faviconBadge.ts`; app wiring/rendering intentionally deferred to Phase 1.
-- 2026-02-20 [CODE] Completed: favicon Phase 1 rendering landed in `src/util/faviconBadge.ts` (canvas red-dot generation + cached data URL + idempotent icon-link toggles).
+- 2026-02-20 [CODE] Completed: favicon Phase 1 rendering plus Phase 2 background incoming-message trigger wiring landed (`src/util/faviconBadge.ts`, `src/state/conversationState.ts`).
 
 ## Invariants / Constraints
 - 2026-02-17 [USER] Preserve architecture: UI calls `connectionManager`; transport-specific behavior stays in `bluebubblesCommunicationsManager`.
@@ -45,6 +45,7 @@
 - 2026-02-19 [CODE] D029 ACTIVE: recurring `wss://<host>:8080/ws` `ERR_SSL_PROTOCOL_ERROR` logs on publicly hosted dev bundles are classified as expected webpack HMR noise unless accompanied by `/bff/*` or `/bff/socket` failures.
 - 2026-02-20 [CODE] D030 ACTIVE: favicon badge state is owned by a module-scope singleton utility with explicit APIs (`initializeFaviconBadge`, `setFaviconBadgeVisible`, `clearFaviconBadge`) and safe no-op behavior when favicon links are unavailable.
 - 2026-02-20 [CODE] D031 ACTIVE: favicon badge renderer prefers the `32x32` favicon source, caches a single generated badged data URL, and applies href changes idempotently across all `rel~="icon"` links.
+- 2026-02-20 [CODE] D032 ACTIVE: favicon badge activation for background message arrivals is sourced from the existing interactive `notificationMessages` path in `useConversationState`, avoiding duplicate new-message qualification logic.
 
 ## Done (recent)
 - 2026-02-19 [CODE] Updated onboarding UX for BFF-first messaging with direct-mode deprecation warning states (`src/components/Onboarding.tsx`, `src/components/SignInGate.tsx`).
@@ -53,7 +54,7 @@
 - 2026-02-19 [CODE] Updated BFF rollout docs/roadmap to mark Phase 5 complete and refresh post-rollout work (`BLUEBUBBLES_BFF_IMPLEMENTATION_PLAN.md`, `project.md`).
 - 2026-02-19 [CODE] Added one-command local-dev orchestration scripts in root package (`dev`, `dev:web`, `dev:bff`) for concurrent web+BFF startup (`package.json`).
 - 2026-02-20 [CODE] Implemented favicon indicator Phase 0 utility scaffold and updated plan status notes (`src/util/faviconBadge.ts`, `FAVICON_BADGE_IMPLEMENTATION_PLAN.md`).
-- 2026-02-20 [CODE] Implemented favicon indicator Phase 1 rendering/toggle internals and updated implementation status notes (`src/util/faviconBadge.ts`, `FAVICON_BADGE_IMPLEMENTATION_PLAN.md`).
+- 2026-02-20 [CODE] Implemented favicon indicator Phase 1 rendering plus Phase 2 background-trigger wiring, and updated implementation status notes (`src/util/faviconBadge.ts`, `src/state/conversationState.ts`, `FAVICON_BADGE_IMPLEMENTATION_PLAN.md`).
 
 ## Open Questions
 - 2026-02-19 [ASSUMPTION] Root cause and frequency of Cloudflare/Nginx `ERR_QUIC_PROTOCOL_ERROR` on `air.thecemetary.org` remain UNCONFIRMED.
@@ -95,3 +96,6 @@
 - 2026-02-19 [TOOL] Created phased execution plan for favicon badge feature in `FAVICON_BADGE_IMPLEMENTATION_PLAN.md`.
 - 2026-02-20 [TOOL] `npx tsc --noEmit` passed after adding Phase 0 favicon badge scaffold.
 - 2026-02-20 [TOOL] `npx tsc --noEmit` passed after implementing favicon Phase 1 rendering/toggle internals.
+- 2026-02-20 [TOOL] `npx tsc --noEmit` passed after wiring favicon Phase 2 background incoming-message activation.
+- 2026-02-20 [TOOL] `npm run build` passed after favicon Phase 2 updates (webpack success; existing asset-size/service-worker warnings only).
+- 2026-02-20 [TOOL] `npm test -- --runInBand` passed after favicon Phase 2 updates (26 suites, 130 tests).
