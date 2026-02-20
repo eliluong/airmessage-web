@@ -10,7 +10,8 @@ Implement a browser-tab favicon indicator that shows a small red dot when one or
 - 2026-02-20: Canvas-based red-dot rendering and cached badged favicon data URL generation are now implemented in `src/util/faviconBadge.ts`.
 - 2026-02-20: Phase 2 completed.
 - 2026-02-20: `src/state/conversationState.ts` now enables the favicon badge for qualifying incoming messages while the tab is inactive.
-- 2026-02-20: Clear-on-focus behavior remains deferred to Phase 3.
+- 2026-02-20: Phase 3 completed.
+- 2026-02-20: `src/components/messaging/master/Messaging.tsx` now initializes favicon badge handling, clears on tab focus/visibility return, and clears on unmount cleanup.
 
 ## Requested Behavior (Source of Truth)
 - Show red dot in favicon area when new incoming message(s) arrive while tab is inactive.
@@ -124,6 +125,11 @@ Clear the badge when the user returns to the tab.
 - Badge clears immediately on tab return regardless of conversation-level unread flags.
 - Behavior matches requested global “considered seen on return” semantics.
 
+### Phase 3 Outcome (2026-02-20)
+- `src/components/messaging/master/Messaging.tsx` now calls `initializeFaviconBadge()` on mount.
+- `document.visibilitychange` and `window.focus` listeners now clear the badge whenever the tab is visible/focused.
+- Cleanup removes listeners and calls `clearFaviconBadge()` to prevent stale badge state across messaging-session transitions.
+
 ## Phase 4: Test Coverage
 ### Goal
 Add deterministic tests for badge state transitions and integration hooks.
@@ -169,7 +175,7 @@ Verify runtime behavior in browser and record implementation status.
 - [x] `src/util/faviconBadge.ts` added.
 - [x] Phase 1 rendering/toggle internals implemented in `src/util/faviconBadge.ts`.
 - [x] `src/state/conversationState.ts` wired to set badge on background incoming messages.
-- [ ] `src/components/messaging/master/Messaging.tsx` wired to clear badge on tab return.
+- [x] `src/components/messaging/master/Messaging.tsx` wired to clear badge on tab return.
 - [ ] Tests added and passing.
 - [ ] Manual QA evidence captured.
 - [ ] `project.md` updated after implementation completion.
